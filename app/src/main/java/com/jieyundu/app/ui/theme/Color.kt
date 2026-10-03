@@ -70,6 +70,9 @@ object JieYunDuColors {
     /** 指示器边缘高光起始（白色 50%，10.2）。 */
     val NavIndicatorHighlight: Color = Color(0x80FFFFFF)
 
+    /** 指示器内阴影（黑色 10%，10.2：画在指示器内侧底部）。 */
+    val NavIndicatorInnerShadow: Color = Color(0x1A000000)
+
     // --- 主界面（阶段 8，第九部分）---
 
     /** 强调按钮底色（白色 15%，9.6.2 解析按钮）。 */
