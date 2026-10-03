@@ -19,10 +19,11 @@
 
 推送到 main 分支后，在仓库的 Actions 页面可下载 debug APK。
 
-CI 使用官方 `gradle/actions/setup-gradle`（固定 Gradle 8.2.2），不依赖
+CI 使用官方 `gradle/actions/setup-gradle`（固定 Gradle 8.2.1），不依赖
 `gradle-wrapper.jar`——该二进制文件未随本次交付的文本接口入库。
+（Gradle 官方无 8.2.2 发行版；8.2.2 为 AGP 版本号，勿混淆。）
 
-本地构建（可选）：自备 Gradle 8.2.2 后执行
+本地构建（可选）：自备 Gradle 8.2.1 后执行
 
     gradle assembleDebug
 

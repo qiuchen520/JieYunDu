@@ -21,12 +21,13 @@ jobs:
           java-version: '17'
 
       # 说明：gradle-wrapper.jar 是二进制文件，无法经由本次交付所用的 MCP 文本接口推送，
-      # 因此 CI 不依赖 wrapper，改用官方 setup-gradle 固定 Gradle 8.2.2（与
+      # 因此 CI 不依赖 wrapper，改用官方 setup-gradle 固定 Gradle 8.2.1（与
       # gradle/wrapper/gradle-wrapper.properties 中声明的版本一致）。
+      # 注意：Gradle 官方无 8.2.2 发行版（8.2.2 是 AGP 的版本号，两者不同），此处必须用 8.2.1。
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.2.2'
+          gradle-version: '8.2.1'
 
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
