@@ -55,6 +55,22 @@ object LinkExtractor {
     )
 
     /**
+     * 链接尾部可能被误纳入的中文标点集合（用于裁剪）。
+     * 说明：字面量以 `\uXXXX` 转义，符合编码风格 C5（.kt 源码不得出现中文字面量）。
+     */
+    private val TRAILING_PUNCTUATION = charArrayOf(
+        '\u3002', // 。
+        '\uFF0C', // ，
+        '\u3001', // 、
+        '\uFF1B', // ；
+        ')',
+        ']',
+        '}',
+        '"',
+        '\''
+    )
+
+    /**
      * 提取文本中的第一个分享链接。
      *
      * @param text 用户粘贴的原始文本。
@@ -74,7 +90,7 @@ object LinkExtractor {
         val result = mutableListOf<ShareLink>()
         for ((type, regex) in URL_PATTERNS) {
             for (match in regex.findAll(text)) {
-                val rawUrl = match.value
+                val rawUrl = trimTrailingPunctuation(match.value)
                 result += ShareLink(
                     type = type,
                     rawUrl = rawUrl,
@@ -84,6 +100,21 @@ object LinkExtractor {
             }
         }
         return result
+    }
+
+    /**
+     * 裁剪链接尾部被误纳入的中文标点（如 `。`、`，`、`）` 等）。
+     *
+     * 说明：正常情形下 [URL_PATTERNS] 的字符类已不含这些标点，此处为防御式兜底，
+     * 确保用户从富文本/聊天记录粘贴链接时不会把句读一并带入。
+     *
+     * @param url 已匹配到的链接文本。
+     * @return 去掉尾部标点后的链接。
+     */
+    private fun trimTrailingPunctuation(url: String): String {
+        var end = url.length
+        while (end > 0 && TRAILING_PUNCTUATION.contains(url[end - 1])) end--
+        return url.substring(0, end)
     }
 
     /**
@@ -110,8 +141,22 @@ object LinkExtractor {
             val index = url.indexOf(separator, from)
             if (index in from until end) end = index
         }
-        return url.substring(from, end)
+        return normalizeShareId(url.substring(from, end), detectType(url))
     }
+
+    /**
+     * 归一化分享 ID：百度分享短链形如 `/s/1xxxx`，其实际分享 ID 不含前导 `1`。
+     *
+     * @param rawId `/s/` 之后截取到的原始 ID 文本。
+     * @param type 该链接所属网盘类型；无法判定时传 null。
+     * @return 归一化后的分享 ID。
+     */
+    private fun normalizeShareId(rawId: String, type: NetdiskType?): String =
+        if (type == NetdiskType.BAIDU && rawId.length > 1 && rawId.first() == '1') {
+            rawId.substring(1)
+        } else {
+            rawId
+        }
 
     /**
      * 从文本中提取提取码：优先取链接查询串（`?pwd=`），其次取正文关键字。

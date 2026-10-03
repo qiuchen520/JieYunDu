@@ -62,7 +62,11 @@ class CookieStore internal constructor(
     }
 
     /**
-     * 保存 / 覆盖某个域名后缀下的 Cookie，并加密落盘。
+     * 保存某个域名后缀下的 Cookie（同域**合并**后加密落盘）。
+     *
+     * 行为：与既有 Cookie 合并——同名键以后者为准，不同名键保留（[mergeCookie]），
+     * 避免后续响应（如下载下发的 `__pugs`）冲掉先前的 `__puus` / `__pus`
+     * （《解析Bug分析.md》P1-1）。
      *
      * @param domainSuffix 域名后缀（例如 `quark.cn`，可同时覆盖 pan.quark.cn 与
      *   drive-pc.quark.cn）。
@@ -70,8 +74,11 @@ class CookieStore internal constructor(
      */
     fun save(domainSuffix: String, cookie: String) {
         if (domainSuffix.isBlank() || cookie.isBlank()) return
-        byDomainSuffix[domainSuffix] = cookie
-        prefs?.edit()?.putString(domainSuffix, cookie)?.apply()
+        // 同域**合并回写**而非覆盖：避免后续响应（如下载下发的 __pugs）冲掉先前的
+        // __puus / __pus（《解析Bug分析.md》P1-1）。
+        val merged = mergeCookie(byDomainSuffix[domainSuffix], cookie)
+        byDomainSuffix[domainSuffix] = merged
+        prefs?.edit()?.putString(domainSuffix, merged)?.apply()
     }
 
     /**
@@ -92,6 +99,34 @@ class CookieStore internal constructor(
     fun clear() {
         byDomainSuffix.clear()
         prefs?.edit()?.clear()?.apply()
+    }
+
+    /**
+     * 合并两段 Cookie 串：同名键以后者为准，不同名键保留。
+     *
+     * 例如既有 `__puus=a; __pus=b`，新来 `__pugs=c` → `__puus=a; __pus=b; __pugs=c`；
+     * 新来 `__puus=new` → `__pus=b; __puus=new`。
+     *
+     * @param existing 现有 Cookie 串；可为 null。
+     * @param incoming 新到的 Cookie 串。
+     * @return 合并后的 Cookie 串。
+     */
+    private fun mergeCookie(existing: String?, incoming: String): String {
+        val pairs = LinkedHashMap<String, String>()
+        fun absorb(raw: String) {
+            raw.split(';').forEach { segment ->
+                val trimmed = segment.trim()
+                if (trimmed.isEmpty()) return@forEach
+                val equalIndex = trimmed.indexOf('=')
+                if (equalIndex <= 0) return@forEach
+                val name = trimmed.substring(0, equalIndex).trim()
+                val value = trimmed.substring(equalIndex + 1).trim()
+                if (name.isNotEmpty()) pairs[name] = value
+            }
+        }
+        existing?.let { absorb(it) }
+        absorb(incoming)
+        return pairs.entries.joinToString("; ") { (name, value) -> "$name=$value" }
     }
 }
 

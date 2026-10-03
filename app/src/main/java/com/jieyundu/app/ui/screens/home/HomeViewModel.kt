@@ -1,6 +1,7 @@
 // 文件：HomeViewModel.kt
 // 职责：首页解析逻辑——提取链接、路由解析器、把文件投递给下载引擎
-// 依赖：ParserRegistry、LinkExtractor、DownloadEngine、DownloadSessionRegistry、Hilt、Timber
+// 依赖：ParserRegistry、LinkExtractor、DownloadEngine、DownloadSessionRegistry、CookieStore、
+//       UserAgentProvider、CookieExtractor、Hilt、Timber
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.home
@@ -10,9 +11,13 @@ import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.R
+import com.jieyundu.app.data.remote.CookieStore
+import com.jieyundu.app.data.remote.UserAgentProvider
 import com.jieyundu.app.domain.downloader.DownloadEngine
 import com.jieyundu.app.domain.downloader.DownloadTask
+import com.jieyundu.app.domain.login.CookieExtractor
 import com.jieyundu.app.domain.model.FileInfo
+import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
 import com.jieyundu.app.domain.model.ShareLink
 import com.jieyundu.app.domain.parser.NetdiskParser
@@ -47,6 +52,8 @@ import timber.log.Timber
  * @param parserRegistry 解析器注册表。
  * @param downloadEngine 分片下载引擎。
  * @param downloadSessionRegistry 会话内「任务 ID → 文件名」登记表（下载列表展示用）。
+ * @param cookieStore 登录态 Cookie 仓库；下载时按网盘域取 Cookie 注入请求头。
+ * @param userAgentProvider 四家网盘 Referer 常量提供者。
  * @param appContext 应用上下文，仅用于推导下载落盘目录。
  */
 @HiltViewModel
@@ -54,6 +61,8 @@ class HomeViewModel @Inject constructor(
     private val parserRegistry: ParserRegistry,
     private val downloadEngine: DownloadEngine,
     private val downloadSessionRegistry: DownloadSessionRegistry,
+    private val cookieStore: CookieStore,
+    private val userAgentProvider: UserAgentProvider,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
@@ -209,12 +218,14 @@ class HomeViewModel @Inject constructor(
         val directory = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: appContext.filesDir
         val taskId = UUID.randomUUID().toString()
+        val netdiskType = (_uiState.value.result as? ParseResult.Success)?.netdiskType
         val task = DownloadTask(
             taskId = taskId,
             url = url,
             fileName = file.fileName,
             fileSize = file.fileSize,
-            savePath = File(directory, file.fileName).absolutePath
+            savePath = File(directory, file.fileName).absolutePath,
+            headers = buildDownloadHeaders(netdiskType)
         )
         downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
         viewModelScope.launch(Dispatchers.IO) {
@@ -228,6 +239,40 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 组装下载请求所需的附加请求头（Referer + Cookie）。
+     *
+     * 背景（《解析Bug分析.md》P1-4）：夸克等网盘直链对来源与登录态敏感，缺少
+     * `Referer` / Cookie 会被风控拒绝（412 / 403）。此处按网盘类型取对应 Referer，
+     * 并从 [CookieStore] 取该域登录态 Cookie 注入；未识别类型时不附加任何头，
+     * 未登录时不附加 Cookie（交由服务端判定，避免塞入空值）。
+     *
+     * @param type 本次解析所属网盘类型；未知时为 null。
+     * @return 不可变的附加请求头映射；无可用头时返回空映射。
+     */
+    private fun buildDownloadHeaders(type: NetdiskType?): Map<String, String> {
+        if (type == null) return emptyMap()
+        val headers = linkedMapOf(HEADER_REFERER to refererOf(type))
+        val cookie = cookieStore.findForHost(CookieExtractor.cookieDomainOf(type))
+        if (!cookie.isNullOrBlank()) {
+            headers[HEADER_COOKIE] = cookie
+        }
+        return headers
+    }
+
+    /**
+     * 网盘类型 → 请求来源（Referer）映射。
+     *
+     * @param type 网盘类型。
+     * @return 对应网盘的 Referer 常量。
+     */
+    private fun refererOf(type: NetdiskType): String = when (type) {
+        NetdiskType.QUARK -> userAgentProvider.quarkReferer
+        NetdiskType.BAIDU -> userAgentProvider.baiduReferer
+        NetdiskType.UC -> userAgentProvider.ucReferer
+        NetdiskType.XUNLEI -> userAgentProvider.xunleiReferer
+    }
+
     private companion object {
         /** 本模块自有的网络错误码（与解析器错误码同一命名空间，由 UI 映射文案）。 */
         const val CODE_NETWORK = "APP_NETWORK_ERROR"
@@ -237,5 +282,11 @@ class HomeViewModel @Inject constructor(
 
         /** 解析器在提取码错误时返回的机器码（与 QuarkParser 对齐），UI 据此保留弹窗并提示重试。 */
         const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
+
+        /** HTTP 来源请求头名。 */
+        const val HEADER_REFERER = "Referer"
+
+        /** HTTP Cookie 请求头名。 */
+        const val HEADER_COOKIE = "Cookie"
     }
 }

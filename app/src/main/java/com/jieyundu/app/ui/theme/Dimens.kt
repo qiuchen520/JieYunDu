@@ -80,12 +80,6 @@ object Dimens {
     /** 边缘高光厚度。 */
     val HighlightStroke: Dp = 1.dp
 
-    /** 顶部标题栏高度（平板）。 */
-    val HeaderHeight: Dp = 72.dp
-
-    /** 顶部标题栏高度（手机）。 */
-    val HeaderHeightCompact: Dp = 64.dp
-
     /** 圆形图标按钮直径。 */
     val IconButtonSize: Dp = 48.dp
 
@@ -157,15 +151,6 @@ object Dimens {
 
     /** 主内容区顶部内边距（平板整改：内容靠上、不贴顶）。 */
     val ContentTopPadding: Dp = 32.dp
-
-    /** 悬浮标题栏左右画面边距（整改：左右各留 24dp）。 */
-    val TitleBarMargin: Dp = 24.dp
-
-    /** 标题栏圆角（平板，≈ 高度 72dp × 0.33）。 */
-    val TitleBarCorner: Dp = 24.dp
-
-    /** 标题栏圆角（手机，≈ 高度 64dp × 0.33）。 */
-    val TitleBarCornerCompact: Dp = 21.dp
 
     /** 空态图标边长（下载列表空态）。 */
     val EmptyIconSize: Dp = 64.dp

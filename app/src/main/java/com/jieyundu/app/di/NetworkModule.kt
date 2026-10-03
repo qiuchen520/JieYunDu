@@ -193,8 +193,9 @@ object NetworkModule {
      * Retrofit 的返回体不含响应头，故在此统一把 `.quark.cn` 响应的 `Set-Cookie`
      * 登记到 [CookieStore]，供后续请求（含下载引擎的分片请求）按域名注入。
      *
-     * 说明：受 [CookieStore] 语义限制，同一域名后缀仅保存最近一次响应的 Cookie 串；
-     * 对当前链路已足够——CDN 直链只依赖 `__pugs`，而它正是在 download 响应中下发。
+     * 说明：[CookieStore.save] 现按域名后缀**合并**存储（同名键以后者为准），因此
+     * `__pus` / `__puus`（登录态）与下载响应下发的 `__pugs` 会共存、不会互相冲掉
+     * （《解析Bug分析.md》P1-1）；CDN 直链只依赖 `__pugs`，而它正是在 download 响应中下发。
      *
      * @param cookieStore 内存态 Cookie 仓库。
      */

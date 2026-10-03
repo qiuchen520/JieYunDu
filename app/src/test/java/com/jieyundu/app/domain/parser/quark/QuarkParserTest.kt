@@ -8,6 +8,9 @@ package com.jieyundu.app.domain.parser.quark
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
+import com.jieyundu.app.domain.transfer.ShareTransfer
+import com.jieyundu.app.domain.transfer.TaskPoller
+import com.jieyundu.app.domain.transfer.TempFolderManager
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -127,7 +130,7 @@ class QuarkParserTest {
         val api = FakeQuarkApi(
             files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L)),
             downloadEntries = listOf(
-                QuarkDownloadUrl(fid = "fid-1", download_url = DIRECT_URL)
+                QuarkDownloadUrl(fid = SAVED_FID_PREFIX + "fid-1", download_url = DIRECT_URL)
             )
         )
         val result = newParser(api = api).parse(SHARE_URL, null)
@@ -194,6 +197,7 @@ class QuarkParserTest {
         cookieStore: CookieStore = CookieStore(null)
     ): QuarkParser = QuarkParser(
         api = api,
+        shareTransfer = ShareTransfer(api, TaskPoller(api), TempFolderManager()),
         okHttpClient = homeClient(homeCookie),
         cookieStore = cookieStore
     )
@@ -229,16 +233,26 @@ class QuarkParserTest {
         private val stoken: String = "fake-stoken",
         private val files: List<QuarkFile> = emptyList(),
         private val downloadCode: Int = SUCCESS_CODE,
-        private val downloadEntries: List<QuarkDownloadUrl> = emptyList()
+        private val downloadEntries: List<QuarkDownloadUrl> = emptyList(),
+        private val saveCode: Int = SUCCESS_CODE,
+        private val taskCode: Int = SUCCESS_CODE,
+        private val taskFinished: Boolean = true
     ) : QuarkApi {
 
         /** 最近一次 token 请求体，供断言「是否携带 passcode」使用。 */
         var lastTokenBody: Map<String, String>? = null
             private set
 
-        /** 最近一次 download 请求体，供断言「文件夹是否触发直链请求」使用。 */
-        var lastDownloadBody: Map<String, Any>? = null
+        /** 最近一次 save 请求体，供断言「转存是否携带 fid / token 列表」使用。 */
+        var lastSaveBody: QuarkSaveRequest? = null
             private set
+
+        /** 最近一次 download 请求体，供断言「文件夹是否触发直链请求」使用。 */
+        var lastDownloadBody: QuarkDownloadRequest? = null
+            private set
+
+        /** 转存后在「本账号」中的新 fid（由 save 请求的 fid_list 派生，便于断言回填）。 */
+        private var savedFids: List<String> = emptyList()
 
         override suspend fun getShareToken(body: Map<String, String>): QuarkResponse<QuarkShareToken> {
             lastTokenBody = body
@@ -252,7 +266,25 @@ class QuarkParserTest {
         override suspend fun getShareDetail(params: Map<String, String>): QuarkResponse<QuarkShareDetail> =
             QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkShareDetail(list = files))
 
-        override suspend fun getDownloadUrl(body: Map<String, Any>): QuarkResponse<List<QuarkDownloadUrl>> {
+        override suspend fun saveShare(body: QuarkSaveRequest): QuarkResponse<QuarkSaveResult> {
+            lastSaveBody = body
+            savedFids = body.fid_list.map { fid -> SAVED_FID_PREFIX + fid }
+            val taskId = if (saveCode == SUCCESS_CODE) SAVE_TASK_ID else ""
+            return QuarkResponse(code = saveCode, message = "ok", data = QuarkSaveResult(task_id = taskId))
+        }
+
+        override suspend fun getTask(params: Map<String, String>): QuarkResponse<QuarkTask> =
+            QuarkResponse(
+                code = taskCode,
+                message = "ok",
+                data = QuarkTask(
+                    status = if (taskFinished) TASK_STATUS_FINISHED else 0,
+                    finished_at = if (taskFinished) 1L else 0L,
+                    save_as = QuarkSaveAs(save_as_top_fids = savedFids)
+                )
+            )
+
+        override suspend fun getDownloadUrl(body: QuarkDownloadRequest): QuarkResponse<List<QuarkDownloadUrl>> {
             lastDownloadBody = body
             return QuarkResponse(code = downloadCode, message = "ok", data = downloadEntries)
         }
@@ -278,5 +310,14 @@ class QuarkParserTest {
 
         /** 占位风控码；真实取值待抓包（见 QuarkParser 常量注释）。 */
         const val RISK_CONTROL_CODE = 31001
+
+        /** 转存任务：save 成功后返回的任务 ID。 */
+        const val SAVE_TASK_ID = "task-1"
+
+        /** 转存任务完成状态码（与 TaskPoller.STATUS_FINISHED 对齐）。 */
+        const val TASK_STATUS_FINISHED = 2
+
+        /** 转存后新 fid 前缀（用于断言「按新 fid 回填直链」）。 */
+        const val SAVED_FID_PREFIX = "saved-"
     }
 }

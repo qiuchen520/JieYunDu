@@ -66,6 +66,7 @@ internal fun parseErrorLabelRes(code: String): Int = when (code) {
     "QUARK_TOKEN_FAILED" -> R.string.parse_code_token_failed
     "QUARK_DETAIL_FAILED" -> R.string.parse_code_detail_failed
     "QUARK_DOWNLOAD_FAILED" -> R.string.parse_code_download_failed
+    "QUARK_TRANSFER_FAILED" -> R.string.parse_code_transfer_failed
     "QUARK_WRONG_PASSWORD" -> R.string.password_error_retry
     "BAIDU_NOT_IMPLEMENTED", "UC_NOT_IMPLEMENTED", "XUNLEI_NOT_IMPLEMENTED" ->
         R.string.parse_code_not_implemented

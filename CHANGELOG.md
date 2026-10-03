@@ -669,6 +669,37 @@
 - `strings.xml`：新增阶段 11 手动兜底 / 校验 / 教程 / 退出文案。
 - 《要求.md》：追加【修订 JYD-LOGIN-2026-10-03】记录块。
 
+## 解析链路修复（JYD-TRANSFER-2026-10-03）+ 顶部标题栏删除（JYD-UI-TITLEBAR-2026-10-03）
+> 依据《解析Bug分析.md》评审结论与 Owner 逐条裁定，一次性落地；不改其余三家解析器与阶段 11 登录逻辑。
+### 夸克解析链路（P0 / P1）
+- 新增 `domain/transfer/`：`ShareTransfer.kt`（转存 save→poll 封装）/ `TaskPoller.kt`（轮询任务完成）/
+  `TempFolderManager.kt`（待清理 fid 登记，本批不建目录）。
+- `QuarkParser.kt`：链路改为 `token → detail → save（转存）→ task 轮询 → file/download（传本账号新 fid）`；
+  token 请求体补 `support_visit_limit_private_share`；握手登记 `__pus` + `__puus`；新增错误码 `QUARK_TRANSFER_FAILED`。
+- `QuarkApi.kt`：detail 响应兼容 `detail_info?.list ?: list`（新增 `QuarkDetailInfo` 与 `entries` 取值器）；
+  `QuarkFile` 增补 `share_fid_token`；新增 `saveShare` / `getTask` 接口与响应模型
+  （`QuarkSaveResult` / `QuarkTask` / `QuarkSaveAs`）；`getDownloadUrl` 路径补 `?pr=ucpro&fr=pc&sys=win32&ve=3.23.2`。
+  另：`saveShare` / `getDownloadUrl` 请求体由 `Map<String, Any>` 改为 `@Serializable` 请求模型
+  （`QuarkSaveRequest` / `QuarkDownloadRequest`）——本项目 Retrofit 用 kotlinx.serialization 转换器，
+  `Any` 无序列化器，`Map<String, Any>` 会在运行期抛 `SerializationException` 使整链不可用。
+- `CookieStore.kt`：`save()` 由覆盖改为**合并回写**（新增 `mergeCookie()`），保留 `__pus` + `__puus` + `__pugs`。
+- `NetworkModule.kt`：`ResponseCookieInterceptor` 的 KDoc 同步为合并语义（`__pugs` 采集逻辑不变）。
+- `HomeViewModel.kt`：注入 `CookieStore` / `UserAgentProvider`；`download()` 填 `DownloadTask.headers`
+  （按网盘类型取 Referer + 从 `CookieStore` 取 Cookie）。
+- `LinkExtractor.kt`：百度分享 ID 去前导 `1`；新增 `TRAILING_PUNCTUATION` 裁剪链接尾部中文标点 `。，、；)]}"'`。
+- `HomeUiState.kt` / `strings.xml`：新增 `QUARK_TRANSFER_FAILED` 的文案映射。
+### 顶部标题栏删除（UI）
+- `JieYunDuNavHost.kt`：删除私有 `AppTitleBar` / `SettingsGlyph` 及其几何常量；导航条作为内容区上方第一层，
+  内容区自然上移；设置入口统一由「设置」Tab 承载；清理随之失效的 import。
+- `Dimens.kt`：移除标题栏专用死常量 `HeaderHeight` / `HeaderHeightCompact` / `TitleBarMargin` /
+  `TitleBarCorner` / `TitleBarCornerCompact`。
+- 未触碰玻璃质感、Q 弹手感、浅色配色与导航弹簧参数。
+### 规格登记
+- 《要求.md》：追加【修订 JYD-TRANSFER-2026-10-03】、【修订 JYD-UI-TITLEBAR-2026-10-03】。
+### 已知限制 / 待抓包
+- 转存先落网盘**根目录**（不传 `to_pdir_fid`）；`.极云渡临时` 目录 + 自动清理推迟到阶段 13。
+- `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE` 仍为占位值（41011 / 41012），待抓包校准。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
