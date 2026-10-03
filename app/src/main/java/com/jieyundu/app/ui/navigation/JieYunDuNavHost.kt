@@ -171,7 +171,7 @@ private fun AppTitleBar(
  */
 @Composable
 private fun SettingsGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.TextPrimary
+    val color = JieYunDuColors.Primary
     Canvas(modifier = modifier) {
         val stroke = size.minDimension * GLYPH_STROKE_RATIO
         val center = Offset(size.width / 2f, size.height / 2f)
