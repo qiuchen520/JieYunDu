@@ -113,8 +113,10 @@ fun NetdiskBrowserScreen(
         QuotaCard(quota = state.quota, contentPadding = contentPadding)
 
         val level = state.currentLevel
+        // 注意：joinToString 的 lambda 不是 @Composable 上下文，stringResource 必须在此提前求值。
+        val rootLabel = stringResource(R.string.netdisk_browser_root)
         val breadcrumb = state.stack.joinToString(separator = BREADCRUMB_SEPARATOR) { item ->
-            item.name.ifBlank { stringResource(R.string.netdisk_browser_root) }
+            item.name.ifBlank { rootLabel }
         }
         if (breadcrumb.isNotBlank()) {
             Text(
