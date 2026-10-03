@@ -41,6 +41,11 @@ val JieYunDuTypography: Typography = Typography(
         fontSize = 16.sp,
         fontWeight = FontWeight.Medium
     ),
+    /** 微型辅助文字：13sp Regular（9.6.4 速度文字）。 */
+    labelMedium = TextStyle(
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Normal
+    ),
     /** 辅助文字：14sp Regular。 */
     labelSmall = TextStyle(
         fontSize = 14.sp,

@@ -17,7 +17,7 @@ import dagger.hilt.android.AndroidEntryPoint
  * 应用唯一 Activity。
  *
  * 说明：装载深色背板与导航宿主。平板显示左侧竖直玻璃条，手机显示顶部横向玻璃条；
- * 三个页面的真实内容在阶段 8 落地，当前内容区为页签占位。
+ * 三个页签的真实内容（首页 / 下载 / 设置）由 [JieYunDuNavHost] 在阶段 8 接入。
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {

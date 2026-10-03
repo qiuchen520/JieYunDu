@@ -196,6 +196,53 @@
   过晃则回调 0.50/400；仍不够弹则降 0.45/450（数值由 Owner 实测定，仅改数值不动逻辑）。
 - 《要求.md》10.2 / 10.3 同步修订由 Owner 执行。
 
+## 阶段 8：主界面（首页 / 下载 / 设置）
+- 交付清单（《要求.md》第十一部分）：`MainActivity.kt`、`HomeScreen/HomeViewModel/HomeUiState`、
+  `LinkInputCard`、`ParseResultCard`、`DownloadScreen/DownloadViewModel`、`DownloadItem`、
+  `SettingsScreen/SettingsViewModel`，共 11 个 Kotlin 文件；另因规范要求（C5/C6/C7）同时扩展了
+  4 个既有资源/主题文件，并改写 `JieYunDuNavHost.kt` 以承载真实页面。
+- 新增文件：
+  - `ui/screens/home/HomeUiState.kt`：UI 状态 + **网盘类型 / 解析错误码 → strings.xml 的唯一映射点**
+    （`uiLabelRes()` / `parseErrorLabelRes()`）。据此落实阶段 2 约定：UI 不再使用 `NetdiskType.displayName`。
+  - `ui/screens/home/HomeViewModel.kt`：`LinkExtractor` 提链 → `ParserRegistry` 路由 → `Parser.parse`；
+    解析结果写回状态；文件投递 `DownloadEngine`。
+  - `ui/screens/home/HomeScreen.kt`：平板两栏（左 40% 输入 + 结果 / 右 60% 复用 `DownloadScreen`），
+    手机单栏纵向滚动（9.4 / 9.5）。
+  - `ui/screens/home/components/LinkInputCard.kt`：`BasicTextField` 自绘占位（不用 Material `TextField`，R5/D3），
+    全宽解析按钮走 `GlassButton`（白 15% 底 + 白 30% 边，9.6.2）。
+  - `ui/screens/home/components/ParseResultCard.kt`：解析中 / 成功列表 / 需提取码 / 失败四态；
+    圆形下载按钮 56dp 白 20%，图标为 **Canvas 自绘**（不引入 material-icons-extended，遵守 D8）。
+  - `ui/screens/download/DownloadViewModel.kt`：含 `DownloadSessionRegistry`（会话内 taskId→文件名）
+    与 `DownloadListItem`；列表 = `DownloadRepository.observeProgress()` × 会话文件名；操作转发引擎。
+  - `ui/screens/download/DownloadScreen.kt`：`LazyColumn` + 空态；被首页平板右栏复用。
+  - `ui/screens/download/components/DownloadItem.kt`：88/76dp 卡片，**自绘进度条**（6dp / 圆角 3dp，
+    不用 Material `LinearProgressIndicator`，R5/D3），错开 50ms 淡入 + 上移 12dp（9.7，用 spring 非 tween）。
+  - `ui/screens/settings/SettingsViewModel.kt` / `SettingsScreen.kt`：支持网盘、默认并发（8 / 上限 32）、版本与协议。
+- 既有文件修改（均为落实 UI 规格所必需）：
+  - `JieYunDuNavHost.kt`（改写）：内容区由页签占位改为真实 `HomeScreen/DownloadScreen/SettingsScreen`；
+    新增私有 `AppTitleBar`（9.6.1：玻璃面板 72/64dp + 左侧应用名 + 右侧 48dp 圆形设置按钮，
+    设置图标同样 Canvas 自绘）并接到 `SELECTED→SETTINGS`。**弹簧参数与 `preset` 透传链未动。**
+  - `strings.xml`：新增阶段 8 全部文案（输入提示、按钮、四态、错误码映射、网盘展示名、下载状态、
+    设置项），并删除阶段 6 的两条占位串。
+  - `Color.kt`：新增 `ButtonFill / ButtonBorder / IconButtonFill / TextMuted / TextFaint`
+    （对应 9.6.2 白 15%/30%、9.6.3 白 20%、9.6.4 白 70%/50%）。
+  - `Dimens.kt`：新增 `DownloadButtonSize(56) / DownloadItemHeight(88) / DownloadItemHeightCompact(76) /
+    ProgressBarHeight(6) / ProgressBarCorner(3)`。
+  - `Type.kt`：新增 `labelMedium(13sp)`（9.6.4 速度文字）。
+  - `GlassButton.kt`：新增可选参数 `fillColor / borderColor`（默认值不变，向后兼容），供 9.6.2 按钮配色。
+- 规格偏差与取舍（据实登记，未静默）：
+  1. `ProgressBarCorner = 3dp` 低于 9.2 的「圆角不小于 16dp」，但为 9.6.4 组件明文规格，取组件规格。
+  2. 9.6.1 的独立「顶部标题栏」与阶段 7 的顶部横向导航条在手机上并存（标题栏在上、导航条在下）；
+     平板为「左 Rail + 上标题栏 + 内容」。此为两节规格叠加的最直接实现，若 Owner 认为手机顶部过挤，
+     请出规格修订（裁掉其一或合并）。
+  3. 9.4 右栏要求「下载列表 + 文件管理」；**文件管理**（4.3 历史 / 搜索 / 收藏 / 分类）未列入阶段 8
+     交付清单，本阶段未实现，留待后续阶段。
+  4. `DownloadEntry` / `HistoryEntity` 未被本阶段 UI 直接消费：会话内文件名由
+     `DownloadSessionRegistry` 提供（Room 进度表不含文件名），应用重启后历史任务名回退为「未命名任务」。
+  5. 解析结果里的 `downloadUrl` 目前由 `QuarkParser` 返回 `null`（直链接口待抓包），
+     故 `HomeViewModel.download` 在无直链时**记录日志并跳过**，不产生脏任务。
+- 状态：**待 CI 验证 → 待 Owner 装机验收**。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

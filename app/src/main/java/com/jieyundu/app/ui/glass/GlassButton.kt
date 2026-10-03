@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import com.jieyundu.app.ui.theme.Dimens
@@ -48,6 +49,8 @@ private const val PRESS_SPRING_STIFFNESS = 800f
  * @param modifier 外部修饰符。
  * @param height 按钮高度。
  * @param cornerRadius 圆角半径。
+ * @param fillColor 底色；默认白色 12% 玻璃底。
+ * @param borderColor 边框色；默认白色 15% 玻璃描边。
  */
 @Composable
 fun GlassButton(
@@ -55,7 +58,9 @@ fun GlassButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     height: Dp = Dimens.ButtonHeight,
-    cornerRadius: Dp = Dimens.ButtonCorner
+    cornerRadius: Dp = Dimens.ButtonCorner,
+    fillColor: Color = JieYunDuColors.GlassFillStrong,
+    borderColor: Color = JieYunDuColors.GlassBorder
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     val interactionSource = remember { MutableInteractionSource() }
@@ -76,8 +81,8 @@ fun GlassButton(
                 scaleY = scale
             }
             .clip(shape)
-            .background(color = JieYunDuColors.GlassFillStrong, shape = shape)
-            .border(width = Dimens.HighlightStroke, color = JieYunDuColors.GlassBorder, shape = shape)
+            .background(color = fillColor, shape = shape)
+            .border(width = Dimens.HighlightStroke, color = borderColor, shape = shape)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

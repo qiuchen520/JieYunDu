@@ -120,4 +120,21 @@ object Dimens {
 
     /** 指示器边缘高光厚度（10.2：1dp）。 */
     val NavIndicatorStroke: Dp = 1.dp
+
+    // --- 主界面（阶段 8，第九部分）---
+
+    /** 解析结果卡片右侧圆形下载按钮直径（9.6.3：56dp）。 */
+    val DownloadButtonSize: Dp = 56.dp
+
+    /** 下载列表项高度（平板，9.6.4：88dp）。 */
+    val DownloadItemHeight: Dp = 88.dp
+
+    /** 下载列表项高度（手机，9.6.4：76dp）。 */
+    val DownloadItemHeightCompact: Dp = 76.dp
+
+    /** 进度条高度（9.6.4：6dp）。 */
+    val ProgressBarHeight: Dp = 6.dp
+
+    /** 进度条圆角（9.6.4：3dp；组件明文规格，优先于 9.2 的 16dp 下限）。 */
+    val ProgressBarCorner: Dp = 3.dp
 }

@@ -14,12 +14,56 @@
     <string name="notification_download_completed_title">下载完成</string>
     <string name="notification_download_completed_text">文件已保存到本地</string>
 
-    <!-- 主界面占位（阶段 6 最小壳；阶段 8 替换为真实界面） -->
-    <string name="home_placeholder">阶段6占位 ·界面开发中</string>
-    <string name="home_glass_sample">液态玻璃面板预览</string>
-
     <!-- 导航页签（阶段 7） -->
     <string name="tab_home">首页</string>
     <string name="tab_download">下载</string>
     <string name="tab_settings">设置</string>
+
+    <!-- 主界面（阶段 8）-->
+    <string name="link_input_hint">粘贴分享链接</string>
+    <string name="action_parse">解析</string>
+    <string name="parse_parsing">解析中…</string>
+    <string name="parse_error_unrecognized">未能从输入中识别分享链接</string>
+    <string name="parse_error_unsupported">暂不支持该网盘</string>
+    <string name="parse_need_password">该分享需要提取码</string>
+    <string name="parse_need_password_hint">请在分享链接后附带提取码，例如 ?pwd=xxxx</string>
+    <string name="parse_result_empty">该分享内没有可用文件</string>
+    <string name="parse_error_format">解析失败：%1$s</string>
+    <string name="cd_open_settings">打开设置</string>
+    <string name="cd_download_file">下载文件</string>
+
+    <!-- 解析错误码映射（UI 层把 domain 的机器可读 code 映射为文案）-->
+    <string name="parse_code_invalid_link">分享链接无效</string>
+    <string name="parse_code_need_cookie">站点校验未通过，请稍后重试</string>
+    <string name="parse_code_token_failed">提取码校验失败</string>
+    <string name="parse_code_detail_failed">获取文件列表失败</string>
+    <string name="parse_code_network">网络异常，请检查网络后重试</string>
+    <string name="parse_code_protocol">响应格式异常</string>
+    <string name="parse_code_unknown">未知错误</string>
+
+    <!-- 网盘展示名（UI 层映射，替代 NetdiskType.displayName，见 C5）-->
+    <string name="netdisk_baidu">百度网盘</string>
+    <string name="netdisk_uc">UC网盘</string>
+    <string name="netdisk_quark">夸克网盘</string>
+    <string name="netdisk_xunlei">迅雷云盘</string>
+
+    <!-- 下载列表（阶段 8）-->
+    <string name="download_empty">暂无下载任务</string>
+    <string name="download_state_pending">等待中</string>
+    <string name="download_state_downloading">下载中</string>
+    <string name="download_state_paused">已暂停</string>
+    <string name="download_state_completed">已完成</string>
+    <string name="download_state_failed">下载失败</string>
+    <string name="download_state_canceled">已取消</string>
+    <string name="download_progress_format">%1$d%%</string>
+    <string name="download_size_format">%1$s / %2$s</string>
+    <string name="download_task_untitled">未命名任务</string>
+
+    <!-- 设置页（阶段 8）-->
+    <string name="settings_supported_netdisks">已支持网盘</string>
+    <string name="settings_default_chunk">默认并发分片数</string>
+    <string name="settings_default_chunk_value">%1$d（上限 %2$d）</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version_format">版本 %1$s</string>
+    <string name="settings_license">开源协议：AGPL-3.0</string>
 </resources>

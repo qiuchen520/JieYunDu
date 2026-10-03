@@ -69,4 +69,21 @@ object JieYunDuColors {
 
     /** 指示器边缘高光起始（白色 50%，10.2）。 */
     val NavIndicatorHighlight: Color = Color(0x80FFFFFF)
+
+    // --- 主界面（阶段 8，第九部分）---
+
+    /** 强调按钮底色（白色 15%，9.6.2 解析按钮）。 */
+    val ButtonFill: Color = Color(0x26FFFFFF)
+
+    /** 强调按钮边框（白色 30%，9.6.2）。 */
+    val ButtonBorder: Color = Color(0x4DFFFFFF)
+
+    /** 圆形图标按钮底色（白色 20%，9.6.3 下载按钮）。 */
+    val IconButtonFill: Color = Color(0x33FFFFFF)
+
+    /** 次级强调文字（白色 70%，9.6.4 列表文件名 / 进度文字）。 */
+    val TextMuted: Color = Color(0xB3FFFFFF)
+
+    /** 弱化文字（白色 50%，9.6.4 速度文字）。 */
+    val TextFaint: Color = Color(0x80FFFFFF)
 }
