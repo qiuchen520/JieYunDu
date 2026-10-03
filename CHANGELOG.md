@@ -72,7 +72,7 @@
   `implementation(libs.cloudy)`；`settings.gradle.kts` 移除仅因 cloudy 而加的 JitPack 仓库。
 - 代码自始未引用任何 Cloudy API，故删除依赖不需要改动任何 Kotlin 源码。
 - 状态：**已推送（run#4）。删除后依赖解析即通过；后续 run#4–#6 暴露并修复了 2 个
-   Kotlin 编译问题（`GlassPanel.drawOutline` 的 import），最终 run#6 全绿。详见下节。**
+  Kotlin 编译问题（`GlassPanel.drawOutline` 的 import），最终 run#6 全绿。详见下节。**
 
 ## 阶段 6 交付后整改（依据《阶段 6 交付后整改指令（整合版）》）
 
@@ -295,6 +295,115 @@
 - 状态：**CI 已绿 → 待 Owner 装机验收**（验收点：不再全圆角、玻璃质感清晰、
   无提取码链接点解析自动弹输入框）。
 
+## 阶段 9：其余三家解析器骨架 + 解析器注册
+- 交付（《要求.md》第十一部分）：
+  - 新增 `domain/parser/baidu/BaiduApi.kt` + `BaiduParser.kt`、
+    `domain/parser/uc/UcApi.kt` + `UcParser.kt`、
+    `domain/parser/xunlei/XunleiApi.kt` + `XunleiParser.kt`，共 6 个 Kotlin 文件。
+  - 三家均为**骨架占位**：接口仅声明与夸克对应的三方法（token / detail / download），
+    具体 URL、参数、响应结构以 `// TODO(用户抓包): …` 标注，待逐家抓包后照此填充。
+  - `di/AppModule.kt` 为三家各加一行 `@Provides @IntoSet` 注册（连同既有夸克，
+    共 4 个 `@IntoSet`），`provideParserRegistry` 逻辑未动。
+- 推送：sha **`9f9e952`**；CI run `#20`（`37102866315`）**全绿**，
+  artifact `jieyundu-debug-apk` **10,321,935 B（≈9.8 MB）**。
+- 状态：**CI 已绿**。
+
+## 夸克接口实测探测报告（2026-10-03，Owner 授权终端 + curl）
+> 授权范围：仅探测夸克服务器公开接口（不访问任何现有网盘解析工具的源码），
+> 故不违反 R1。测试分享：`https://pan.quark.cn/s/d3f14d92e6a5`（无提取码，标题「极简(直装版)」）。
+> 探测脚本落盘于临时目录（`/tmp/qprobe*.sh` / `qcdn.sh` 及其日志），仅用于本次复测。
+
+### 一、token 接口（换取分享凭证）
+- 真实 URL：`POST https://drive-pc.quark.cn/1/clouddrive/share/sharepage/token?pr=ucpro&fr=pc`
+- 请求体：`{"pwd_id":"<shareId>"}`；带提取码时追加 `"passcode":"<pwd>"`
+- 请求头：无特殊（**无需任何 Cookie**）
+- 真实响应（节选）：`{"status":200,"code":0,"message":"ok","data":{"stoken":"+dQ6…/M6UQz+Pc=","title":"极简(直装版)","author":{…},"expired_at":4102416000000,…}}`
+- 固定参数：`pr=ucpro`、`fr=pc`；动态参数：`pwd_id`、可选 `passcode`
+- 签名项：**未遇**（无客户端签名参数）
+- 备注：无 `pwd_id` 时返回 `code:0` 但**不含 stoken**。
+
+### 二、detail 接口（列目录 / 文件）
+- 真实 URL：`GET https://drive-pc.quark.cn/1/clouddrive/share/sharepage/detail`
+- Query：`pr=ucpro&fr=pc&pwd_id&stoken&pdir_fid&force=0&_page=1&_size=50&_sort=file_type:asc,updated_at:desc`
+- 请求头：**无需 Cookie**
+- 真实响应：`data.list[]`，每项含 `fid / file_name / size / dir / share_fid_token`（完整对象另含
+  `pdir_fid / category / status / source / format_type` 等）
+- 固定参数：`pr=ucpro`、`fr=pc`、`force=0`、`_page=1`、`_size=50`、`_sort=file_type:asc,updated_at:desc`；
+  动态参数：`pwd_id`、`stoken`、`pdir_fid`（`pdir_fid=0` 为分享根目录；进子目录须用该目录 `fid`）
+- 实测结构：本次分享根目录仅 1 个文件夹（`dir:true`，`fid:a7d64dae…`）；
+  以其 `fid` 作 `pdir_fid` 进入后得 **11 项**（2 文件夹 + 9 文件，含 132B txt 与 793MB apk）。
+- 签名项：**未遇**
+
+### 三、download 接口（换取下载直链）
+- 真实 URL：`POST https://drive-pc.quark.cn/1/clouddrive/file/download?pr=ucpro&fr=pc`
+- 请求体：`{"fids":["<fid>"],"pwd_id":"<shareId>","stoken":"<stoken>"}`
+  （**必须带 `pwd_id` + `stoken`**，否则返回 `code:31001 require login [share missing]`）
+- 真实响应：`code:0`，`data[]` 为**完整文件对象**，每项同时含 `fid` 与 `download_url`（可按 fid 回填）
+- 响应头：下发 `Set-Cookie: __pugs=…; Max-Age=10800; Domain=quark.cn; Path=/`（**CDN 直链必需**）
+- 关键约束：**只能传真实文件 fid**；传文件夹 fid 返回 `code:41038`「文件没有被分享」
+  （首次探测时根目录只有文件夹，据此发现「须进目录取真实文件才能验证 download 成功路径」）
+- 签名项：**未遇**（直链签名由服务端生成，客户端无需计算）
+
+### 四、CDN 直链对照实验（验证 `__pugs` 必要性）
+- `download_url` 指向 `dl-guest-zb-u.drive.quark.cn`，含 `auth_key / token / ork / ud / dfi / filename` 等查询参数
+- 对照结果：
+  - 无 `__pugs` cookie → **`HTTP/1.1 412 Precondition Failed`**（Content-Length 262）
+  - 带 `__pugs` cookie → **`HTTP/1.1 206 Partial Content`**（Content-Length 132，
+    Content-Range `bytes 0-131/132`）
+  - `Range` 头可用
+- 结论：CDN 直链**必须携带 `__pugs`**；签名参数由服务端生成，客户端无需计算。
+
+### 五、Cookie 下发链（汇总）
+- HOME → `ctoken`
+- SHARE → `ctoken` + `web-grey-id(+.sig)`
+- TOKEN → `__sdid`（`Domain=.quark.cn`，`Max-Age=2592000`）
+- DOWNLOAD → **`__pugs`（CDN 必需）**
+
+### 六、需人工抓包的剩余项
+- `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE` 真实取值：测试链接无提取码，未触发；
+  试传 `passcode:0000` 仍 `code:0` 返回 stoken，无法反推错误码 → **须人工抓包**。
+- 夸克 PC 客户端精确 UA 串：当前用浏览器 UA 已可用，但 App 应伪装夸克 PC 客户端 → **须人工抓包**。
+
+## 夸克接口实测结果落地（代码，2026-10-03）
+> 将上节探测结论全部落回代码，共改 7 个文件，分两批推送。
+
+### 第一批（sha `543adf7`）：`QuarkApi.kt` 重写
+- `QuarkShareToken`：`(stoken)` → `(stoken, title: String = "")`
+- `QuarkFile`：`(fid, file_name, size)` → `(fid, file_name, size, dir: Boolean = false)`
+- `QuarkDownloadUrl`：`(download_url)` → `(fid: String = "", download_url: String = "")`
+- `QuarkResponse<T>` / `QuarkShareDetail` 不变；三方法签名不变（合规《要求.md》7.6）
+- 全部 KDoc 改为实测结论（含「token / detail 无需 Cookie」「`__pugs` 为 CDN 必需」）
+- CI run `#21`（`37103477910`）**全绿**
+
+### 第二批（sha `58c5823`）：6 文件
+- `QuarkParser.kt`：
+  1. 移除 `requestPuusCookie()` 返回 null 即 `Error(CODE_NEED_COOKIE)` 的硬门槛，
+     改为 `registerPuusCookie()` best-effort（失败仅 `Timber.w`，不中断），删除 `CODE_NEED_COOKIE`。
+  2. token 响应用 `when(code)`：`NEED_PASSWORD_CODE`→NeedPassword、`WRONG_PASSWORD_CODE`→Error、`SUCCESS_CODE`→继续。
+  3. `shareTitle = tokenResponse.data.title`（不再占位空串）。
+  4. 新增第 4 步：`entries.filterNot{it.dir}.map{it.fid}` → `getDownloadUrl(...)` →
+     按 `item.fid to item.download_url` `associate` 成 map，回填各文件直链。
+  5. `toFileInfo(...)` 用 `isDirectory = dir`、`downloadUrl = downloadUrl?.takeIf{it.isNotBlank()}`。
+  6. 新增常量 `QUARK_PR / QUARK_FR / FORCE_VALUE / FIRST_PAGE / PAGE_SIZE / DETAIL_SORT`、
+     `KEY_PR / KEY_FR / KEY_FORCE / KEY_PAGE / KEY_SIZE / KEY_SORT / KEY_FIDS` 与错误码 `CODE_DOWNLOAD_FAILED`。
+     `NEED_PASSWORD_CODE=41011` / `WRONG_PASSWORD_CODE=41012` 仍为占位（带 TODO）。
+- `NetworkModule.kt`：新增 `ResponseCookieInterceptor`（在 `CookieInterceptor` 之后注册）——
+  对 host 为 `quark.cn` 或其子域的响应，取全部 `Set-Cookie`，`substringBefore(';')` 取键值对
+  并用 `"; "` join 后 `cookieStore.save("quark.cn", cookie)`。因 `DownloadEngine` 复用全局
+  `okHttpClient`，CDN 分片请求（host 命中 `quark.cn` 后缀）会自动注入 `__pugs`。
+- `HomeUiState.kt`：`parseErrorLabelRes` 删除 `"QUARK_NEED_COOKIE"` 映射，
+  新增 `"QUARK_DOWNLOAD_FAILED" -> R.string.parse_code_download_failed`。
+- `strings.xml`：删除 `parse_code_need_cookie`；新增
+  `<string name="parse_code_download_failed">获取下载直链失败</string>`。
+- `HomeViewModel.kt`：`download(file)` 的 KDoc 更新（夸克解析器已能为真实文件回填 `downloadUrl`；
+  无直链条目时仅记日志并跳过）。逻辑本身未动。
+- `QuarkParserTest.kt`：删除基于「`__puus` 必需」的两条旧断言；新增 5 条实测校准断言
+  （无 Cookie 仍成功 / title 回填 / 直链按 fid 回填 / 文件夹标记且不请求直链 / download 失败返回 Error）；
+  `FakeQuarkApi` 增加 `tokenTitle / downloadCode / downloadEntries` 参数与 `lastDownloadBody` 记录。
+- CI run `#22`（`37103522188`）**全绿**，artifact **10,326,250 B（≈9.8 MB）**。
+
+- 状态：**CI 已绿**（run#21 / #22）；探测报告见上节。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
@@ -303,5 +412,7 @@
 - 评审清单 §8 P0「构建日志」：**已具备**（run#6 全绿 + artifact `jieyundu-debug-apk` 可下载）。
 - 《要求.md》§5 仍将 `skydoves/Cloudy 1.0.0-alpha01` 列为指定依赖，与当前实现（方案 A 移除）
   已不一致，**待评审方/Owner 出勘误登记**（开发方按铁律不改规格文件）。
-- 夸克 UA 等 27 条 `// TODO(用户抓包):` 待抓包数据。
+- 夸克接口已实测落地（见「夸克接口实测探测报告」与「夸克接口实测结果落地」两节）；
+  剩余待抓包项：`NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE` 真实取值、夸克 PC 客户端精确 UA 串。
+- 百度 / UC / 迅雷三家解析器仍为骨架占位（阶段 9），各接口参数待逐家抓包填充。
 - README 已声明本项目为完全独立开发，未参考任何现有网盘解析工具的源码（AI 辅助 · DeepSeek）。
