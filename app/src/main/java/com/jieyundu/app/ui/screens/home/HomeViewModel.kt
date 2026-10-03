@@ -14,6 +14,8 @@ import com.jieyundu.app.domain.downloader.DownloadEngine
 import com.jieyundu.app.domain.downloader.DownloadTask
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.ParseResult
+import com.jieyundu.app.domain.model.ShareLink
+import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.ParserRegistry
 import com.jieyundu.app.domain.util.LinkExtractor
 import com.jieyundu.app.ui.screens.download.DownloadSessionRegistry
@@ -60,6 +62,9 @@ class HomeViewModel @Inject constructor(
     /** 首页 UI 状态流。 */
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /** 最近一次待解析的链接；用于提取码弹窗提交后带着密码重新解析（阶段 8 整改）。 */
+    private var pendingLink: ShareLink? = null
+
     /**
      * 更新输入框文本，并清除上一次的本地校验错误。
      *
@@ -70,18 +75,19 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 执行解析。
+     * 执行解析（阶段 8 整改：把「需要提取码」转为弹窗，不再中断流程）。
      *
      * 说明：本方法非 suspend；内部协程捕获 [IOException] / [SerializationException] 并转成
      * [ParseResult.Error]，其余异常交回协程框架；[CancellationException] 不吞（C3）。
      */
     fun parse() {
-        val rawText = _uiState.value.inputLink
-        val link = LinkExtractor.extract(rawText)
+        val link = LinkExtractor.extract(_uiState.value.inputLink)
         if (link == null) {
             _uiState.value = _uiState.value.copy(
                 result = null,
-                errorRes = R.string.parse_error_unrecognized
+                errorRes = R.string.parse_error_unrecognized,
+                passwordPrompt = false,
+                passwordErrorRes = null
             )
             return
         }
@@ -89,14 +95,35 @@ class HomeViewModel @Inject constructor(
         if (parser == null) {
             _uiState.value = _uiState.value.copy(
                 result = null,
-                errorRes = R.string.parse_error_unsupported
+                errorRes = R.string.parse_error_unsupported,
+                passwordPrompt = false,
+                passwordErrorRes = null
             )
             return
         }
-        _uiState.value = _uiState.value.copy(isParsing = true, result = null, errorRes = null)
+        startParse(link = link, parser = parser, password = link.password)
+    }
+
+    /**
+     * 启动一次解析。
+     *
+     * 说明（整改二）：链接未携带提取码时 `password` 为 null，照常请求；仅当服务器明确
+     * 返回「需要提取码」时才置 [HomeUiState.passwordPrompt] 弹出输入框。
+     *
+     * @param link 待解析链接。
+     * @param parser 路由到的解析器。
+     * @param password 本次使用的提取码；可为 null。
+     */
+    private fun startParse(link: ShareLink, parser: NetdiskParser, password: String?) {
+        pendingLink = link
+        _uiState.value = _uiState.value.copy(
+            isParsing = true,
+            result = null,
+            errorRes = null
+        )
         viewModelScope.launch(Dispatchers.IO) {
             val result = try {
-                parser.parse(link.rawUrl, link.password)
+                parser.parse(link.rawUrl, password)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (io: IOException) {
@@ -106,8 +133,50 @@ class HomeViewModel @Inject constructor(
                 Timber.e(serialization, "HomeViewModel parse failed: unexpected response body")
                 ParseResult.Error(link.type, CODE_PROTOCOL, CODE_PROTOCOL)
             }
-            _uiState.value = _uiState.value.copy(isParsing = false, result = result)
+            _uiState.value = when {
+                // 服务器要求提取码 → 弹出输入框，流程不中断
+                result is ParseResult.NeedPassword -> _uiState.value.copy(
+                    isParsing = false,
+                    result = null,
+                    passwordPrompt = true,
+                    passwordErrorRes = null
+                )
+                // 提取码错误 → 弹窗保留并提示重试
+                result is ParseResult.Error && result.code == CODE_WRONG_PASSWORD ->
+                    _uiState.value.copy(
+                        isParsing = false,
+                        result = null,
+                        passwordPrompt = true,
+                        passwordErrorRes = R.string.password_error_retry
+                    )
+                else -> _uiState.value.copy(
+                    isParsing = false,
+                    result = result,
+                    passwordPrompt = false,
+                    passwordErrorRes = null
+                )
+            }
         }
+    }
+
+    /**
+     * 弹窗中提交提取码后，带着提取码重新发起解析（阶段 8 整改）。
+     *
+     * @param password 用户输入的提取码。
+     */
+    fun submitPassword(password: String) {
+        val link = pendingLink ?: return
+        val parser = parserRegistry.findParser(link.type) ?: return
+        startParse(link = link, parser = parser, password = password)
+    }
+
+    /** 关闭提取码弹窗（用户取消）。 */
+    fun dismissPasswordPrompt() {
+        pendingLink = null
+        _uiState.value = _uiState.value.copy(
+            passwordPrompt = false,
+            passwordErrorRes = null
+        )
     }
 
     /**
@@ -152,5 +221,8 @@ class HomeViewModel @Inject constructor(
 
         /** 本模块自有的协议错误码。 */
         const val CODE_PROTOCOL = "APP_PROTOCOL_ERROR"
+
+        /** 解析器在提取码错误时返回的机器码（与 QuarkParser 对齐），UI 据此保留弹窗并提示重试。 */
+        const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
     }
 }

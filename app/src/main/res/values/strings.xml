@@ -26,7 +26,14 @@
     <string name="parse_error_unrecognized">未能从输入中识别分享链接</string>
     <string name="parse_error_unsupported">暂不支持该网盘</string>
     <string name="parse_need_password">该分享需要提取码</string>
-    <string name="parse_need_password_hint">请在分享链接后附带提取码，例如 ?pwd=xxxx</string>
+    <string name="parse_need_password_hint">请输入提取码后重新解析</string>
+
+    <!-- 提取码弹窗（阶段 8 整改）-->
+    <string name="password_dialog_title">该分享需要提取码</string>
+    <string name="password_dialog_hint">请输入提取码</string>
+    <string name="password_error_retry">提取码错误，请重试</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确定</string>
     <string name="parse_result_empty">该分享内没有可用文件</string>
     <string name="parse_error_format">解析失败：%1$s</string>
     <string name="cd_open_settings">打开设置</string>

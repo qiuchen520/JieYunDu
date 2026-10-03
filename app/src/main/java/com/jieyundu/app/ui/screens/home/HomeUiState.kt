@@ -17,12 +17,16 @@ import com.jieyundu.app.domain.model.ParseResult
  * @property isParsing 是否正在解析。
  * @property result 解析结果（domain 层模型）；尚未解析或已清空时为 null。
  * @property errorRes 本地校验类错误（未识别链接 / 不支持网盘）的文案资源；无错误时为 null。
+ * @property passwordPrompt 是否应弹出「输入提取码」弹窗（阶段 8 整改）。
+ * @property passwordErrorRes 弹窗内的错误提示（如提取码错误）；无错误时为 null。
  */
 data class HomeUiState(
     val inputLink: String = "",
     val isParsing: Boolean = false,
     val result: ParseResult? = null,
-    @StringRes val errorRes: Int? = null
+    @StringRes val errorRes: Int? = null,
+    val passwordPrompt: Boolean = false,
+    @StringRes val passwordErrorRes: Int? = null
 ) {
     /** 输入非空且当前未在解析时，允许触发解析。 */
     val canParse: Boolean
@@ -60,6 +64,7 @@ internal fun parseErrorLabelRes(code: String): Int = when (code) {
     "QUARK_NEED_COOKIE" -> R.string.parse_code_need_cookie
     "QUARK_TOKEN_FAILED" -> R.string.parse_code_token_failed
     "QUARK_DETAIL_FAILED" -> R.string.parse_code_detail_failed
+    "QUARK_WRONG_PASSWORD" -> R.string.password_error_retry
     "QUARK_NETWORK_ERROR", "APP_NETWORK_ERROR" -> R.string.parse_code_network
     "QUARK_PROTOCOL_ERROR", "APP_PROTOCOL_ERROR" -> R.string.parse_code_protocol
     else -> R.string.parse_code_unknown
