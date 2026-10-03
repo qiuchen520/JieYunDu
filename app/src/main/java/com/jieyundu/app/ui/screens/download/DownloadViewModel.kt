@@ -42,10 +42,11 @@ data class RememberedTask(
 /**
  * 会话内「任务 ID → 登记信息」表。
  *
- * 存在理由：Room 的下载进度表（`download_progress`）只持久化进度数值，不保存文件名与落盘路径；
- * 而下载列表需要展示文件名、「删除本地文件」需要落盘路径，故由本注册表在内存中登记本次会话
- * 启动的任务。应用重启后历史任务的文件名/路径会缺失，此时文件名回退为「未命名任务」占位，
- * 删除按钮仅移除进度记录、无法定位本地文件（见 [DownloadViewModel.deleteTask] 的说明）。
+ * 存在理由：Room 的下载进度表（`download_progress`）持久化进度数值与落盘路径，
+ * 但**不保存文件名**；而下载列表需要展示文件名，故由本注册表在内存中登记本次会话启动的
+ * 任务文件名（[RememberedTask.savePath] 现主要作为会话内快速路径，持久化路径见
+ * `DownloadProgressState.savePath`）。应用重启后文件名会缺失，此时文件名回退为「未命名任务」
+ * 占位；落盘路径已持久化，删除按钮仍可定位本地文件（见 [DownloadViewModel.deleteTask]）。
  *
  * 线程约束：仅用 [MutableStateFlow] 做线程安全的原子替换，可在任意线程调用。
  */
@@ -112,9 +113,9 @@ enum class DownloadFilter(@StringRes val labelRes: Int) {
 /**
  * 下载列表条目：持久化进度 + 会话内文件名/落盘路径。
  *
- * @property progress 进度快照（含状态、字节数、分片数）。
+ * @property progress 进度快照（含状态、字节数、分片数、落盘路径）。
  * @property fileName 文件名；会话内未登记时为 null。
- * @property savePath 目标文件绝对路径；会话内未登记时为 null。
+ * @property savePath 目标文件绝对路径；优先会话登记值，否则回退 `progress.savePath`，两者皆无时为 null。
  */
 data class DownloadListItem(
     val progress: DownloadProgressState,
@@ -157,7 +158,9 @@ class DownloadViewModel @Inject constructor(
                 DownloadListItem(
                     progress = progress,
                     fileName = remembered?.fileName,
-                    savePath = remembered?.savePath
+                    // 会话内登记优先（含文件名场景），否则回退到持久化的 savePath，
+                    // 使进程重启后仍能定位并删除本地文件（【修订 JYD-SAVEPATH-2026-10-03】）。
+                    savePath = remembered?.savePath ?: progress.savePath
                 )
             }
             .filter { item -> currentFilter.matches(item.progress.state) }
