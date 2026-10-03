@@ -44,8 +44,17 @@ object Dimens {
     /** 圆角下限（9.2 规定不得小于 16dp）。 */
     val MinCorner: Dp = 16.dp
 
-    /** 按钮圆角。 */
-    val ButtonCorner: Dp = 20.dp
+    /** 按钮圆角（平板，≈ 高度 56dp × 0.33）。 */
+    val ButtonCorner: Dp = 18.dp
+
+    /** 按钮圆角（手机，≈ 高度 48dp × 0.33）。 */
+    val ButtonCornerCompact: Dp = 16.dp
+
+    /** 输入框圆角（平板，≈ 高度 64dp × 0.33）。 */
+    val InputCorner: Dp = 21.dp
+
+    /** 输入框圆角（手机，≈ 高度 52dp × 0.33）。 */
+    val InputCornerCompact: Dp = 17.dp
 
     /** 按钮高度（平板）。 */
     val ButtonHeight: Dp = 56.dp
@@ -137,4 +146,18 @@ object Dimens {
 
     /** 进度条圆角（9.6.4：3dp；组件明文规格，优先于 9.2 的 16dp 下限）。 */
     val ProgressBarCorner: Dp = 3.dp
+
+    // --- 阶段 8 整改（UI 重构）---
+
+    /** 主内容区顶部内边距（平板整改：内容靠上、不贴顶）。 */
+    val ContentTopPadding: Dp = 32.dp
+
+    /** 悬浮标题栏左右画面边距（整改：左右各留 24dp）。 */
+    val TitleBarMargin: Dp = 24.dp
+
+    /** 空态图标边长（下载列表空态）。 */
+    val EmptyIconSize: Dp = 64.dp
+
+    /** 背板光斑模糊半径（API 31+ 生效，低版本自动忽略）。 */
+    val BackdropBlurRadius: Dp = 48.dp
 }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -22,8 +23,8 @@ import androidx.compose.ui.platform.LocalDensity
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
 
-/** 背景色块透明度。 */
-private const val BLOB_ALPHA = 0.55f
+/** 背景色块透明度（阶段 8 整改：提高以让上层玻璃明显透出紫蓝渐变）。 */
+private const val BLOB_ALPHA = 0.85f
 
 /** 噪声点半径（像素）。 */
 private const val NOISE_DOT_RADIUS_PX = 0.5f
@@ -60,7 +61,7 @@ fun GlassBackground(
  */
 @Composable
 private fun BackdropBlobs(modifier: Modifier = Modifier) {
-    Box(modifier = modifier) {
+    Box(modifier = modifier.blur(Dimens.BackdropBlurRadius)) {
         Box(
             modifier = Modifier
                 .offset(x = Dimens.BackdropBlobLargeOffset, y = Dimens.BackdropBlobLargeOffset)

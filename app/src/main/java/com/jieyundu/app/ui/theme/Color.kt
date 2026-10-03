@@ -86,4 +86,15 @@ object JieYunDuColors {
 
     /** 弱化文字（白色 50%，9.6.4 速度文字）。 */
     val TextFaint: Color = Color(0x80FFFFFF)
+
+    // --- 阶段 8 整改（UI 重构）---
+
+    /** 空态灰色图标（白色 25%）。 */
+    val EmptyStateIcon: Color = Color(0x40FFFFFF)
+
+    /** 玻璃折射渐变：紫色端（低透明，模拟透出背板）。 */
+    val GlassRefractionPurple: Color = Color(0x336C4CE0)
+
+    /** 玻璃折射渐变：蓝色端（低透明，模拟透出背板）。 */
+    val GlassRefractionBlue: Color = Color(0x262F6BFF)
 }

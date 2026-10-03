@@ -1,5 +1,5 @@
 // 文件：GlassPanel.kt
-// 职责：液态玻璃面板——半透明白底 + 边缘高光 + 内阴影
+// 职责：液态玻璃面板——半透明白底 + 折射渐变 + 边缘高光 + 内阴影
 // 依赖：Compose foundation / ui、JieYunDuColors、Dimens
 // 协议：AGPL-3.0
 
@@ -31,7 +31,7 @@ private const val INNER_SHADOW_BAND_FACTOR = 3f
 /**
  * 液态玻璃面板。
  *
- * 说明（9.2）：白色 8% 底 + 白色 15% 边框 + 左上高光渐变线 + 底部内阴影。
+ * 说明（9.2 + 阶段 8 整改）：白色 8% 底 + 折射渐变 + 白色 15% 边框 + 左上高光 + 底部内阴影。
  *
  * 注意：本实现为 §9.8 降级固化方案（用 Compose 原生绘制近似玻璃观感，
  * 不依赖 Cloudy 的背景模糊 API），详见阶段 6 交付说明。
@@ -54,6 +54,7 @@ fun GlassPanel(
             .clip(shape)
             .background(color = JieYunDuColors.GlassFill, shape = shape)
             .drawWithContent {
+                drawRefraction(shape)
                 drawContent()
                 drawEdgeHighlight(shape)
                 drawInnerShadow(shape)
@@ -62,6 +63,27 @@ fun GlassPanel(
             .padding(contentPadding),
         content = content
     )
+}
+
+/**
+ * 沿面板轮廓绘制「折射」渐变（阶段 8 整改）。
+ *
+ * 说明：以低透明紫 / 蓝色斜向渐变铺满面板内部，模拟玻璃透出背板彩色光斑，
+ * 避免面板看上去像纯黑塑料；绘制层级在内容之下、高光与内阴影之上方另绘。
+ *
+ * @param shape 面板形状。
+ */
+private fun DrawScope.drawRefraction(shape: Shape) {
+    val brush = Brush.linearGradient(
+        colors = listOf(
+            JieYunDuColors.GlassRefractionPurple,
+            JieYunDuColors.GlassHighlightClear,
+            JieYunDuColors.GlassRefractionBlue
+        ),
+        start = Offset.Zero,
+        end = Offset(size.width, size.height)
+    )
+    drawOutline(outline = shape.createOutline(size, layoutDirection, this), brush = brush)
 }
 
 /**
