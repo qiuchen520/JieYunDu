@@ -1,35 +1,59 @@
 // 文件：CookieStore.kt
-// 职责：内存态 Cookie 仓库，按域名后缀保存与取出 Cookie 串
-// 依赖：无（纯 Kotlin + JVM 并发容器，不依赖 Android）
+// 职责：按域名后缀保存与取出 Cookie 串，并做加密持久化（EncryptedSharedPreferences）
+// 依赖：androidx.security.crypto（EncryptedSharedPreferences）、Hilt、Timber
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.data.remote
 
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import timber.log.Timber
 
 /**
- * 内存态 Cookie 仓库。
+ * Cookie 仓库：内存热缓存 + 加密持久化。
  *
- * 背景（依据《阶段 6 交付后整改指令》硬伤 1）：解析器在握手阶段拿到的 Cookie
- * （如夸克首页返回的 `__puus`）必须能传递到后续 Retrofit 请求。QuarkApi 的方法
- * 签名在《要求.md》7.6 中已定死、不允许增加 Header / Cookie 参数，故采用
- * 「解析器写入仓库 → CookieInterceptor 按域名注入」的旁路方案（方案 B）：
+ * 背景（依据《阶段 6 交付后整改指令》硬伤 1 +【修订 JYD-CHANGE-2026-10-03】阶段 11）：
+ * 解析器在握手阶段拿到的 Cookie（如夸克首页返回的 `__puus`）必须能传递到后续 Retrofit
+ * 请求；QuarkApi 的方法签名在《要求.md》7.6 中已定死、不允许增加 Header / Cookie 参数，
+ * 故采用「解析器写入仓库 → CookieInterceptor 按域名注入」的旁路方案：
  * 解析器只负责拿 Cookie，注入由网络层统一完成，职责清晰且不污染接口签名。
  *
- * 线程安全：读写均基于 [ConcurrentHashMap]，可在多协程并发下使用。
+ * 持久化（阶段 11）：登录态 Cookie 用 [EncryptedSharedPreferences]（AES-256）落盘，
+ * 使 App 重启后仍可复用登录态；若设备密钥库异常导致加密存储不可用，则**降级为纯内存**
+ * （仅本次进程有效），绝不因存储失败而崩溃（D15 / §9.8 降级精神）。
  *
- * 生命周期：App 进程内存态，进程结束即失效（阶段 7 之后再评估是否持久化）。
+ * 线程安全：读写均基于 [ConcurrentHashMap] 与 `SharedPreferences`，可在多协程并发下使用。
+ *
+ * @param context 应用上下文（用于打开加密存储）。
  */
 @Singleton
-class CookieStore @Inject constructor() {
+class CookieStore @Inject constructor(
+    @ApplicationContext context: Context
+) {
 
     /** 域名后缀 -> 该域可用的 Cookie 串（形如 `__puus=xxx`）。 */
     private val byDomainSuffix = ConcurrentHashMap<String, String>()
 
+    /** 加密存储；不可用时为 null（降级为纯内存）。 */
+    private val prefs: SharedPreferences? = createEncryptedPreferences(context)
+
+    init {
+        // 启动时把已加密落盘的 Cookie 载回内存，保证重启后登录态可用。
+        prefs?.all?.forEach { (key, value) ->
+            if (value is String && value.isNotBlank()) {
+                byDomainSuffix[key] = value
+            }
+        }
+    }
+
     /**
-     * 保存 / 覆盖某个域名后缀下的 Cookie。
+     * 保存 / 覆盖某个域名后缀下的 Cookie，并加密落盘。
      *
      * @param domainSuffix 域名后缀（例如 `quark.cn`，可同时覆盖 pan.quark.cn 与
      *   drive-pc.quark.cn）。
@@ -38,6 +62,7 @@ class CookieStore @Inject constructor() {
     fun save(domainSuffix: String, cookie: String) {
         if (domainSuffix.isBlank() || cookie.isBlank()) return
         byDomainSuffix[domainSuffix] = cookie
+        prefs?.edit()?.putString(domainSuffix, cookie)?.apply()
     }
 
     /**
@@ -54,8 +79,36 @@ class CookieStore @Inject constructor() {
             .firstOrNull { (suffix, _) -> host == suffix || host.endsWith(".$suffix") }
             ?.value
 
-    /** 清空全部 Cookie。 */
+    /** 清空全部 Cookie（内存 + 加密存储）。 */
     fun clear() {
         byDomainSuffix.clear()
+        prefs?.edit()?.clear()?.apply()
+    }
+
+    /**
+     * 打开加密存储；失败时记录日志并返回 null（降级纯内存）。
+     *
+     * @param context 应用上下文。
+     * @return 加密 [SharedPreferences]；不可用时 null。
+     */
+    private fun createEncryptedPreferences(context: Context): SharedPreferences? = try {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            context,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    } catch (exception: Exception) {
+        Timber.e(exception, "CookieStore encrypted storage unavailable, fallback to in-memory")
+        null
+    }
+
+    private companion object {
+        /** 加密存储文件名。 */
+        const val PREFS_NAME = "jieyundu_cookie_store"
     }
 }

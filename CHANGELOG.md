@@ -653,6 +653,22 @@
 ### 规格登记
 - 《要求.md》：就地更新 §4.4 下载页实现说明；追加【修订 JYD-SAVEPATH-2026-10-03】记录块。
 
+## 阶段 11 · WebView 登录 + 登录态 Cookie 两级校验（JYD-LOGIN-2026-10-03）
+> 依据 Owner 裁决「方案 A 为主 + 拦截兜底」，及《WebView登录与Cookie提取实践.txt》。
+> 核心：Cookie 出现 ≠ 登录成功，须经网络校验。本批次不动阶段 8 布局与配色。
+- `UserAgentProvider.kt`：填充 `quarkUserAgent`（API/客户端 UA，quark-cloud-drive/2.5.20…）；
+  新增 `quarkWebUserAgent`（网页/登录态 UA，Chrome/130 … QuarkPC/6.0.8.649）。两套 UA 不混用。
+- `CookieExtractor.kt`：登录判定语义由「任一命中」改为「必需字段全部命中」；补 UC（__puus+__pus）；
+  夸克登录页 URL 补 ?fr=pc&platform=pc。
+- 新增 `domain/login/LoginValidator.kt`：网络校验（夸克/UC account/info），CancellationException 原样抛出。
+- 新增 `ui/screens/login/NetdiskLoginViewModel.kt`：登录目标状态 + 两级校验 + 节流/同凭证重试/在途锁
+  + 手动保存/粘贴 + 登出。
+- `WebViewLoginScreen.kt`：桌面 UA + 缩放/宽视口；手动「保存」「粘贴 Cookie」兜底；教程与校验提示。
+- `NetdiskPickerScreen.kt`：展示登录态并提供「退出登录」。
+- `JieYunDuNavHost.kt`：网盘页承载「选择页 ↔ 登录页」状态切换。
+- `strings.xml`：新增阶段 11 手动兜底 / 校验 / 教程 / 退出文案。
+- 《要求.md》：追加【修订 JYD-LOGIN-2026-10-03】记录块。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

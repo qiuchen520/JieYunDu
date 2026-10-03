@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,12 +36,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
 import com.jieyundu.app.ui.glass.GlassPanel
 import com.jieyundu.app.ui.screens.download.DownloadScreen
 import com.jieyundu.app.ui.screens.home.HomeScreen
+import com.jieyundu.app.ui.screens.login.NetdiskLoginViewModel
 import com.jieyundu.app.ui.screens.login.NetdiskPickerScreen
+import com.jieyundu.app.ui.screens.login.WebViewLoginScreen
 import com.jieyundu.app.ui.screens.settings.SettingsScreen
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
@@ -88,6 +92,7 @@ fun JieYunDuNavHost(
     val onSelect: (Int) -> Unit = { index -> selectedOrdinal = index }
     val selectedTab = tabs[selectedOrdinal.coerceIn(0, tabs.lastIndex)]
     val onOpenSettings: () -> Unit = { selectedOrdinal = JieYunDuTab.SETTINGS.ordinal }
+    val loginViewModel: NetdiskLoginViewModel = hiltViewModel()
 
     if (rememberIsExpandedLayout()) {
         Row(modifier = modifier.fillMaxSize()) {
@@ -100,7 +105,11 @@ fun JieYunDuNavHost(
             )
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 AppTitleBar(onOpenSettings = onOpenSettings)
-                NavContent(tab = selectedTab, modifier = Modifier.weight(1f).fillMaxWidth())
+                NavContent(
+                    tab = selectedTab,
+                    loginViewModel = loginViewModel,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
             }
         }
     } else {
@@ -113,7 +122,11 @@ fun JieYunDuNavHost(
                 modifier = Modifier.fillMaxWidth(),
                 preset = preset
             )
-            NavContent(tab = selectedTab, modifier = Modifier.weight(1f).fillMaxWidth())
+            NavContent(
+                tab = selectedTab,
+                loginViewModel = loginViewModel,
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
         }
     }
 }
@@ -216,18 +229,52 @@ private fun SettingsGlyph(modifier: Modifier = Modifier) {
 /**
  * 页面内容宿主。
  *
+ * 说明：「网盘」页需承载两级状态——网盘选择页与内嵌 WebView 登录页。二者由
+ * [NetdiskLoginViewModel.loginTarget] 驱动：非空即显示登录页，登录成功/关闭后回到选择页。
+ *
  * @param tab 当前页签。
+ * @param loginViewModel 网盘登录状态 ViewModel。
  * @param modifier 外部修饰符。
  */
 @Composable
-private fun NavContent(tab: JieYunDuTab, modifier: Modifier = Modifier) {
+private fun NavContent(
+    tab: JieYunDuTab,
+    loginViewModel: NetdiskLoginViewModel,
+    modifier: Modifier = Modifier
+) {
     Crossfade(targetState = tab, modifier = modifier, label = "navContent") { current ->
         when (current) {
             JieYunDuTab.HOME -> HomeScreen(modifier = Modifier.fillMaxSize())
-            JieYunDuTab.NETDISK -> NetdiskPickerScreen(modifier = Modifier.fillMaxSize())
+            JieYunDuTab.NETDISK -> NetdiskSection(loginViewModel = loginViewModel)
             JieYunDuTab.DOWNLOAD -> DownloadScreen(modifier = Modifier.fillMaxSize())
             JieYunDuTab.SETTINGS -> SettingsScreen(modifier = Modifier.fillMaxSize())
         }
+    }
+}
+
+/**
+ * 网盘页内容：登录页与选择页二选一。
+ *
+ * @param loginViewModel 网盘登录状态 ViewModel。
+ */
+@Composable
+private fun NetdiskSection(loginViewModel: NetdiskLoginViewModel) {
+    val loginTarget by loginViewModel.loginTarget.collectAsState()
+    val loggedIn by loginViewModel.loggedIn.collectAsState()
+    val target = loginTarget
+    if (target != null) {
+        WebViewLoginScreen(
+            viewModel = loginViewModel,
+            type = target,
+            modifier = Modifier.fillMaxSize()
+        )
+    } else {
+        NetdiskPickerScreen(
+            modifier = Modifier.fillMaxSize(),
+            loggedInTypes = loggedIn,
+            onLogin = loginViewModel::startLogin,
+            onLogout = loginViewModel::logout
+        )
     }
 }
 

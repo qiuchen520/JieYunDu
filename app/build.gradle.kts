@@ -103,6 +103,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.timber)
 
+    // --- 安全存储（JYD-CHANGE-2026-10-03 授权引入；Apache-2.0）---
+    // CookieStore 的加密持久化（EncryptedSharedPreferences）。
+    implementation(libs.androidx.security.crypto)
+
     // --- 测试（kotlin-test：Apache-2.0）---
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)

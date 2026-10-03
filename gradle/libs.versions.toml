@@ -22,6 +22,7 @@ coil = "2.5.0"
 timber = "5.0.1"
 kotlinxSerialization = "1.6.3"
 coroutines = "1.7.3"
+securityCrypto = "1.1.0-alpha06"
 
 # SDK 档位（要求.md 第五部分）
 compileSdk = "34"
@@ -74,6 +75,10 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 # 玻璃观感改由 §9.8 降级路径（Compose 原生绘制）实现，代码不引用任何 Cloudy API。
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
+
+# --- 安全存储（JYD-CHANGE-2026-10-03 授权引入；Apache-2.0）---
+# 用于 CookieStore 的加密持久化（EncryptedSharedPreferences）。
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 
 # --- 测试（Apache-2.0；使用 kotlin-test 而非 junit，规避 EPL-1.0）---
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }

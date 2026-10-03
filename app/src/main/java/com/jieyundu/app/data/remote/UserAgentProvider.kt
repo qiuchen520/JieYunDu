@@ -17,9 +17,25 @@ import javax.inject.Singleton
 @Singleton
 class UserAgentProvider @Inject constructor() {
 
-    // TODO(用户抓包): 填入夸克 PC 客户端 User-Agent 原文
-    /** 夸克 PC 客户端 User-Agent。 */
-    val quarkUserAgent: String = ""
+    /**
+     * 夸克 API / 客户端 User-Agent（取链与下载链路使用）。
+     *
+     * 来源：《抓包事实.md》第 1 节「API / 客户端」一行。
+     */
+    val quarkUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0.4896.160 " +
+            "Electron/18.3.5.12-a038f7b798 Safari/537.36 Channel/pckk_other_ch"
+
+    /**
+     * 夸克网页 / 登录态 User-Agent（内嵌 WebView 登录页使用）。
+     *
+     * 来源：《抓包事实.md》第 1 节「网页 / 登录态」一行。
+     * 注意：网页 UA 与 API UA **不得混用**（第 1 节明确要求）。
+     */
+    val quarkWebUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 QuarkPC/6.0.8.649"
 
     /** 夸克 Referer。 */
     val quarkReferer: String = "https://pan.quark.cn/"

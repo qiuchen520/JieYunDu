@@ -75,12 +75,27 @@
     <string name="settings_version_format">版本 %1$s</string>
     <string name="settings_license">开源协议：AGPL-3.0</string>
 
-    <!-- 网盘页（阶段 11 入口，本轮先搭 UI）-->
+    <!-- 网盘页（阶段 11）-->
     <string name="tab_netdisk">网盘</string>
     <string name="netdisk_picker_title">选择网盘</string>
     <string name="netdisk_picker_subtitle">登录对应网盘后，即可解析与下载</string>
     <string name="netdisk_login_action">登录</string>
-    <string name="netdisk_login_hint">登录功能将在下一轮接入</string>
+    <string name="netdisk_login_hint">点击后在内嵌网页完成登录</string>
+    <string name="netdisk_logged_in">已登录</string>
+
+    <!-- 网页登录（阶段 11）-->
+    <string name="webview_login_title">登录 %1$s</string>
+    <string name="webview_login_hint">请在网页中完成登录，成功后会自动保存登录态</string>
+    <string name="webview_login_close">关闭</string>
+    <string name="webview_login_success">登录成功，登录态已保存</string>
+    <string name="webview_login_save">保存登录态</string>
+    <string name="webview_login_paste">粘贴 Cookie</string>
+    <string name="webview_login_validating">正在校验登录态…</string>
+    <string name="webview_login_tutorial">先在网页里完成登录，App 会自动检测；若没反应，点「保存登录态」或「粘贴 Cookie」。</string>
+    <string name="cookie_paste_title">手动粘贴 Cookie</string>
+    <string name="cookie_paste_hint">请粘贴完整 Cookie 串（需包含 __pus 与 __puus）</string>
+    <string name="netdisk_logout_action">退出登录</string>
+    <string name="cd_close_login">关闭登录页</string>
 
     <!-- 输入区（阶段 8 布局修订）-->
     <string name="link_code_hint">提取码（选填）</string>
