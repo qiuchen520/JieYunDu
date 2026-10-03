@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 工具 / 备份（不入库）
+.operit/
+.backup/
