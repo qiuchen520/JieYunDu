@@ -65,6 +65,14 @@
   其真实接入待 CI 可用后单独立项验证。
 - 状态：**等待 GitHub Actions 验证**（P0 构建日志由 Owner 回填评审清单 §8）。
 
+#### 后续（CI run#3 后，Owner 裁决 2026-10-03 · 方案 A）
+- CI 实跑证明 cloudy 确实阻断构建（详见下节“CI 实跑结果”run#3）。
+- Owner 裁决：**方案 A —— 删除 cloudy 依赖，改走 §9.8 降级路径**。
+- 已执行：`libs.versions.toml` 删除 `cloudy` 版本与库声明；`app/build.gradle.kts` 删除
+  `implementation(libs.cloudy)`；`settings.gradle.kts` 移除仅因 cloudy 而加的 JitPack 仓库。
+- 代码自始未引用任何 Cloudy API，故删除依赖不需要改动任何 Kotlin 源码。
+- 状态：**以上删除 + 本 CHANGELOG 更新合并为一次推送，触发 CI run#4 验证。**
+
 ## 阶段 6 交付后整改（依据《阶段 6 交付后整改指令（整合版）》）
 
 ### 硬伤 1 修复：`__puus` Cookie 通道（方案 B）
@@ -103,14 +111,28 @@
 结论：11/11 文件 R7 四行头齐全（依据工具扫描结果逐一核对）。
 
 ### 遗留 1：Cloudy 依赖可用性
-- 现状：JitPack 在本机不可达，无法离线确认 `com.github.skydoves:cloudy:1.0.0-alpha01`。
+- 现状：JitPack 在本机不可达；经 CI 实跑确认 **cloudy 确实阻断构建**（见下）。
 - 处置：先推送看 CI；若绿则保留；若红且错误指向 cloudy，**贴日志交 Owner 裁决，不擅自注释**。
+- 结论：**已确认红，且根因指向 cloudy → 已按指令停止并上报；Owner 已裁决「方案 A：删除 cloudy」（见上一节“后续”）。**
 
-## CI 实跑结果（待 Actions 完成后回填）
-- workflow run 编号：待填
-- 状态：待填
-- artifact：待填
-- 失败原因摘要（如有）：待填
+## CI 实跑结果（已回填，2026-10-03）
+仓库 `qiuchen520/JieYunDu`，仓库 `.github/workflows/build.yml` 触发（每次 push main 触发一轮）。
+
+| run | head sha | 失败步骤 | 原因 |
+|---|---|---|---|
+| #1 | `3c9358b` | Set up Gradle | `Error: Gradle version 8.2.2 does not exist`（**真 bug**：Gradle 无 8.2.2 发行版，8.2.2 是 AGP 版本号） |
+| #2 | `c407d14` | Build Debug APK | `Invalid catalog definition: alias 'androidx-compose-material3-window-size-class' ... contains a reserved name`（**真 bug**：目录别名含 Gradle 保留字 `class`） |
+| #3 | `e36d0d3` | Build Debug APK | `:app:checkDebugAarMetadata` 31 条 AAR 元数据错误，要求 compileSdk≥35 / AGP≥8.6（**根因：cloudy**） |
+| #4 | 本次推送 | 待验证 | 已按方案 A 删除 cloudy，预期通过（结果于后续回填） |
+
+- artifact：run#1–#3 **无**（构建从未成功）；run#4 待验证。
+- 修复记录（均已推送）：
+  - #1 → `gradle/wrapper/gradle-wrapper.properties` 与 workflow 统一改 Gradle **8.2.1**；README 同步。
+  - #2 → `libs.versions.toml` 别名改 `androidx-compose-material3-window-size`，`app/build.gradle.kts` 引用同步。
+- #3 根因证据：`com.github.skydoves:cloudy:1.0.0-alpha01`（Maven Central）POM 依赖
+  `kotlin-stdlib:2.4.0` + `org.jetbrains.compose.*:1.11.1`，把整条 androidx 链拉高
+  （core-ktx 1.19.0 / lifecycle 2.11.0 / compose 1.11.4 / transition 1.6.0）。
+- 状态：**Owner 已裁决方案 A；cloudy 已删除，随本文件一并推送，等待 run#4 验证。**
 
 ## 待办 / 已知项
 - 评审清单 §1、§2 同步（评审方执行）。

@@ -22,9 +22,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Cloudy 发布于 JitPack（§5 指定依赖 com.github.skydoves:cloudy:1.0.0-alpha01），
-        // 缺少此仓库会导致依赖解析失败。
-        maven { url = uri("https://jitpack.io") }
+        // 注：曾为 cloudy（com.github.skydoves:cloudy:1.0.0-alpha01）加入 JitPack 仓库；
+        // 该依赖已按 Owner 裁决（方案 A）移除，JitPack 仓库随之移除，减少无用第三方仓库。
     }
 }
 

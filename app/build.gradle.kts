@@ -98,9 +98,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
-    // --- 图片 / 玻璃效果 / 日志 ---
+    // --- 图片 / 日志 ---
+    // cloudy 依赖已按 Owner 裁决（方案 A）移除，玻璃观感走 §9.8 降级路径（Compose 原生绘制）。
     implementation(libs.coil.compose)
-    implementation(libs.cloudy)
     implementation(libs.timber)
 
     // --- 测试（kotlin-test：Apache-2.0）---

@@ -19,7 +19,6 @@ okhttp = "4.12.0"
 retrofit = "2.9.0"
 retrofitKotlinxSerialization = "1.0.0"
 coil = "2.5.0"
-cloudy = "1.0.0-alpha01"
 timber = "5.0.1"
 kotlinxSerialization = "1.6.3"
 coroutines = "1.7.3"
@@ -68,9 +67,12 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 
-# --- 图片 / 玻璃效果 / 日志 ---
+# --- 图片 / 日志 ---
+# 注：cloudy 依赖已按 Owner 裁决（方案 A）移除。原 com.github.skydoves:cloudy:1.0.0-alpha01
+# 的 POM 依赖 kotlin-stdlib:2.4.0 + org.jetbrains.compose.*:1.11.1，会把 androidx 依赖链整体
+# 拉高到要求 compileSdk≥35 / AGP≥8.6，与本项目 compileSdk34 / AGP8.2.2 档位冲突。
+# 玻璃观感改由 §9.8 降级路径（Compose 原生绘制）实现，代码不引用任何 Cloudy API。
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
-cloudy = { module = "com.github.skydoves:cloudy", version.ref = "cloudy" }
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 
 # --- 测试（Apache-2.0；使用 kotlin-test 而非 junit，规避 EPL-1.0）---
