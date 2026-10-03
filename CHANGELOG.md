@@ -548,6 +548,34 @@
 - 改动文件：《要求.md》《CHANGELOG.md》《HomeScreen.kt》《LinkInputCard.kt》《Dimens.kt》。
 - 状态：见下方「推送与 CI」记录。
 
+## 阶段 8 视觉基准级改造 · 浅色 Area 风（2026-10-03）
+
+> 依据 Owner 裁决：选定「浅色版 Area UI」为视觉基准（原两张深色版作废），
+> 整体由深色切换为浅色；所有既有玻璃组件改配色，不新写一套。
+
+### 颜色（Color.kt，常量同名改值，引用方零改名即可编译）
+- 背景 #F5F5F7；卡片白 95% #F2FFFFFF；主色 #4A6CF7；主色浅底 #E8EEFF
+- 文字主 #1C1C1E / 次 #8E8E93 / 三级 #AEAEB2；边框·分隔 #E5E5EA；输入框底 #F2F2F7
+- 进度底 #E5E5EA / 填充 #4A6CF7；外阴影黑 4%；噪声改暗点（黑 1.5%）
+- 新增 Primary / PrimaryLight / OnPrimary / Shadow / InputFieldFill 等；GlassRefraction* 置透明停用
+
+### 主题与尺寸
+- Theme.kt：darkColorScheme → lightColorScheme
+- themes.xml：窗口底色 #FF0A0A0F → #FFF5F5F7；windowLightStatusBar true；父主题改 Material.Light
+- Dimens：CardCorner 24 → 16dp；新增 CardElevation 6dp（近似 8dp 模糊）
+
+### 组件改造
+- GlassPanel：新增 Modifier.shadow 卡片外阴影（ambient/spot = Shadow）
+- GlassBackground：光斑透明度 0.85 → 0.30（角落极淡，避免“聚光灯”抢戏）
+- GlassButton：新增 contentColor 参数（默认主文字色，主色按钮传白）
+- LinkInputCard / PasswordDialog：输入框底改 InputFieldFill；解析 / 确认按钮改主色蓝底 + 白字
+- TopGlassNavBar：选中态改主色蓝字、未选中改灰字 #8E8E93
+- ParseResultCard / JieYunDuNavHost：圆形下载 / 设置图标改主色蓝
+- DownloadItem：进度条沿用常量，自动变浅灰底 + 蓝填充
+- MainActivity：注释「深色背板」→「浅色背板」
+
+- 状态：见「推送与 CI」记录。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
