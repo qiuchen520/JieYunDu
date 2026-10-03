@@ -5,6 +5,7 @@
 
 package com.jieyundu.app.domain.parser.quark
 
+import android.test.mock.MockContext
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
@@ -165,7 +166,7 @@ class QuarkParserTest {
     /** 硬伤 2 断言：成功取得的 `__puus` 必须被登记进 CookieStore，供后续请求注入。 */
     @Test
     fun parse_registersPuusCookieIntoStore() = runTest {
-        val store = CookieStore()
+        val store = CookieStore(MockContext())
         val parser = newParser(cookieStore = store)
         parser.parse(SHARE_URL, "1234")
         assertEquals(HOME_PUUS_COOKIE, store.findForHost("drive-pc.quark.cn"))
@@ -191,7 +192,7 @@ class QuarkParserTest {
     private fun newParser(
         api: QuarkApi = FakeQuarkApi(),
         homeCookie: String? = HOME_PUUS_COOKIE,
-        cookieStore: CookieStore = CookieStore()
+        cookieStore: CookieStore = CookieStore(MockContext())
     ): QuarkParser = QuarkParser(
         api = api,
         okHttpClient = homeClient(homeCookie),
