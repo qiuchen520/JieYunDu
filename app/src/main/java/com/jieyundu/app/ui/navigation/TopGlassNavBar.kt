@@ -308,7 +308,7 @@ private fun NavLabel(text: String, selected: Boolean, pressed: Boolean, pressSpe
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         fontWeight = FontWeight.Medium,
-        color = if (selected) JieYunDuColors.TextPrimary else JieYunDuColors.TextTertiary,
+        color = if (selected) JieYunDuColors.Primary else JieYunDuColors.TextSecondary,
         modifier = Modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale
