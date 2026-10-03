@@ -172,4 +172,21 @@ object Dimens {
 
     /** 背板光斑模糊半径（API 31+ 生效，低版本自动忽略）。 */
     val BackdropBlurRadius: Dp = 48.dp
+
+    // --- 阶段 8 布局修订（首页 / 下载页 / 网盘页）---
+
+    /** 下载筛选条高度。 */
+    val FilterBarHeight: Dp = 44.dp
+
+    /** 筛选胶囊高度。 */
+    val FilterChipHeight: Dp = 36.dp
+
+    /** 筛选胶囊圆角（≈ 高度 × 0.33）。 */
+    val FilterChipCorner: Dp = 12.dp
+
+    /** 文件勾选框边长。 */
+    val CheckboxSize: Dp = 20.dp
+
+    /** 列表项删除按钮直径。 */
+    val DeleteButtonSize: Dp = 40.dp
 }
