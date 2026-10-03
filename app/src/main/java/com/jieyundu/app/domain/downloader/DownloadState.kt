@@ -49,6 +49,9 @@ enum class DownloadState {
  * @property speedBytesPerSecond 瞬时速度；未知时为 -1。
  * @property chunkCount 分片总数。
  * @property completedChunks 已完成分片数。
+ * @property savePath 目标文件绝对路径；未知时为 null。
+ *   【修订 JYD-SAVEPATH-2026-10-03】新增：用于持久化落盘路径，使「删除任务」在进程重启后
+ *   仍能定位并删除本地文件。带默认值，故既有构造调用无需改动。
  */
 data class DownloadProgressState(
     val taskId: String,
@@ -57,7 +60,8 @@ data class DownloadProgressState(
     val totalBytes: Long,
     val speedBytesPerSecond: Long,
     val chunkCount: Int,
-    val completedChunks: Int
+    val completedChunks: Int,
+    val savePath: String? = null
 ) {
     /** 进度百分比，范围 0..100；大小未知时返回 0。 */
     val percent: Int
