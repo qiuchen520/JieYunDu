@@ -1,13 +1,16 @@
 // 文件：AppModule.kt
 // 职责：提供解析器注册表与解析器多绑定
-// 依赖：ParserRegistry、NetdiskParser、QuarkParser
+// 依赖：ParserRegistry、NetdiskParser、QuarkParser、BaiduParser、UcParser、XunleiParser
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.di
 
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.ParserRegistry
+import com.jieyundu.app.domain.parser.baidu.BaiduParser
 import com.jieyundu.app.domain.parser.quark.QuarkParser
+import com.jieyundu.app.domain.parser.uc.UcParser
+import com.jieyundu.app.domain.parser.xunlei.XunleiParser
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -29,7 +32,7 @@ import javax.inject.Singleton
 object AppModule {
 
     /**
-     * 注册夸克解析器（阶段 9 会以同样方式注册其余三家）。
+     * 注册夸克解析器。
      *
      * @param parser 夸克解析器实例。
      * @return 以 [NetdiskParser] 身份暴露的同一实例。
@@ -37,6 +40,36 @@ object AppModule {
     @Provides
     @IntoSet
     fun provideQuarkParser(parser: QuarkParser): NetdiskParser = parser
+
+    /**
+     * 注册百度网盘解析器（阶段 9 占位骨架，实现待抓包）。
+     *
+     * @param parser 百度网盘解析器实例。
+     * @return 以 [NetdiskParser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideBaiduParser(parser: BaiduParser): NetdiskParser = parser
+
+    /**
+     * 注册 UC 网盘解析器（阶段 9 占位骨架，实现待抓包）。
+     *
+     * @param parser UC 网盘解析器实例。
+     * @return 以 [NetdiskParser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideUcParser(parser: UcParser): NetdiskParser = parser
+
+    /**
+     * 注册迅雷云盘解析器（阶段 9 占位骨架，实现待抓包）。
+     *
+     * @param parser 迅雷云盘解析器实例。
+     * @return 以 [NetdiskParser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideXunleiParser(parser: XunleiParser): NetdiskParser = parser
 
     /**
      * 提供解析器注册表。
