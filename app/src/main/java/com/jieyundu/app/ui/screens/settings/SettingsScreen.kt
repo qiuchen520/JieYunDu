@@ -1,10 +1,13 @@
 // 文件：SettingsScreen.kt
-// 职责：设置页——已支持网盘、默认并发分片数、关于信息
-// 依赖：SettingsViewModel、GlassCard、WindowSizeHelper、Dimens、JieYunDuColors
+// 职责：设置页——已支持网盘、默认并发分片数、临时文件清理、崩溃日志导出、关于信息
+// 依赖：SettingsViewModel、GlassCard、GlassButton、FileProvider、WindowSizeHelper、Dimens、JieYunDuColors
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.settings
 
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,11 +18,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
@@ -28,11 +34,12 @@ import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.home.uiLabelRes
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
+import java.io.File
 
 /**
  * 设置页。
  *
- * 说明：三张玻璃卡片分别展示支持范围、默认并发与关于信息；布局档位由
+ * 说明：玻璃卡片分别展示支持范围、默认并发、临时文件清理、崩溃日志与关于信息；布局档位由
  * [rememberIsExpandedLayout] 决定（9.4 / 9.5）。
  *
  * @param modifier 外部修饰符。
@@ -45,6 +52,40 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val contentPadding: Dp =
         if (isExpanded) Dimens.PanelPadding else Dimens.PanelPaddingCompact
     val cleanupState by viewModel.cleanupState.collectAsState()
+    val crashState by viewModel.crashState.collectAsState()
+    val context = LocalContext.current
+
+    // 崩溃日志操作反馈：有可分享文件 → 系统分享；无日志 / 失败 / 已清空 → Toast 提示。
+    // 依赖 crashState 整体（data class）作为 key，任一字段变化都会重新评估（修复追加）。
+    LaunchedEffect(crashState) {
+        val shareFile = crashState.shareFile
+        when {
+            shareFile != null -> {
+                shareCrashLog(context, shareFile)
+                viewModel.consumeCrashShareFile()
+            }
+
+            crashState.noLogs -> {
+                Toast.makeText(context, R.string.settings_crash_empty, Toast.LENGTH_SHORT).show()
+            }
+
+            crashState.failed -> {
+                Toast.makeText(context, R.string.settings_crash_export_failed, Toast.LENGTH_SHORT)
+                    .show()
+            }
+
+            crashState.clearedCount > 0 -> {
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        R.string.settings_crash_cleared,
+                        crashState.clearedCount
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -123,6 +164,38 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             }
         }
         SettingsCard(
+            title = stringResource(R.string.settings_crash_title),
+            contentPadding = contentPadding
+        ) {
+            Text(
+                text = stringResource(R.string.settings_crash_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            GlassButton(
+                text = if (crashState.busy) {
+                    stringResource(R.string.settings_crash_exporting)
+                } else {
+                    stringResource(R.string.settings_crash_export)
+                },
+                onClick = viewModel::exportCrashLog,
+                height = Dimens.ButtonHeightCompact,
+                cornerRadius = Dimens.ButtonCornerCompact,
+                fillColor = JieYunDuColors.ButtonFill,
+                borderColor = JieYunDuColors.ButtonBorder,
+                contentColor = JieYunDuColors.OnPrimary
+            )
+            GlassButton(
+                text = stringResource(R.string.settings_crash_clear),
+                onClick = viewModel::clearCrashLogs,
+                height = Dimens.ButtonHeightCompact,
+                cornerRadius = Dimens.ButtonCornerCompact,
+                fillColor = JieYunDuColors.GlassFillStrong,
+                borderColor = JieYunDuColors.GlassBorder,
+                contentColor = JieYunDuColors.TextPrimary
+            )
+        }
+        SettingsCard(
             title = stringResource(R.string.settings_about),
             contentPadding = contentPadding
         ) {
@@ -171,3 +244,33 @@ private fun SettingsCard(
         }
     }
 }
+
+/**
+ * 通过系统分享面板导出崩溃日志文件。
+ *
+ * 说明：用 [FileProvider] 暴露 cache 下的崩溃日志，赋予临时读权限后走 [Intent.ACTION_SEND]，
+ * 不改变分享目标的文件名（`jieyundu_crash_yyyyMMdd_HHmmss.txt` 由日志层生成）。
+ *
+ * @param context 上下文（用于解析 FileProvider authority 与发起分享）。
+ * @param file 待分享的崩溃日志文件。
+ */
+private fun shareCrashLog(context: Context, file: File) {
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        file
+    )
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = CRASH_LOG_MIME_TYPE
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    val chooser = Intent.createChooser(
+        sendIntent,
+        context.getString(R.string.settings_crash_share_title)
+    )
+    context.startActivity(chooser)
+}
+
+/** 崩溃日志分享 MIME 类型（纯文本）。 */
+private const val CRASH_LOG_MIME_TYPE = "text/plain"

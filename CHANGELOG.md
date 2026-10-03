@@ -734,7 +734,43 @@
 ### 已知限制 / 待抓包
 - 流程 B（个人网盘浏览 B1）下一批单独启动；回收站（B3）本批不做（夸克/UC/百度缺口）。
 - `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE` 仍为占位值，待抓包校准。
-
+## 阶段 13 装机反馈修复（JYD-CRASH / JYD-HOME-UI-2026-10-03）
+> 依据 Owner 装机反馈（点击「下载选中」闪退 / 无法上下滑动 / 下载按钮沉底）与《修复追加指令》。
+> 修复顺序按 Owner 要求：先加崩溃捕获与导出 → Owner 复现取日志 → 精准修闪退 → 修滑动 → 修底部按钮。
+> 不触碰玻璃质感、圆角、浅色配色与 Q 弹导航；不动其余三家解析器。
+### 崩溃捕获 + 日志导出（新增，让闪退可被记录）
+- 新增 `util/CrashReporter.kt`：`install()` 链式注册 `Thread.setDefaultUncaughtExceptionHandler`
+  （写日志后再交回原处理器，不吞异常）；`record()` 维护最近 100 行环形缓冲；
+  `writeCrashLog()` 落盘至 `files/crash_logs/crash_yyyyMMdd_HHmmss.txt`（时间 / 版本 / Android / 设备 / 线程 + 堆栈 + 最近日志）；
+  `pruneOldLogs()` 最多保留 10 条；`prepareShareFile()` 复制最新日志到 `cache/crash_logs/jieyundu_crash_<stamp>.txt`；
+  `hasLogs()` / `clear()`。
+- 新增 `util/RecentLogTree.kt`：`Timber.Tree` 子类，把每条日志格式化后交 `CrashReporter.record`（Debug/Release 均挂载）。
+- `JieYunDuApp.kt`：`onCreate` 内 `Timber.plant(RecentLogTree())` + `CrashReporter.install(this)`；Debug 下另挂 `DebugTree`。
+- 新增 `res/xml/file_paths.xml`：仅暴露 `cache-path` 的 `crash_logs/`（最小暴露面）。
+- `AndroidManifest.xml`：新增 `FileProvider`（authorities `${applicationId}.fileprovider`，`exported=false`，`grantUriPermissions=true`）。
+- `SettingsViewModel.kt`：注入 `@ApplicationContext Context`；新增 `crashState` / `refreshCrashLogs` / `exportCrashLog` /
+  `consumeCrashShareFile` / `clearCrashLogs` 与 `CrashLogState` 数据类。
+- `SettingsScreen.kt`：新增「崩溃日志」卡片（导出 / 清空）+ `LaunchedEffect(crashState)`：无日志 Toast「暂无崩溃日志」、
+  有日志走 `FileProvider` + `ACTION_SEND` 系统分享（`shareCrashLog`）。
+- `strings.xml`：新增崩溃日志相关文案。
+### 闪退修复（根因：异常未捕获）
+- 根因：`HomeViewModel.download()` 原先只 `catch (IOException)`；Retrofit 非 2xx 抛 `HttpException`、
+  响应体异常抛 `SerializationException`（均为运行时异常）→ 逃逸协程 → 崩溃。
+- `HomeViewModel.kt`：`download()` 签名改为 `download(files: List<FileInfo>)`，逐文件 `try` 且统一 `catch (Exception)` 兜底
+  （`CancellationException` 原样抛出，C3），`finally` 复位 `isPreparingDownload` 并按 `hasFailure` 置 `downloadErrorRes`；
+  `startParse()` / `openFolder()` 同样补 `catch (Exception)` 兜底；新增 `CODE_UNKNOWN`。
+### 首页 UI 修复（列表可滚动 + 下载按钮底部悬浮）
+- `ParseResultCard.kt`：`SuccessCard` 以 `fillMaxSize` 的 `Column` 承载头部，文件列表改为 `LazyColumn`（`weight(1f)` 占满余下高度，
+  可上下滑动）；下载按钮移出列尾、以 `BoxScope.align(BottomCenter)` 悬浮于卡片底部（不随列表滚动）；
+  按钮文案显示已选数量「下载选中 (N)」，未选中时置灰（透明度 0.45）且点击无效；列表底部预留 `Dimens.DownloadButtonInset`
+  避免末行被遮挡；卡片内展示「正在转存…」与下载失败文案。
+- `Dimens.kt`：新增 `DownloadButtonInset`（60dp）。
+- `HomeUiState.kt`：新增 `isPreparingDownload` / `downloadErrorRes`。
+- `HomeScreen.kt`：接线上述两状态。
+- `strings.xml`：新增 `parse_download_failed`（补 `HomeViewModel` 既有引用）/ `parse_download_count`。
+### 已知限制 / 待办
+- 崩溃日志仅存本机、不上传；导出走系统分享。
+- QQ/微信等第三方分享目标能否读取 `content://` 取决于其是否支持 `ACTION_SEND` 文件流。
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

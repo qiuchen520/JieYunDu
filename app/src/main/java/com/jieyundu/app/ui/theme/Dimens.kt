@@ -174,4 +174,7 @@ object Dimens {
 
     /** 列表项删除按钮直径。 */
     val DeleteButtonSize: Dp = 40.dp
+
+    /** 文件列表底部为悬浮下载按钮预留的空隙（按钮高 48dp + 间距 12dp，保证末行不被遮挡）。 */
+    val DownloadButtonInset: Dp = 60.dp
 }

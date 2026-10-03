@@ -82,6 +82,18 @@
     <string name="settings_version_format">版本 %1$s</string>
     <string name="settings_license">开源协议：AGPL-3.0</string>
 
+    <!-- 崩溃日志（修复追加：崩溃捕获 + 导出）-->
+    <string name="settings_crash_title">崩溃日志</string>
+    <string name="settings_crash_hint">导出最近一次崩溃日志，便于反馈问题；日志仅保存在本机，不会上传。</string>
+    <string name="settings_crash_export">导出崩溃日志</string>
+    <string name="settings_crash_exporting">正在导出…</string>
+    <string name="settings_crash_clear">清空崩溃日志</string>
+    <string name="settings_crash_empty">暂无崩溃日志</string>
+    <string name="settings_crash_export_failed">导出失败，请稍后重试</string>
+    <string name="settings_crash_cleared">已清空 %1$d 条崩溃日志</string>
+    <string name="settings_crash_share_title">分享崩溃日志</string>
+    <string name="settings_crash_share_hint">通过…</string>
+
     <!-- 网盘页（阶段 11）-->
     <string name="tab_netdisk">网盘</string>
     <string name="netdisk_picker_title">选择网盘</string>
@@ -120,6 +132,8 @@
     <string name="parse_dir_load_failed">打开文件夹失败，请重试</string>
     <string name="parse_breadcrumb_separator"> / </string>
     <string name="parse_download_preparing">正在转存并获取直链…</string>
+    <string name="parse_download_failed">下载启动失败，请重试</string>
+    <string name="parse_download_count">下载选中 (%1$d)</string>
 
     <!-- 下载页筛选与删除（阶段 8 布局修订）-->
     <string name="download_filter_all">全部</string>

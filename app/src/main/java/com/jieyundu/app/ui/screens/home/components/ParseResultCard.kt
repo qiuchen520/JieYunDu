@@ -13,12 +13,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +36,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -63,7 +68,9 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
  * @param canNavigateUp 是否可以返回上一级（栈深大于 1）。
  * @param isLoadingDir 是否正在展开子目录。
  * @param dirErrorRes 展开子目录失败的文案资源；无错误时为 null。
- * @param onDownload 点击下载单个文件的回调。
+ * @param isPreparingDownload 是否正在转存并换取直链（下载前的准备阶段）。
+ * @param downloadErrorRes 下载启动失败的文案资源；无错误时为 null。
+ * @param onDownload 点击「下载选中」的回调，参数为本次勾选的文件列表。
  * @param onOpenFolder 点击文件夹进入下一级的回调。
  * @param onNavigateUp 点击「返回上一级」的回调。
  * @param modifier 外部修饰符。
@@ -79,7 +86,9 @@ fun ParseResultCard(
     canNavigateUp: Boolean,
     isLoadingDir: Boolean,
     @StringRes dirErrorRes: Int?,
-    onDownload: (FileInfo) -> Unit,
+    isPreparingDownload: Boolean,
+    @StringRes downloadErrorRes: Int?,
+    onDownload: (List<FileInfo>) -> Unit,
     onOpenFolder: (FileInfo) -> Unit,
     onNavigateUp: () -> Unit,
     modifier: Modifier = Modifier,
@@ -107,6 +116,8 @@ fun ParseResultCard(
             canNavigateUp = canNavigateUp,
             isLoadingDir = isLoadingDir,
             dirErrorRes = dirErrorRes,
+            isPreparingDownload = isPreparingDownload,
+            downloadErrorRes = downloadErrorRes,
             onDownload = onDownload,
             onOpenFolder = onOpenFolder,
             onNavigateUp = onNavigateUp,
@@ -192,7 +203,9 @@ private fun InfoCard(
  * @param canNavigateUp 是否可以返回上一级。
  * @param isLoadingDir 是否正在展开子目录。
  * @param dirErrorRes 展开子目录失败的文案资源。
- * @param onDownload 下载回调。
+ * @param isPreparingDownload 是否正在转存并换取直链（下载准备阶段）。
+ * @param downloadErrorRes 下载启动失败的文案资源；无错误时为 null。
+ * @param onDownload 下载回调，参数为本次勾选的文件列表。
  * @param onOpenFolder 进入文件夹回调。
  * @param onNavigateUp 返回上一级回调。
  * @param modifier 外部修饰符。
@@ -206,7 +219,9 @@ private fun SuccessCard(
     canNavigateUp: Boolean,
     isLoadingDir: Boolean,
     @StringRes dirErrorRes: Int?,
-    onDownload: (FileInfo) -> Unit,
+    isPreparingDownload: Boolean,
+    @StringRes downloadErrorRes: Int?,
+    onDownload: (List<FileInfo>) -> Unit,
     onOpenFolder: (FileInfo) -> Unit,
     onNavigateUp: () -> Unit,
     modifier: Modifier = Modifier,
@@ -216,14 +231,19 @@ private fun SuccessCard(
     // 勾选状态按「目录层」隔离：切换目录时重置，避免跨层误选。
     val levelKey = level?.pdirFid ?: ROOT_LEVEL_KEY
     val selectedFids = remember(levelKey) { mutableStateListOf<String>() }
+    val selectedFiles = files.filter { !it.isDirectory && selectedFids.contains(it.fid) }
+    val hasSelection = selectedFiles.isNotEmpty()
+    val showDownloadButton = files.isNotEmpty() && !isLoadingDir && dirErrorRes == null
 
     GlassCard(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = Dimens.CardCorner,
         contentPadding = contentPadding
     ) {
+        // 结构（Owner 4.1 / 4.2）：头部固定 + 文件列表 LazyColumn 可滚动 + 下载按钮底部悬浮。
+        // 外层 Box 由 GlassCard 提供；Column 撑满卡片，LazyColumn 以 weight 占满余下高度。
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(Dimens.SpaceMd)
         ) {
             Text(
@@ -251,6 +271,20 @@ private fun SuccessCard(
                     color = JieYunDuColors.Primary
                 )
             }
+            if (isPreparingDownload) {
+                Text(
+                    text = stringResource(R.string.parse_download_preparing),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextSecondary
+                )
+            }
+            if (downloadErrorRes != null) {
+                Text(
+                    text = stringResource(downloadErrorRes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextSecondary
+                )
+            }
             when {
                 isLoadingDir -> Text(
                     text = stringResource(R.string.parse_loading_dir),
@@ -270,13 +304,21 @@ private fun SuccessCard(
                     color = JieYunDuColors.TextSecondary
                 )
 
-                else -> {
-                    Text(
-                        text = stringResource(R.string.parse_result_select_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = JieYunDuColors.TextTertiary
-                    )
-                    files.forEach { file ->
+                else -> LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXs),
+                    contentPadding = PaddingValues(bottom = Dimens.DownloadButtonInset)
+                ) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.parse_result_select_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = JieYunDuColors.TextTertiary
+                        )
+                    }
+                    items(files) { file ->
                         val checked = selectedFids.contains(file.fid)
                         FileEntryRow(
                             file = file,
@@ -292,21 +334,29 @@ private fun SuccessCard(
                             }
                         )
                     }
-                    val selectedFiles =
-                        files.filter { !it.isDirectory && selectedFids.contains(it.fid) }
-                    if (selectedFiles.isNotEmpty()) {
-                        GlassButton(
-                            text = stringResource(R.string.action_download),
-                            onClick = { selectedFiles.forEach(onDownload) },
-                            height = Dimens.ButtonHeightCompact,
-                            cornerRadius = Dimens.ButtonCornerCompact,
-                            fillColor = JieYunDuColors.ButtonFill,
-                            borderColor = JieYunDuColors.ButtonBorder,
-                            contentColor = JieYunDuColors.OnPrimary
-                        )
-                    }
                 }
             }
+        }
+        if (showDownloadButton) {
+            GlassButton(
+                text = if (hasSelection) {
+                    stringResource(R.string.parse_download_count, selectedFiles.size)
+                } else {
+                    stringResource(R.string.action_download)
+                },
+                onClick = { if (hasSelection) onDownload(selectedFiles) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        alpha = if (hasSelection) 1f else DISABLED_BUTTON_ALPHA
+                    },
+                height = Dimens.ButtonHeightCompact,
+                cornerRadius = Dimens.ButtonCornerCompact,
+                fillColor = JieYunDuColors.ButtonFill,
+                borderColor = JieYunDuColors.ButtonBorder,
+                contentColor = JieYunDuColors.OnPrimary
+            )
         }
     }
 }
@@ -480,6 +530,9 @@ private fun NeedPasswordCard(
 
 /** 勾选状态在无目录层时使用的兜底键。 */
 private const val ROOT_LEVEL_KEY = "__root__"
+
+/** 未选中任何文件时下载按钮的透明度（置灰表现）。 */
+private const val DISABLED_BUTTON_ALPHA = 0.45f
 
 /** 对勾起点横向占比。 */
 private const val CHECK_START_X = 0.15f

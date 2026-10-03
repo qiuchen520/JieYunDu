@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 文件：file_paths.xml
+     职责：FileProvider 可共享路径白名单（仅缓存下的崩溃日志目录）
+     依赖：AndroidManifest.xml 的 provider 声明
+     协议：AGPL-3.0 -->
+<paths>
+    <!-- 崩溃日志导出文件位于 cache/crash_logs/ —— 只暴露这一个子目录。 -->
+    <cache-path name="crash_logs" path="crash_logs/" />
+</paths>

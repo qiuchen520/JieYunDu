@@ -54,6 +54,8 @@ data class BrowseLevel(
  * @property stack 目录路径栈；栈底为分享根目录，栈顶为当前目录。空表示未在浏览。
  * @property isLoadingDir 是否正在展开某个子目录。
  * @property dirErrorRes 展开子目录失败的文案资源；无错误时为 null。
+ * @property isPreparingDownload 是否正在转存并换取直链（下载前的准备阶段）。
+ * @property downloadErrorRes 下载启动失败的文案资源；无错误时为 null。
  */
 data class HomeUiState(
     val inputLink: String = "",
@@ -66,7 +68,9 @@ data class HomeUiState(
     val shareContext: ShareContext? = null,
     val stack: List<BrowseLevel> = emptyList(),
     val isLoadingDir: Boolean = false,
-    @StringRes val dirErrorRes: Int? = null
+    @StringRes val dirErrorRes: Int? = null,
+    val isPreparingDownload: Boolean = false,
+    @StringRes val downloadErrorRes: Int? = null
 ) {
     /** 输入非空且当前未在解析时，允许触发解析。 */
     val canParse: Boolean

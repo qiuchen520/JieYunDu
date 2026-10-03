@@ -155,7 +155,9 @@ class HomeViewModel @Inject constructor(
             shareContext = null,
             stack = emptyList(),
             isLoadingDir = false,
-            dirErrorRes = null
+            dirErrorRes = null,
+            isPreparingDownload = false,
+            downloadErrorRes = null
         )
         viewModelScope.launch(Dispatchers.IO) {
             val result = try {
@@ -168,6 +170,10 @@ class HomeViewModel @Inject constructor(
             } catch (serialization: SerializationException) {
                 Timber.e(serialization, "HomeViewModel parse failed: unexpected response body")
                 ParseResult.Error(link.type, CODE_PROTOCOL, CODE_PROTOCOL)
+            } catch (exception: Exception) {
+                // 兜底：Retrofit 的 HttpException 等运行时异常此前会逃逸导致崩溃，统一转成解析错误。
+                Timber.e(exception, "HomeViewModel parse failed: unexpected error")
+                ParseResult.Error(link.type, CODE_UNKNOWN, CODE_UNKNOWN)
             }
             _uiState.value = when {
                 // 服务器要求提取码 → 弹出输入框，流程不中断
@@ -279,6 +285,13 @@ class HomeViewModel @Inject constructor(
                     isLoadingDir = false,
                     dirErrorRes = R.string.parse_dir_load_failed
                 )
+            } catch (exception: Exception) {
+                // 兜底：HttpException 等运行时异常不得逃逸（否则崩溃）。
+                Timber.e(exception, "HomeViewModel openFolder failed: unexpected error")
+                _uiState.value = _uiState.value.copy(
+                    isLoadingDir = false,
+                    dirErrorRes = R.string.parse_dir_load_failed
+                )
             }
         }
     }
@@ -297,19 +310,43 @@ class HomeViewModel @Inject constructor(
      * 下载选中的文件：先转存到临时目录并换取直链，再投递到下载引擎；完成后清理临时文件。
      *
      * 说明：文件夹不会被下载（由 UI 侧路由为进入目录）；无分享上下文且无直链时跳过。
+     * 逐个文件串行准备（转存 / 取链），任一文件失败只记错误、不影响其余文件；
+     * 全部结束后把「是否有失败」汇总到 [HomeUiState.downloadErrorRes]。
      *
-     * @param file 用户点击下载的文件条目。
+     * 崩溃修复（本轮）：此前只捕获 [IOException]，而 Retrofit 在非 2xx 时抛
+     * `HttpException`、响应体异常时抛 [SerializationException]，均属未捕获的运行时异常，
+     * 会直接崩溃 App。现统一以 [Exception] 兜底（[CancellationException] 仍原样抛出，C3）。
+     *
+     * @param files 用户勾选待下载的文件条目列表（内部会过滤掉文件夹）。
      */
-    fun download(file: FileInfo) {
-        if (file.isDirectory) return
-        val context = _uiState.value.shareContext
+    fun download(files: List<FileInfo>) {
+        val targets = files.filterNot { file -> file.isDirectory }
+        if (targets.isEmpty()) {
+            return
+        }
+        _uiState.value = _uiState.value.copy(
+            isPreparingDownload = true,
+            downloadErrorRes = null
+        )
         viewModelScope.launch(Dispatchers.IO) {
+            var hasFailure = false
             try {
-                startDownload(file, context)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (io: IOException) {
-                Timber.e(io, "HomeViewModel failed to start download for %s", file.fileName)
+                val context = _uiState.value.shareContext
+                targets.forEach { file ->
+                    try {
+                        startDownload(file, context)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (exception: Exception) {
+                        hasFailure = true
+                        Timber.e(exception, "HomeViewModel failed to start download for %s", file.fileName)
+                    }
+                }
+            } finally {
+                _uiState.value = _uiState.value.copy(
+                    isPreparingDownload = false,
+                    downloadErrorRes = if (hasFailure) R.string.parse_download_failed else null
+                )
             }
         }
     }
@@ -407,6 +444,9 @@ class HomeViewModel @Inject constructor(
 
         /** 本模块自有的协议错误码。 */
         const val CODE_PROTOCOL = "APP_PROTOCOL_ERROR"
+
+        /** 兜底错误码：未归类的运行时异常（UI 映射为「未知错误」）。 */
+        const val CODE_UNKNOWN = "APP_UNKNOWN_ERROR"
 
         /** 解析器在提取码错误时返回的机器码（与 QuarkParser 对齐），UI 据此保留弹窗并提示重试。 */
         const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
