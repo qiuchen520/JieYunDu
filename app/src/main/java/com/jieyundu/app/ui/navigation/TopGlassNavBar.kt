@@ -156,6 +156,7 @@ fun TopGlassNavBar(
         val maxOffsetPx = (mainAxisPx - slotPx).coerceAtLeast(0f)
         val insetPx = with(density) { Dimens.NavIndicatorInset.toPx() }
         val highlightPx = with(density) { Dimens.NavIndicatorStroke.toPx() }
+        val innerShadowPx = with(density) { Dimens.InnerShadowBlur.toPx() }
         val indicatorShortSide = thickness - Dimens.NavIndicatorInset * 2
         val indicatorShape = RoundedCornerShape(percent = CORNER_RADIUS_PERCENT)
 
@@ -192,6 +193,7 @@ fun TopGlassNavBar(
                 .drawWithContent {
                     drawContent()
                     drawIndicatorHighlight(isHorizontal, highlightPx)
+                    drawIndicatorInnerShadow(isHorizontal, innerShadowPx)
                 }
         )
 
@@ -339,6 +341,43 @@ private fun DrawScope.drawIndicatorHighlight(isHorizontal: Boolean, strokePx: Fl
             brush = brush,
             start = Offset(strokePx / 2f, 0f),
             end = Offset(strokePx / 2f, size.height),
+            strokeWidth = strokePx
+        )
+    }
+}
+
+/**
+ * 沿指示器相反边缘绘制内阴影渐变线（10.2：底部黑色 10%，模糊 4dp）。
+ *
+ * 说明：横向导航条取底边缘，竖向导航条取右边缘，与 [drawIndicatorHighlight] 的高光边
+ * 相对，贴合「上高光、下内阴影」的玻璃观感。
+ *
+ * @param isHorizontal 是否横向导航条。
+ * @param strokePx 线宽（像素），取内阴影模糊半径。
+ */
+private fun DrawScope.drawIndicatorInnerShadow(isHorizontal: Boolean, strokePx: Float) {
+    if (isHorizontal) {
+        val brush = Brush.verticalGradient(
+            colors = listOf(JieYunDuColors.GlassHighlightClear, JieYunDuColors.NavIndicatorInnerShadow),
+            startY = size.height - strokePx,
+            endY = size.height
+        )
+        drawLine(
+            brush = brush,
+            start = Offset(0f, size.height - strokePx / 2f),
+            end = Offset(size.width, size.height - strokePx / 2f),
+            strokeWidth = strokePx
+        )
+    } else {
+        val brush = Brush.horizontalGradient(
+            colors = listOf(JieYunDuColors.GlassHighlightClear, JieYunDuColors.NavIndicatorInnerShadow),
+            startX = size.width - strokePx,
+            endX = size.width
+        )
+        drawLine(
+            brush = brush,
+            start = Offset(size.width - strokePx / 2f, 0f),
+            end = Offset(size.width - strokePx / 2f, size.height),
             strokeWidth = strokePx
         )
     }
