@@ -105,8 +105,12 @@ class DownloadEngine @Inject constructor(
             totalBytes = task.fileSize,
             speedBytesPerSecond = 0L,
             chunkCount = chunks.size,
-            completedChunks = chunks.count { chunk -> chunk.isCompleted }
+            completedChunks = chunks.count { chunk -> chunk.isCompleted },
+            savePath = task.savePath
         )
+        // 【修订 JYD-SAVEPATH-2026-10-03】启动即落库：既让新任务立即出现在下载列表，
+        // 也把落盘路径写入持久层，供进程重启后「删除本地文件」定位目标。
+        downloadDao.upsert(runtime.progress.value)
         runtime.job = scope.launch { runTask(runtime) }
     }
 
