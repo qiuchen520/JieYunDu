@@ -67,6 +67,9 @@ object NetworkModule {
     /** 多 Cookie 拼接分隔符（HTTP Cookie 头规范）。 */
     private const val COOKIE_SEPARATOR = "; "
 
+    /** HTTP GET 方法名（用于把「写类调用」从诊断日志中区分出来）。 */
+    private const val METHOD_GET = "GET"
+
     /**
      * 提供全局 OkHttpClient。
      *
@@ -167,12 +170,24 @@ object NetworkModule {
         /**
          * 注入 Cookie 头。
          *
+         * 写操作诊断（B1.2）：非 GET（转存 / 建目录 / 取直链等写类调用）额外记录本次携带的
+         * Cookie **名**（不含值，避免日志泄露凭证）。目的是回答「`__puus` 有没有被送出去」——
+         * 若下一份日志里服务端返回体为空，这是唯一可判定的信号。
+         *
          * @param chain 拦截器链。
          * @return 下游响应。
          */
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
             val cookie = cookieStore.findForHost(request.url.host)
+            if (request.method != METHOD_GET) {
+                Timber.d(
+                    "CookieInterceptor %s %s cookieNames=%s",
+                    request.method,
+                    request.url.encodedPath,
+                    cookie?.let { value -> cookieNamesOf(value) }.orEmpty()
+                )
+            }
             if (cookie.isNullOrBlank() || request.header(HEADER_COOKIE) != null) {
                 return chain.proceed(request)
             }
@@ -182,6 +197,19 @@ object NetworkModule {
                     .build()
             )
         }
+
+        /**
+         * 提取 Cookie 串中出现过的**名字**（逗号分隔，**不含值**）。
+         *
+         * @param cookie 待解析的 Cookie 串。
+         * @return 形如 `__pus,__puus,__pugs`；无有效名时为空串。
+         */
+        private fun cookieNamesOf(cookie: String): String =
+            cookie.split(COOKIE_SEPARATOR)
+                .mapNotNull { pair ->
+                    pair.substringBefore('=').trim().takeIf { name -> name.isNotEmpty() }
+                }
+                .joinToString(",")
     }
 
     /**

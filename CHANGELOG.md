@@ -843,7 +843,34 @@
 - 401 的具体成因（Cookie 缺失 / 过期 / 客户端标识校验）**尚未定论**，需下一份运行日志确认。
 - 未改动任何未获抓包证实的请求头或参数。
 - 观察到一处无害瑕疵：`file/sort` 的 URL 出现重复的 `pr/fr`（接口注解与 `QueryMap` 各带一次），
-  服务端正常响应，留待 B2 与 UC 共用参数构造器时一并收敛。
+  服务端正常响应，留待 B2 与 UC 共用参数构造器时一并收敛。→ **已在 B1.2 修复，见下。**
+
+## 阶段 B1.2：pr/fr 去重 + 转存 URL 对齐抓包 + 写操作 Cookie 诊断（JYD-FIX2-2026-10-03）
+> 依据 Owner 反馈：① `file/sort` 的 `pr=ucpro&fr=pc` 被拼了两遍；② 继续攻坚
+> `sharepage/save` 的 HTTP 401（下载失败真凶）。
+
+### ① `pr/fr` 重复（已修复）
+- 根因：`QuarkApi.listFiles` 注解已固定携带 `?pr=ucpro&fr=pc`，
+  `QuarkParser.buildPersonalListParams` 的 `QueryMap` 又带了一次 → URL 出现两份。
+- 修复：从 `QueryMap` 中移除 `pr` / `fr`，由注解统一提供（§10.2 要求的参数仍全部在）。
+- 复核：`TempFolderManager.buildListParams` 本就不带 `pr/fr`（依赖注解），行为不变；
+  `buildMemberParams` / `buildDetailParams` 的注解不含查询串，保持原样。
+
+### ② 转存 URL 对齐抓包（非确诊性修复）
+- 《抓包事实.md》§1 记录的转存 URL 为 `.../sharepage/save?pr=ucpro&fr=pc`，
+  而 `QuarkApi.saveShare` 注解此前**漏写**这两个固定参数，现补齐。
+- 声明：这是**对齐抓包**，**不等于**已确诊 401 的根因；未获证据前不改动任何请求体字段。
+
+### ③ 写操作 Cookie 诊断（新增，为 401 取证）
+- `NetworkModule.CookieInterceptor`：非 GET 请求额外记录本次携带的 Cookie **名**
+  （`cookieNames=__pus,__puus,...`，**不含值**，避免日志泄露凭证）。
+- 目的：若服务端 401 的响应体为空，`cookieNames` 是判断「`__puus` 有没有被送出去」的唯一信号。
+- 与 B1.1 的 `ShareTransfer.callWithHttpLog` 配合，一次复现即可拿到两组证据。
+
+### 已知限制（本批边界）
+- 401 根因**仍未确诊**，本批只做「对齐抓包 + 补齐取证」，不做任何猜测性修改。
+- 《抓包事实.md》§7.2 的 `__puus` 定期刷新（90 分钟 / 剥掉再请求重下发）仍未实现，属独立改动。
+- 不改玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

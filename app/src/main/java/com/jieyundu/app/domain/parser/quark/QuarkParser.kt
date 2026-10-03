@@ -219,12 +219,14 @@ class QuarkParser @Inject constructor(
     /**
      * 构造个人网盘列表查询参数（《抓包事实.md》§10.2）。
      *
+     * 注意：`pr` / `fr` **不在此处添加**——[QuarkApi.listFiles] 的注解已固定携带
+     * `?pr=ucpro&fr=pc`，若两边都带会让 URL 出现重复的 `pr=ucpro&fr=pc`（装机日志实测发现）。
+     * 同目录的 `TempFolderManager.buildListParams` 同样依赖注解提供这两个参数。
+     *
      * @param pdirFid 目标目录 fid。
      * @return 查询参数键值对。
      */
     private fun buildPersonalListParams(pdirFid: String): Map<String, String> = mapOf(
-        KEY_PR to QUARK_PR,
-        KEY_FR to QUARK_FR,
         KEY_PDIR_FID to pdirFid,
         KEY_PAGE to FIRST_PAGE,
         KEY_SIZE to PERSONAL_PAGE_SIZE,

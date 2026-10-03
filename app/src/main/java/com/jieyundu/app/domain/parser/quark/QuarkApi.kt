@@ -59,15 +59,18 @@ interface QuarkApi {
     /**
      * 第 4 步：把分享中的文件**转存到本账号**（save）。
      *
-     * 请求：`POST https://drive-pc.quark.cn/1/clouddrive/share/sharepage/save`
+     * 请求：`POST https://drive-pc.quark.cn/1/clouddrive/share/sharepage/save?pr=ucpro&fr=pc`
      * 请求体：`{"pwd_id","stoken","fid_list":[...],"fid_token_list":[...],"scene":"link"}`；
      * `fid_token_list` 为每个文件的 `share_fid_token`。
      * 响应：`data.task_id`（异步任务 ID，需轮询，见 [getTask]）。
      *
+     * 说明（B1.2）：`pr` / `fr` 为《抓包事实.md》§1 记录的固定查询参数，此前注解漏写，
+     * 现补齐以对齐抓包（未获证据前不改动请求体字段）。
+     *
      * @param body 请求体键值对（含数组字段）。
      * @return 统一响应包装体，data 含 task_id。
      */
-    @POST("1/clouddrive/share/sharepage/save")
+    @POST("1/clouddrive/share/sharepage/save?pr=ucpro&fr=pc")
     suspend fun saveShare(
         @Body body: QuarkSaveRequest
     ): QuarkResponse<QuarkSaveResult>
