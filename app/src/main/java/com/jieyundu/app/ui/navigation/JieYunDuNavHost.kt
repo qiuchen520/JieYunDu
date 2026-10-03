@@ -1,6 +1,6 @@
 // 文件：JieYunDuNavHost.kt
-// 职责：导航宿主——按窗口尺寸选取导航形式，承载顶部标题栏与三大页面
-// 依赖：WindowSizeHelper、NavigationRail、NavigationBar、三个 Screen、Compose runtime/foundation
+// 职责：导航宿主——按窗口尺寸选取导航形式，承载顶部标题栏与四大页面
+// 依赖：WindowSizeHelper、NavigationRail、NavigationBar、四个 Screen、Compose runtime/foundation
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.navigation
@@ -40,6 +40,7 @@ import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
 import com.jieyundu.app.ui.glass.GlassPanel
 import com.jieyundu.app.ui.screens.download.DownloadScreen
 import com.jieyundu.app.ui.screens.home.HomeScreen
+import com.jieyundu.app.ui.screens.login.NetdiskPickerScreen
 import com.jieyundu.app.ui.screens.settings.SettingsScreen
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
@@ -48,13 +49,16 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * 应用三大页签。
+ * 应用四大页签。
  *
  * @property labelRes 页签文案资源 id。
  */
 enum class JieYunDuTab(@StringRes val labelRes: Int) {
     /** 首页。 */
     HOME(R.string.tab_home),
+
+    /** 网盘（登录入口）。 */
+    NETDISK(R.string.tab_netdisk),
 
     /** 下载。 */
     DOWNLOAD(R.string.tab_download),
@@ -220,6 +224,7 @@ private fun NavContent(tab: JieYunDuTab, modifier: Modifier = Modifier) {
     Crossfade(targetState = tab, modifier = modifier, label = "navContent") { current ->
         when (current) {
             JieYunDuTab.HOME -> HomeScreen(modifier = Modifier.fillMaxSize())
+            JieYunDuTab.NETDISK -> NetdiskPickerScreen(modifier = Modifier.fillMaxSize())
             JieYunDuTab.DOWNLOAD -> DownloadScreen(modifier = Modifier.fillMaxSize())
             JieYunDuTab.SETTINGS -> SettingsScreen(modifier = Modifier.fillMaxSize())
         }
