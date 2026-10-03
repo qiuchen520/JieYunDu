@@ -28,20 +28,29 @@ import timber.log.Timber
  * 使 App 重启后仍可复用登录态；若设备密钥库异常导致加密存储不可用，则**降级为纯内存**
  * （仅本次进程有效），绝不因存储失败而崩溃（D15 / §9.8 降级精神）。
  *
+ * 依赖注入说明：存储实例 [prefs] 由构造参数注入——Hilt 用 [ApplicationContext] 打开
+ * 加密存储（见 [createEncryptedPreferences]，失败返回 null 即降级纯内存）；单元测试
+ * 用内部构造传 null，从而无需 Android Context 即可构造（纯内存）。
+ *
  * 线程安全：读写均基于 [ConcurrentHashMap] 与 `SharedPreferences`，可在多协程并发下使用。
  *
- * @param context 应用上下文（用于打开加密存储）。
+ * @param prefs 加密存储；null 表示降级为纯内存。
  */
 @Singleton
-class CookieStore @Inject constructor(
-    @ApplicationContext context: Context
+class CookieStore internal constructor(
+    private val prefs: SharedPreferences?
 ) {
+
+    /**
+     * Hilt 注入入口：用应用上下文打开加密存储。
+     *
+     * @param context 应用上下文。
+     */
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(createEncryptedPreferences(context))
 
     /** 域名后缀 -> 该域可用的 Cookie 串（形如 `__puus=xxx`）。 */
     private val byDomainSuffix = ConcurrentHashMap<String, String>()
-
-    /** 加密存储；不可用时为 null（降级为纯内存）。 */
-    private val prefs: SharedPreferences? = createEncryptedPreferences(context)
 
     init {
         // 启动时把已加密落盘的 Cookie 载回内存，保证重启后登录态可用。
@@ -84,31 +93,29 @@ class CookieStore @Inject constructor(
         byDomainSuffix.clear()
         prefs?.edit()?.clear()?.apply()
     }
+}
 
-    /**
-     * 打开加密存储；失败时记录日志并返回 null（降级纯内存）。
-     *
-     * @param context 应用上下文。
-     * @return 加密 [SharedPreferences]；不可用时 null。
-     */
-    private fun createEncryptedPreferences(context: Context): SharedPreferences? = try {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    } catch (exception: Exception) {
-        Timber.e(exception, "CookieStore encrypted storage unavailable, fallback to in-memory")
-        null
-    }
+/** 加密存储文件名。 */
+private const val PREFS_NAME = "jieyundu_cookie_store"
 
-    private companion object {
-        /** 加密存储文件名。 */
-        const val PREFS_NAME = "jieyundu_cookie_store"
-    }
+/**
+ * 打开加密存储；失败时记录日志并返回 null（降级纯内存）。
+ *
+ * @param context 应用上下文。
+ * @return 加密 [SharedPreferences]；不可用时 null。
+ */
+private fun createEncryptedPreferences(context: Context): SharedPreferences? = try {
+    val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+    EncryptedSharedPreferences.create(
+        context,
+        PREFS_NAME,
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+} catch (exception: Exception) {
+    Timber.e(exception, "CookieStore encrypted storage unavailable, fallback to in-memory")
+    null
 }
