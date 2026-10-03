@@ -68,7 +68,8 @@ class QuarkParser @Inject constructor(
      * 解析夸克分享链接。
      *
      * @param url 分享链接。
-     * @param pwd 提取码；为 null 时直接返回 [ParseResult.NeedPassword]，不发请求。
+     * @param pwd 提取码；为 null / 空白时按「无提取码」直接向服务器尝试，
+     *   仅当服务器明确要求提取码时才返回 [ParseResult.NeedPassword]（BUGFIX JYD-BUG-03-01）。
      * @return 解析结果。
      * @throws IOException 网络不可用或请求失败（由调用方决定是否重试）。
      * @throws SerializationException 响应体结构与预期不符。
@@ -78,10 +79,6 @@ class QuarkParser @Inject constructor(
         if (pwdId.isBlank()) {
             return ParseResult.Error(type, CODE_INVALID_LINK, CODE_INVALID_LINK)
         }
-        if (pwd.isNullOrBlank()) {
-            return ParseResult.NeedPassword(type)
-        }
-
         return withContext(Dispatchers.IO) {
             try {
                 val puusCookie = requestPuusCookie()
@@ -94,6 +91,14 @@ class QuarkParser @Inject constructor(
                 cookieStore.save(QUARK_COOKIE_HOST_SUFFIX, puusCookie)
 
                 val tokenResponse = api.getShareToken(buildTokenBody(pwdId, pwd))
+                if (tokenResponse.code == NEED_PASSWORD_CODE) {
+                    // 服务器明确要求提取码时才提示用户（BUGFIX JYD-BUG-03-01）
+                    return@withContext ParseResult.NeedPassword(type)
+                }
+                if (tokenResponse.code == WRONG_PASSWORD_CODE) {
+                    // 提取码错误：交由 UI 保留弹窗并提示重试（阶段 8 整改二）
+                    return@withContext ParseResult.Error(type, CODE_WRONG_PASSWORD, CODE_WRONG_PASSWORD)
+                }
                 if (tokenResponse.code != SUCCESS_CODE) {
                     return@withContext ParseResult.Error(
                         type,
@@ -165,14 +170,20 @@ class QuarkParser @Inject constructor(
      *
      * // TODO(用户抓包): 补齐固定参数并核对参数名大小写与类型
      *
+     * 说明（BUGFIX JYD-BUG-03-01）：无提取码时**不带** `passcode` 字段，
+     * 交由服务器判定该分享是否需要提取码；只有服务器返回「需要提取码」时，
+     * 上层才提示用户输入。
+     *
      * @param pwdId 分享 ID。
-     * @param passcode 提取码。
+     * @param passcode 提取码；为 null / 空白表示链接未携带提取码。
      * @return 请求体键值对。
      */
-    private fun buildTokenBody(pwdId: String, passcode: String): Map<String, String> = mapOf(
-        KEY_PWD_ID to pwdId,
-        KEY_PASSCODE to passcode
-    )
+    private fun buildTokenBody(pwdId: String, passcode: String?): Map<String, String> =
+        if (passcode.isNullOrBlank()) {
+            mapOf(KEY_PWD_ID to pwdId)
+        } else {
+            mapOf(KEY_PWD_ID to pwdId, KEY_PASSCODE to passcode)
+        }
 
     /**
      * 构造 detail 接口查询参数。
@@ -231,6 +242,20 @@ class QuarkParser @Inject constructor(
         const val SUCCESS_CODE = 0
 
         /**
+         * 「需要提取码」状态码。
+         *
+         * TODO(用户抓包): 核对夸克在分享需要提取码时 token 接口返回的业务码（当前为占位值）。
+         */
+        const val NEED_PASSWORD_CODE = 41011
+
+        /**
+         * 「提取码错误」状态码。
+         *
+         * TODO(用户抓包): 核对夸克在提取码错误时 token 接口返回的业务码（当前为占位值）。
+         */
+        const val WRONG_PASSWORD_CODE = 41012
+
+        /**
          * 错误码。为保持 domain 层不依赖 Android 资源系统，
          * code 与 message 均使用机器可读标识，由 UI 层映射为 strings.xml 文案。
          */
@@ -238,6 +263,7 @@ class QuarkParser @Inject constructor(
         const val CODE_NEED_COOKIE = "QUARK_NEED_COOKIE"
         const val CODE_TOKEN_FAILED = "QUARK_TOKEN_FAILED"
         const val CODE_DETAIL_FAILED = "QUARK_DETAIL_FAILED"
+        const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
         const val CODE_NETWORK = "QUARK_NETWORK_ERROR"
         const val CODE_PROTOCOL = "QUARK_PROTOCOL_ERROR"
     }

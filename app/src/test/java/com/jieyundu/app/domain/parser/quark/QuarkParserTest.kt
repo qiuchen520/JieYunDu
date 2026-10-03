@@ -50,11 +50,40 @@ class QuarkParserTest {
         assertEquals(NetdiskType.QUARK, newParser().type)
     }
 
-    /** 未提供提取码时应直接返回 NeedPassword，且不发任何请求。 */
+    /**
+     * BUGFIX JYD-BUG-03-01 断言 A：链接未携带提取码时，不得直接判定「需要提取码」，
+     * 而应先**不带 passcode** 调 token 接口；服务器返回成功时照常给出文件列表。
+     */
     @Test
-    fun parse_withoutPassword_returnsNeedPassword() = runTest {
-        val result = newParser().parse(SHARE_URL, null)
+    fun parse_withoutPassword_triesServerWithoutPasscode() = runTest {
+        val api = FakeQuarkApi(
+            files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L))
+        )
+        val result = newParser(api = api).parse(SHARE_URL, null)
+        assertTrue(result is ParseResult.Success, "no-password link must be tried against server")
+        val body = api.lastTokenBody
+        assertEquals(SHARE_ID, body?.get(KEY_PWD_ID))
+        assertFalse(body?.containsKey(KEY_PASSCODE) == true, "passcode must be omitted when blank")
+    }
+
+    /**
+     * BUGFIX JYD-BUG-03-01 断言 B：仅当服务器明确返回「需要提取码」时才提示用户输入。
+     */
+    @Test
+    fun parse_withoutPassword_whenServerAsks_returnsNeedPassword() = runTest {
+        val api = FakeQuarkApi(tokenCode = NEED_PASSWORD_CODE)
+        val result = newParser(api = api).parse(SHARE_URL, null)
         assertTrue(result is ParseResult.NeedPassword)
+    }
+
+    /**
+     * BUGFIX JYD-BUG-03-01 断言 C：链接携带提取码时，passcode 必须随请求体发出。
+     */
+    @Test
+    fun parse_withPassword_sendsPasscode() = runTest {
+        val api = FakeQuarkApi()
+        newParser(api = api).parse(SHARE_URL, PASSWORD)
+        assertEquals(PASSWORD, api.lastTokenBody?.get(KEY_PASSCODE))
     }
 
     /** 链接不含分享 ID（缺少 /s/ 段）时应返回 Error。 */
@@ -161,8 +190,14 @@ class QuarkParserTest {
         private val files: List<QuarkFile> = emptyList()
     ) : QuarkApi {
 
-        override suspend fun getShareToken(body: Map<String, String>): QuarkResponse<QuarkShareToken> =
-            QuarkResponse(code = tokenCode, message = "ok", data = QuarkShareToken(stoken = stoken))
+        /** 最近一次 token 请求体，供断言「是否携带 passcode」使用。 */
+        var lastTokenBody: Map<String, String>? = null
+            private set
+
+        override suspend fun getShareToken(body: Map<String, String>): QuarkResponse<QuarkShareToken> {
+            lastTokenBody = body
+            return QuarkResponse(code = tokenCode, message = "ok", data = QuarkShareToken(stoken = stoken))
+        }
 
         override suspend fun getShareDetail(params: Map<String, String>): QuarkResponse<QuarkShareDetail> =
             QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkShareDetail(list = files))
@@ -176,6 +211,13 @@ class QuarkParserTest {
         const val CODE_NEED_COOKIE = "QUARK_NEED_COOKIE"
 
         const val SHARE_URL = "https://pan.quark.cn/s/abcdef123456"
+        const val SHARE_ID = "abcdef123456"
+        const val PASSWORD = "1234"
+        const val KEY_PWD_ID = "pwd_id"
+        const val KEY_PASSCODE = "passcode"
+
+        /** 与 QuarkParser.NEED_PASSWORD_CODE 对齐的占位值（真实取值待抓包）。 */
+        const val NEED_PASSWORD_CODE = 41011
         const val HOME_PUUS_COOKIE = "__puus=fake-puus"
         const val HEADER_SET_COOKIE = "Set-Cookie"
         const val EMPTY_BODY = ""
