@@ -29,7 +29,25 @@ jobs:
         with:
           gradle-version: '8.2.1'
 
+      # 固定签名（JYD-SIGN-2026-10-03）：从仓库 Secrets 还原固定密钥到临时文件，
+      # 并通过环境变量交给 app/build.gradle.kts 的 signingConfigs.fixed 使用。
+      # 这样每个 CI 产物的签名恒定，可覆盖安装，不再丢登录态。
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGN_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::warning::SIGN_KEYSTORE_BASE64 未配置，将回退默认 debug 签名（不可覆盖安装）"
+          else
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/jieyundu.jks"
+            echo "SIGN_KEYSTORE_PATH=$RUNNER_TEMP/jieyundu.jks" >> "$GITHUB_ENV"
+          fi
+
       - name: Build Debug APK
+        env:
+          SIGN_STORE_PASSWORD: ${{ secrets.SIGN_STORE_PASSWORD }}
+          SIGN_KEY_ALIAS: ${{ secrets.SIGN_KEY_ALIAS }}
+          SIGN_KEY_PASSWORD: ${{ secrets.SIGN_KEY_PASSWORD }}
         run: gradle assembleDebug --stacktrace
 
       - name: Upload APK

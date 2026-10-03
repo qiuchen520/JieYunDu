@@ -26,8 +26,36 @@ android {
         }
     }
 
+    // 固定签名配置（JYD-SIGN-2026-10-03）。
+    // 背景：CI 每次在全新虚拟机上现生成默认 debug.keystore，导致每个包的签名都不同
+    //       → 新包无法覆盖旧包 → 只能卸载 → 登录态（加密存储）被清空 → 每次重登。
+    // 方案：CI 通过环境变量注入固定密钥，debug 与 release 共用，签名恒定、可覆盖升级。
+    //      本地无这些环境变量时，自动回退默认 debug 签名，保证不影响本机/无密钥构建。
+    signingConfigs {
+        if (!System.getenv("SIGN_KEYSTORE_PATH").isNullOrBlank()) {
+            create("fixed") {
+                storeFile = file(System.getenv("SIGN_KEYSTORE_PATH"))
+                storePassword = System.getenv("SIGN_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGN_KEY_ALIAS")
+                keyPassword = System.getenv("SIGN_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = if (!System.getenv("SIGN_KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfigs.getByName("fixed")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
         release {
+            signingConfig = if (!System.getenv("SIGN_KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfigs.getByName("fixed")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
         }
