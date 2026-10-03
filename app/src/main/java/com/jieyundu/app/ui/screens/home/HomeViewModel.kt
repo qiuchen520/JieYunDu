@@ -1,7 +1,7 @@
 // 文件：HomeViewModel.kt
-// 职责：首页解析逻辑——提取链接、路由解析器、把文件投递给下载引擎
-// 依赖：ParserRegistry、LinkExtractor、DownloadEngine、DownloadSessionRegistry、CookieStore、
-//       UserAgentProvider、CookieExtractor、Hilt、Timber
+// 职责：首页解析 / 分享目录浏览（展开、返回上一级）/ 把选中的文件转存取链并投递下载
+// 依赖：ParserRegistry、ShareBrowser、ShareDownloadPreparer、LinkExtractor、DownloadEngine、
+//       DownloadSessionRegistry、CookieStore、UserAgentProvider、CookieExtractor、Hilt、Timber
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.home
@@ -14,6 +14,7 @@ import com.jieyundu.app.R
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.data.remote.UserAgentProvider
 import com.jieyundu.app.domain.downloader.DownloadEngine
+import com.jieyundu.app.domain.downloader.DownloadState
 import com.jieyundu.app.domain.downloader.DownloadTask
 import com.jieyundu.app.domain.login.CookieExtractor
 import com.jieyundu.app.domain.model.FileInfo
@@ -22,6 +23,8 @@ import com.jieyundu.app.domain.model.ParseResult
 import com.jieyundu.app.domain.model.ShareLink
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.ParserRegistry
+import com.jieyundu.app.domain.parser.ShareBrowser
+import com.jieyundu.app.domain.transfer.ShareDownloadPreparer
 import com.jieyundu.app.domain.util.LinkExtractor
 import com.jieyundu.app.ui.screens.download.DownloadSessionRegistry
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import timber.log.Timber
@@ -42,14 +46,18 @@ import timber.log.Timber
 /**
  * 首页 ViewModel。
  *
- * 职责（《要求.md》4.1）：
+ * 职责（《要求.md》4.1 +【修订 JYD-BROWSE-2026-10-03】）：
  * 1. 承接输入框文本，调用 [LinkExtractor] 提取分享链接与提取码；
- * 2. 经 [ParserRegistry] 路由到对应解析器执行解析；
- * 3. 把用户选中的文件交给 [DownloadEngine] 分片下载。
+ * 2. 经 [ParserRegistry] 路由到对应解析器执行解析（得到分享根目录列表）；
+ * 3. **浏览**：点文件夹经 [ShareBrowser] 逐级展开，维护路径栈以支持「返回上一级」；
+ * 4. **下载**：把选中文件经 [ShareDownloadPreparer] 转存到临时目录 → 轮询取新 fid →
+ *   换直链 → 交 [DownloadEngine] 分片下载；下载完成后清理临时文件。
  *
  * 线程约束（C9）：耗时工作显式调度到 [Dispatchers.IO]；[CancellationException] 一律原样抛出（C3）。
  *
  * @param parserRegistry 解析器注册表。
+ * @param shareBrowser 分享目录浏览器（点文件夹展开）。
+ * @param shareDownloadPreparer 转存并取直链的准备器。
  * @param downloadEngine 分片下载引擎。
  * @param downloadSessionRegistry 会话内「任务 ID → 文件名」登记表（下载列表展示用）。
  * @param cookieStore 登录态 Cookie 仓库；下载时按网盘域取 Cookie 注入请求头。
@@ -59,6 +67,8 @@ import timber.log.Timber
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val parserRegistry: ParserRegistry,
+    private val shareBrowser: ShareBrowser,
+    private val shareDownloadPreparer: ShareDownloadPreparer,
     private val downloadEngine: DownloadEngine,
     private val downloadSessionRegistry: DownloadSessionRegistry,
     private val cookieStore: CookieStore,
@@ -141,7 +151,11 @@ class HomeViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             isParsing = true,
             result = null,
-            errorRes = null
+            errorRes = null,
+            shareContext = null,
+            stack = emptyList(),
+            isLoadingDir = false,
+            dirErrorRes = null
         )
         viewModelScope.launch(Dispatchers.IO) {
             val result = try {
@@ -171,6 +185,28 @@ class HomeViewModel @Inject constructor(
                         passwordPrompt = true,
                         passwordErrorRes = R.string.password_error_retry
                     )
+                // 解析成功 → 建立分享上下文与路径栈（根目录）
+                result is ParseResult.Success -> _uiState.value.copy(
+                    isParsing = false,
+                    result = result,
+                    passwordPrompt = false,
+                    passwordErrorRes = null,
+                    shareContext = ShareContext(
+                        netdiskType = result.netdiskType,
+                        title = result.shareTitle,
+                        pwdId = result.pwdId,
+                        stoken = result.stoken
+                    ),
+                    stack = listOf(
+                        BrowseLevel(
+                            pdirFid = ROOT_PDIR_FID,
+                            name = result.shareTitle,
+                            files = result.files
+                        )
+                    ),
+                    isLoadingDir = false,
+                    dirErrorRes = null
+                )
                 else -> _uiState.value.copy(
                     isParsing = false,
                     result = result,
@@ -202,15 +238,95 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 把解析出的单个文件投递到下载引擎。
+     * 进入某个文件夹（展开子目录并压入路径栈）。
      *
-     * 说明：夸克解析器（2026-10-03 接口实测后）已能为真实文件回填 `downloadUrl`；
-     * 未拿到直链（如文件夹或无直链的条目）时只记录日志并跳过，避免产生脏任务。
+     * @param folder 被点击的文件夹条目。
+     */
+    fun openFolder(folder: FileInfo) {
+        if (!folder.isDirectory) return
+        val context = _uiState.value.shareContext ?: return
+        if (shareBrowser.type != context.netdiskType) {
+            _uiState.value = _uiState.value.copy(dirErrorRes = R.string.parse_dir_load_failed)
+            return
+        }
+        _uiState.value = _uiState.value.copy(isLoadingDir = true, dirErrorRes = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val children = shareBrowser.listChildren(
+                    pwdId = context.pwdId,
+                    stoken = context.stoken,
+                    pdirFid = folder.fid
+                )
+                _uiState.value = _uiState.value.copy(
+                    isLoadingDir = false,
+                    stack = _uiState.value.stack + BrowseLevel(
+                        pdirFid = folder.fid,
+                        name = folder.fileName,
+                        files = children
+                    )
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (io: IOException) {
+                Timber.e(io, "HomeViewModel openFolder failed: network error")
+                _uiState.value = _uiState.value.copy(
+                    isLoadingDir = false,
+                    dirErrorRes = R.string.parse_dir_load_failed
+                )
+            } catch (serialization: SerializationException) {
+                Timber.e(serialization, "HomeViewModel openFolder failed: unexpected body")
+                _uiState.value = _uiState.value.copy(
+                    isLoadingDir = false,
+                    dirErrorRes = R.string.parse_dir_load_failed
+                )
+            }
+        }
+    }
+
+    /** 返回上一级目录（弹栈；已在根目录时不动作）。 */
+    fun navigateUp() {
+        val stack = _uiState.value.stack
+        if (stack.size <= 1) return
+        _uiState.value = _uiState.value.copy(
+            stack = stack.dropLast(1),
+            dirErrorRes = null
+        )
+    }
+
+    /**
+     * 下载选中的文件：先转存到临时目录并换取直链，再投递到下载引擎；完成后清理临时文件。
+     *
+     * 说明：文件夹不会被下载（由 UI 侧路由为进入目录）；无分享上下文且无直链时跳过。
      *
      * @param file 用户点击下载的文件条目。
      */
     fun download(file: FileInfo) {
-        val url = file.downloadUrl
+        if (file.isDirectory) return
+        val context = _uiState.value.shareContext
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                startDownload(file, context)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (io: IOException) {
+                Timber.e(io, "HomeViewModel failed to start download for %s", file.fileName)
+            }
+        }
+    }
+
+    /**
+     * 下载主体：转存取链 → 投递引擎 → 完成后清理。
+     *
+     * @param file 目标文件。
+     * @param context 分享上下文；为 null 时回退到文件自带直链（如个人网盘文件）。
+     */
+    private suspend fun startDownload(file: FileInfo, context: ShareContext?) {
+        val prepared = if (context != null && shareDownloadPreparer.type == context.netdiskType) {
+            shareDownloadPreparer.prepare(context.pwdId, context.stoken, file)
+        } else {
+            null
+        }
+        val url = prepared?.url ?: file.downloadUrl
         if (url.isNullOrBlank()) {
             Timber.w("HomeViewModel download skipped: direct link not ready for %s", file.fileName)
             return
@@ -218,25 +334,34 @@ class HomeViewModel @Inject constructor(
         val directory = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: appContext.filesDir
         val taskId = UUID.randomUUID().toString()
-        val netdiskType = (_uiState.value.result as? ParseResult.Success)?.netdiskType
         val task = DownloadTask(
             taskId = taskId,
             url = url,
             fileName = file.fileName,
             fileSize = file.fileSize,
             savePath = File(directory, file.fileName).absolutePath,
-            headers = buildDownloadHeaders(netdiskType)
+            headers = buildDownloadHeaders(context?.netdiskType)
         )
         downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                downloadEngine.start(task)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (io: IOException) {
-                Timber.e(io, "HomeViewModel failed to start download for %s", file.fileName)
-            }
+        downloadEngine.start(task)
+        if (prepared != null && awaitDownloadCompleted(taskId)) {
+            shareDownloadPreparer.cleanupAfterDownload(prepared.newFid)
         }
+    }
+
+    /**
+     * 等待下载任务到达终态。
+     *
+     * @param taskId 任务 ID。
+     * @return true 表示下载成功完成（据此决定是否清理临时文件；失败保留以便续传）。
+     */
+    private suspend fun awaitDownloadCompleted(taskId: String): Boolean {
+        val finalState = downloadEngine.observe(taskId).firstOrNull { state ->
+            state == DownloadState.COMPLETED ||
+                state == DownloadState.FAILED ||
+                state == DownloadState.CANCELED
+        }
+        return finalState == DownloadState.COMPLETED
     }
 
     /**
@@ -274,6 +399,9 @@ class HomeViewModel @Inject constructor(
     }
 
     private companion object {
+        /** 分享根目录的 pdir_fid 取值。 */
+        const val ROOT_PDIR_FID = "0"
+
         /** 本模块自有的网络错误码（与解析器错误码同一命名空间，由 UI 映射文案）。 */
         const val CODE_NETWORK = "APP_NETWORK_ERROR"
 

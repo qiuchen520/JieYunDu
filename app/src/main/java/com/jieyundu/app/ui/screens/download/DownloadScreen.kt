@@ -1,6 +1,6 @@
 // 文件：DownloadScreen.kt
-// 职责：下载页——任务列表（玻璃卡片）与空态提示；同时被首页平板右栏复用
-// 依赖：DownloadViewModel、DownloadItem、WindowSizeHelper、Dimens、JieYunDuColors
+// 职责：下载页——顶部筛选条（全部 / 下载中 / 已完成）+ 任务列表（玻璃卡片）与空态提示
+// 依赖：DownloadViewModel、DownloadFilterBar、DownloadItem、WindowSizeHelper、Dimens
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.download
@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
+import com.jieyundu.app.ui.screens.download.components.DownloadFilterBar
 import com.jieyundu.app.ui.screens.download.components.DownloadItem
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
@@ -37,8 +39,9 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
 /**
  * 下载页。
  *
- * 说明：数据来自 [DownloadViewModel.items]（Room 进度 × 会话文件名）；无任务时展示空态。
- * 列表项点击切换暂停 / 继续。平板与手机使用不同的卡片间距（9.4 / 9.5）。
+ * 说明：数据来自 [DownloadViewModel.items]（Room 进度 × 会话文件名/路径，按筛选档过滤）；
+ * 无任务或筛选后为空时展示空态。列表项点击切换暂停 / 继续，行尾删除按钮删除任务与本地文件。
+ * 平板与手机使用不同的卡片间距（9.4 / 9.5）。
  *
  * @param modifier 外部修饰符。
  */
@@ -46,42 +49,56 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
 fun DownloadScreen(modifier: Modifier = Modifier) {
     val viewModel: DownloadViewModel = hiltViewModel()
     val downloadItems by viewModel.items.collectAsState()
+    val filter by viewModel.filter.collectAsState()
     val isExpanded = rememberIsExpandedLayout()
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
 
-    if (downloadItems.isEmpty()) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(Dimens.SpaceXl),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                EmptyStateGlyph(modifier = Modifier.size(Dimens.EmptyIconSize))
-                Spacer(modifier = Modifier.height(Dimens.SpaceLg))
-                Text(
-                    text = stringResource(R.string.download_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = JieYunDuColors.TextSecondary
-                )
+    Column(modifier = modifier.fillMaxSize()) {
+        DownloadFilterBar(
+            selected = filter,
+            onSelect = viewModel::onFilterChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = spacing, end = spacing, top = spacing)
+        )
+        if (downloadItems.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(Dimens.SpaceXl),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    EmptyStateGlyph(modifier = Modifier.size(Dimens.EmptyIconSize))
+                    Spacer(modifier = Modifier.height(Dimens.SpaceLg))
+                    Text(
+                        text = stringResource(R.string.download_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = JieYunDuColors.TextSecondary
+                    )
+                }
             }
-        }
-    } else {
-        LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(spacing),
-            verticalArrangement = Arrangement.spacedBy(spacing)
-        ) {
-            itemsIndexed(
-                items = downloadItems,
-                key = { _, item -> item.progress.taskId }
-            ) { index, item ->
-                DownloadItem(
-                    item = item,
-                    onClick = { viewModel.toggleTask(item) },
-                    isExpanded = isExpanded,
-                    index = index
-                )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(spacing),
+                verticalArrangement = Arrangement.spacedBy(spacing)
+            ) {
+                itemsIndexed(
+                    items = downloadItems,
+                    key = { _, item -> item.progress.taskId }
+                ) { index, item ->
+                    DownloadItem(
+                        item = item,
+                        onClick = { viewModel.toggleTask(item) },
+                        onDelete = { viewModel.deleteTask(item) },
+                        isExpanded = isExpanded,
+                        index = index
+                    )
+                }
             }
         }
     }

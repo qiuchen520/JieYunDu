@@ -7,10 +7,13 @@ package com.jieyundu.app.di
 
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.ParserRegistry
+import com.jieyundu.app.domain.parser.ShareBrowser
 import com.jieyundu.app.domain.parser.baidu.BaiduParser
 import com.jieyundu.app.domain.parser.quark.QuarkParser
 import com.jieyundu.app.domain.parser.uc.UcParser
 import com.jieyundu.app.domain.parser.xunlei.XunleiParser
+import com.jieyundu.app.domain.transfer.ShareDownloadPreparer
+import com.jieyundu.app.domain.transfer.ShareTransfer
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -81,4 +84,24 @@ object AppModule {
     @Singleton
     fun provideParserRegistry(parsers: Set<@JvmSuppressWildcards NetdiskParser>): ParserRegistry =
         ParserRegistry(parsers.toList())
+
+    /**
+     * 提供分享目录浏览器（当前仅夸克实现；流程 B 个人网盘浏览接入后按 type 路由）。
+     *
+     * @param parser 夸克解析器实例（同时实现 [NetdiskParser] 与 [ShareBrowser]）。
+     * @return 以 [ShareBrowser] 身份暴露的同一实例。
+     */
+    @Provides
+    @Singleton
+    fun provideShareBrowser(parser: QuarkParser): ShareBrowser = parser
+
+    /**
+     * 提供分享下载准备器（转存到临时目录 + 轮询 + 取直链）。
+     *
+     * @param transfer 夸克转存器实例。
+     * @return 以 [ShareDownloadPreparer] 身份暴露的同一实例。
+     */
+    @Provides
+    @Singleton
+    fun provideShareDownloadPreparer(transfer: ShareTransfer): ShareDownloadPreparer = transfer
 }

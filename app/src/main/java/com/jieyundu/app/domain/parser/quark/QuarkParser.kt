@@ -1,6 +1,6 @@
 // 文件：QuarkParser.kt
-// 职责：夸克网盘分享链接解析器（token → detail → save → poll → download，参数已实测校准）
-// 依赖：QuarkApi、ShareTransfer、NetdiskParser、LinkExtractor、CookieStore、OkHttpClient、Timber
+// 职责：夸克网盘分享链接解析器——解析分享根目录 / 按需展开子目录（参数已实测校准）
+// 依赖：QuarkApi、ShareBrowser、NetdiskParser、LinkExtractor、CookieStore、OkHttpClient、Timber
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.domain.parser.quark
@@ -10,7 +10,7 @@ import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
 import com.jieyundu.app.domain.parser.NetdiskParser
-import com.jieyundu.app.domain.transfer.ShareTransfer
+import com.jieyundu.app.domain.parser.ShareBrowser
 import com.jieyundu.app.domain.util.LinkExtractor
 import java.io.IOException
 import javax.inject.Inject
@@ -24,19 +24,18 @@ import okhttp3.Request
 import timber.log.Timber
 
 /**
- * 夸克网盘解析器。
+ * 夸克网盘解析器（浏览职责）。
  *
- * 流程（《要求.md》8.2 +《解析Bug分析.md》最小修复路径，见【修订 JYD-PARSE-2026-10-03】）：
+ * 流程（《要求.md》八 +【修订 JYD-BROWSE-2026-10-03】）：
  * 1. best-effort 请求 `https://pan.quark.cn` 首页取 `__pus` / `__puus`（合并登记）；
  * 2. 从分享链接提取 pwd_id（[LinkExtractor.extractShareId]）；
  * 3. 调 token 接口换 stoken（带 `support_visit_limit_private_share`，同时取回分享标题）；
- * 4. 调 detail 接口取文件列表（`data.detail_info.list`，兼容 `data.list`）；
- * 5. **转存**：把真实文件转存到本账号（[ShareTransfer]），拿 `task_id`；
- * 6. **轮询**：`finished_at>0`/`status==2` 后取本账号**新 fid**；
- * 7. 用**新 fid** 调 download 接口取直链；该响应还会下发 CDN 必需的 `__pugs` Cookie。
+ * 4. 调 detail 接口取**根目录**文件列表（`data.detail_info.list`，兼容 `data.list`）；
+ * 5. 点文件夹时，以该文件夹 fid 为 `pdir_fid` 再调 detail 取子目录（[listChildren]）。
  *
- * 核心认知：`file/download` 只认自己网盘里的文件，直接传分享 fid 拿不到直链
- * —— 这就是「转存」步骤存在的唯一理由（原文第 35–36 行）。
+ * 转存 + 轮询 + 取直链**不在解析阶段**：`file/download` 只认自己网盘里的文件，
+ * 该链路推迟到用户点下载时由 [com.jieyundu.app.domain.transfer.ShareTransfer] 执行
+ * （《解析Bug分析.md》P0-1）。这样解析只负责"浏览"，下载只负责"转存取链"，职责清晰。
  *
  * 仍未闭合、需人工抓包的项（铁律 R3）：提取码「需要 / 错误」的真实业务码
  * （[NEED_PASSWORD_CODE] / [WRONG_PASSWORD_CODE] 暂为占位值）。
@@ -44,17 +43,15 @@ import timber.log.Timber
  * 线程约束：网络与 IO 全部运行在 [Dispatchers.IO]（编码风格 C9）。
  *
  * @param api 夸克接口（由 Hilt 提供，BaseUrl 与固定 Header 见 di/NetworkModule）。
- * @param shareTransfer 转存器（save + poll）。
  * @param okHttpClient 复用的 OkHttp 客户端，用于第 1 步 best-effort 取 Cookie（超时见 C4）。
  * @param cookieStore 内存态 Cookie 仓库，用于登记 `__pus`/`__puus`（`__pugs` 由网络层拦截器登记）。
  */
 @Singleton
 class QuarkParser @Inject constructor(
     private val api: QuarkApi,
-    private val shareTransfer: ShareTransfer,
     private val okHttpClient: OkHttpClient,
     private val cookieStore: CookieStore
-) : NetdiskParser {
+) : NetdiskParser, ShareBrowser {
 
     override val type: NetdiskType = NetdiskType.QUARK
 
@@ -68,7 +65,7 @@ class QuarkParser @Inject constructor(
         LinkExtractor.detectType(url) == NetdiskType.QUARK
 
     /**
-     * 解析夸克分享链接。
+     * 解析夸克分享链接（仅根目录一层）。
      *
      * @param url 分享链接。
      * @param pwd 提取码；为 null / 空白时按「无提取码」直接向服务器尝试，
@@ -95,7 +92,6 @@ class QuarkParser @Inject constructor(
                         return@withContext ParseResult.NeedPassword(type)
 
                     WRONG_PASSWORD_CODE ->
-                        // 提取码错误：交由 UI 保留弹窗并提示重试（阶段 8 整改二）
                         return@withContext ParseResult.Error(
                             type,
                             CODE_WRONG_PASSWORD,
@@ -112,61 +108,20 @@ class QuarkParser @Inject constructor(
                 }
                 val stoken = tokenResponse.data.stoken
 
-                // 第 3 步：取文件列表（真实结构 data.detail_info.list，兼容 data.list）。
-                val detailResponse = api.getShareDetail(buildDetailParams(pwdId, stoken))
-                if (detailResponse.code != SUCCESS_CODE) {
-                    return@withContext ParseResult.Error(
+                // 第 3 步：取根目录文件列表（真实结构 data.detail_info.list，兼容 data.list）。
+                val entries = fetchEntries(pwdId, stoken, ROOT_PDIR_FID)
+                    ?: return@withContext ParseResult.Error(
                         type,
-                        detailResponse.code.toString(),
+                        CODE_DETAIL_FAILED,
                         CODE_DETAIL_FAILED
                     )
-                }
-                val entries = detailResponse.data.entries
-                val shareFiles = entries.filterNot { entry -> entry.dir }
-
-                // 无真实文件（仅文件夹或空分享）：直接返回，无需转存/取链。
-                if (shareFiles.isEmpty()) {
-                    return@withContext ParseResult.Success(
-                        netdiskType = type,
-                        shareTitle = tokenResponse.data.title,
-                        files = entries.map { entry -> entry.toFileInfo(null) }
-                    )
-                }
-
-                // 第 4/5 步：转存到本账号并轮询取回新 fid（不可省）。
-                val newFids = shareTransfer.saveAndCollectFids(pwdId, stoken, shareFiles)
-                if (newFids.isEmpty()) {
-                    return@withContext ParseResult.Error(
-                        type,
-                        CODE_TRANSFER_FAILED,
-                        CODE_TRANSFER_FAILED
-                    )
-                }
-
-                // 第 6 步：用**本账号新 fid** 换取直链。
-                val downloadResponse = api.getDownloadUrl(buildDownloadBody(newFids))
-                if (downloadResponse.code != SUCCESS_CODE) {
-                    return@withContext ParseResult.Error(
-                        type,
-                        downloadResponse.code.toString(),
-                        CODE_DOWNLOAD_FAILED
-                    )
-                }
-                val urlByNewFid = downloadResponse.data
-                    .filter { item -> item.fid.isNotBlank() && item.download_url.isNotBlank() }
-                    .associate { item -> item.fid to item.download_url }
-
-                // 把「新 fid → 直链」按转存顺序回填到「分享文件」，供 UI 展示与下载。
-                val urlByShareFid = HashMap<String, String>()
-                shareFiles.forEachIndexed { index, file ->
-                    val newFid = newFids.getOrNull(index) ?: return@forEachIndexed
-                    urlByNewFid[newFid]?.let { url -> urlByShareFid[file.fid] = url }
-                }
 
                 ParseResult.Success(
                     netdiskType = type,
                     shareTitle = tokenResponse.data.title,
-                    files = entries.map { entry -> entry.toFileInfo(urlByShareFid[entry.fid]) }
+                    files = entries.map { entry -> entry.toFileInfo() },
+                    pwdId = pwdId,
+                    stoken = stoken
                 )
             } catch (cancellation: CancellationException) {
                 // C3：协程取消必须原样抛出，不得吞掉
@@ -179,6 +134,43 @@ class QuarkParser @Inject constructor(
                 ParseResult.Error(type, CODE_PROTOCOL, CODE_PROTOCOL)
             }
         }
+    }
+
+    /**
+     * 列出分享内指定目录的直接子项（点文件夹展开用）。
+     *
+     * @param pwdId 分享 ID。
+     * @param stoken 分享临时令牌。
+     * @param pdirFid 目标目录 fid。
+     * @return 该目录下的条目列表；请求失败返回空列表。
+     */
+    override suspend fun listChildren(
+        pwdId: String,
+        stoken: String,
+        pdirFid: String
+    ): List<FileInfo> = withContext(Dispatchers.IO) {
+        fetchEntries(pwdId, stoken, pdirFid)?.map { entry -> entry.toFileInfo() }.orEmpty()
+    }
+
+    /**
+     * 拉取分享内某目录的条目。
+     *
+     * @param pwdId 分享 ID。
+     * @param stoken 分享临时令牌。
+     * @param pdirFid 目标目录 fid。
+     * @return 条目列表；服务端返回非成功码时返回 null。
+     */
+    private suspend fun fetchEntries(
+        pwdId: String,
+        stoken: String,
+        pdirFid: String
+    ): List<QuarkFile>? {
+        val detailResponse = api.getShareDetail(buildDetailParams(pwdId, stoken, pdirFid))
+        if (detailResponse.code != SUCCESS_CODE) {
+            Timber.w("QuarkParser detail code=%d pdir=%s", detailResponse.code, pdirFid)
+            return null
+        }
+        return detailResponse.data.entries
     }
 
     /**
@@ -247,14 +239,19 @@ class QuarkParser @Inject constructor(
      *
      * @param pwdId 分享 ID。
      * @param stoken 临时令牌。
+     * @param pdirFid 目标目录 fid（根为 `0`）。
      * @return 查询参数键值对。
      */
-    private fun buildDetailParams(pwdId: String, stoken: String): Map<String, String> = mapOf(
+    private fun buildDetailParams(
+        pwdId: String,
+        stoken: String,
+        pdirFid: String
+    ): Map<String, String> = mapOf(
         KEY_PR to QUARK_PR,
         KEY_FR to QUARK_FR,
         KEY_PWD_ID to pwdId,
         KEY_STOKEN to stoken,
-        KEY_PDIR_FID to ROOT_PDIR_FID,
+        KEY_PDIR_FID to pdirFid,
         KEY_FORCE to FORCE_VALUE,
         KEY_PAGE to FIRST_PAGE,
         KEY_SIZE to PAGE_SIZE,
@@ -262,29 +259,17 @@ class QuarkParser @Inject constructor(
     )
 
     /**
-     * 构造 download 接口请求体。
+     * 把夸克的文件条目映射为领域模型（浏览阶段无直链）。
      *
-     * 实测：`fids` 为数组字段，传**本账号新 fid**；固定 query（pr/fr/sys/ve）已写在
-     * [QuarkApi.getDownloadUrl] 的路径中。
-     *
-     * @param fids 转存后的本账号文件 ID 列表。
-     * @return 请求体（`fids` 为数组字段）。
-     */
-    private fun buildDownloadBody(fids: List<String>): QuarkDownloadRequest =
-        QuarkDownloadRequest(fids = fids)
-
-    /**
-     * 把夸克的文件条目映射为领域模型。
-     *
-     * @param downloadUrl 该文件的直链；文件夹或无直链时为 null。
      * @return 领域层文件描述。
      */
-    private fun QuarkFile.toFileInfo(downloadUrl: String?): FileInfo = FileInfo(
+    private fun QuarkFile.toFileInfo(): FileInfo = FileInfo(
         fid = fid,
         fileName = file_name,
         fileSize = size,
         isDirectory = dir,
-        downloadUrl = downloadUrl?.takeIf { url -> url.isNotBlank() }
+        downloadUrl = null,
+        shareFidToken = share_fid_token
     )
 
     private companion object {
@@ -355,8 +340,6 @@ class QuarkParser @Inject constructor(
         const val CODE_INVALID_LINK = "QUARK_INVALID_LINK"
         const val CODE_TOKEN_FAILED = "QUARK_TOKEN_FAILED"
         const val CODE_DETAIL_FAILED = "QUARK_DETAIL_FAILED"
-        const val CODE_TRANSFER_FAILED = "QUARK_TRANSFER_FAILED"
-        const val CODE_DOWNLOAD_FAILED = "QUARK_DOWNLOAD_FAILED"
         const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
         const val CODE_NETWORK = "QUARK_NETWORK_ERROR"
         const val CODE_PROTOCOL = "QUARK_PROTOCOL_ERROR"

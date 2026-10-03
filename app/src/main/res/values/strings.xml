@@ -73,6 +73,12 @@
     <string name="settings_default_chunk">默认并发分片数</string>
     <string name="settings_default_chunk_value">%1$d（上限 %2$d）</string>
     <string name="settings_about">关于</string>
+    <string name="settings_temp_cleanup">临时文件清理</string>
+    <string name="settings_temp_cleanup_hint">删除转存到「.极云渡临时」的残留文件；下载成功后会自动清理。</string>
+    <string name="settings_temp_cleanup_action">立即清理</string>
+    <string name="settings_temp_cleanup_running">正在清理…</string>
+    <string name="settings_temp_cleanup_done">已清理 %1$d 个文件</string>
+    <string name="settings_temp_cleanup_failed">清理失败，请稍后重试</string>
     <string name="settings_version_format">版本 %1$s</string>
     <string name="settings_license">开源协议：AGPL-3.0</string>
 
@@ -105,6 +111,15 @@
     <string name="parse_result_idle">粘贴分享链接并点击解析，文件会显示在这里</string>
     <string name="parse_result_select_hint">勾选要下载的文件</string>
     <string name="action_download">下载选中</string>
+
+    <!-- 文件夹展开与路径浏览（阶段 13：文件夹展开 + 返回上一级）-->
+    <string name="parse_item_folder">文件夹</string>
+    <string name="parse_browse_up">返回上一级</string>
+    <string name="parse_browse_empty">此文件夹为空</string>
+    <string name="parse_loading_dir">正在加载…</string>
+    <string name="parse_dir_load_failed">打开文件夹失败，请重试</string>
+    <string name="parse_breadcrumb_separator"> / </string>
+    <string name="parse_download_preparing">正在转存并获取直链…</string>
 
     <!-- 下载页筛选与删除（阶段 8 布局修订）-->
     <string name="download_filter_all">全部</string>

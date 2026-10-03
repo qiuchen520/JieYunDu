@@ -1,5 +1,5 @@
 // 文件：QuarkParserTest.kt
-// 职责：夸克解析器单元测试（含 Cookie 通道、标题/直链/文件夹映射与全链路断言）
+// 职责：夸克解析器单元测试（含 Cookie 通道、标题/文件夹映射、目录展开与全链路断言）
 // 依赖：QuarkParser、QuarkApi、CookieStore、kotlin.test、kotlinx-coroutines-test、OkHttp
 // 协议：AGPL-3.0
 
@@ -8,9 +8,6 @@ package com.jieyundu.app.domain.parser.quark
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
-import com.jieyundu.app.domain.transfer.ShareTransfer
-import com.jieyundu.app.domain.transfer.TaskPoller
-import com.jieyundu.app.domain.transfer.TempFolderManager
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -25,12 +22,11 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 /**
  * [QuarkParser] 的单元测试。
  *
- * 说明：
+ * 说明（阶段 13 职责重划）：
+ * - 解析器只负责「握手 → token → detail（根目录 / 子目录）」浏览链路；
+ *   转存 + 取直链已移交 `ShareTransfer`，故此处不再断言直链回填；
  * - 用 [FakeQuarkApi] 替代真实接口，不触网；
- * - 用「短路拦截器」构造假的首页响应（含 / 不含 Set-Cookie），从而在不引入
- *   MockWebServer 依赖的前提下，验证 `__puus` 通道（best-effort）；
- * - 断言依据 2026-10-03 的夸克接口终端实测：token/detail 无需 Cookie、
- *   download 响应 data[] 含 fid 与 download_url、条目含 dir 文件夹标记；
+ * - 用「短路拦截器」构造假的首页响应（含 / 不含 Set-Cookie），验证 `__puus` 通道（best-effort）；
  * - 测试源码同样遵守 C5（注释为中文，字面量全为 ASCII）。
  */
 class QuarkParserTest {
@@ -124,21 +120,36 @@ class QuarkParserTest {
         assertEquals("shared-title", (result as ParseResult.Success).shareTitle)
     }
 
-    /** 实测校准断言 C：真实文件的 download_url 应按 fid 回填到对应 FileInfo。 */
+    /** 阶段 13 断言：解析成功须回填 pwdId / stoken，供后续展开与转存使用。 */
     @Test
-    fun parse_fillsDownloadUrlForFiles() = runTest {
+    fun parse_fillsPwdIdAndStoken() = runTest {
+        val result = newParser(
+            api = FakeQuarkApi(stoken = "fake-stoken")
+        ).parse(SHARE_URL, null)
+        val success = result as ParseResult.Success
+        assertEquals(SHARE_ID, success.pwdId)
+        assertEquals("fake-stoken", success.stoken)
+    }
+
+    /** 阶段 13 断言：分享条目的 share_fid_token 必须映射进 FileInfo（转存需要）。 */
+    @Test
+    fun parse_fillsShareFidToken() = runTest {
         val api = FakeQuarkApi(
-            files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L)),
-            downloadEntries = listOf(
-                QuarkDownloadUrl(fid = SAVED_FID_PREFIX + "fid-1", download_url = DIRECT_URL)
+            files = listOf(
+                QuarkFile(
+                    fid = "fid-1",
+                    file_name = "demo.txt",
+                    size = 1024L,
+                    share_fid_token = "tok-1"
+                )
             )
         )
         val result = newParser(api = api).parse(SHARE_URL, null)
         val file = (result as ParseResult.Success).files.first()
-        assertEquals(DIRECT_URL, file.downloadUrl)
+        assertEquals("tok-1", file.shareFidToken)
     }
 
-    /** 实测校准断言 D：文件夹条目应标记 isDirectory，且不请求直链。 */
+    /** 实测校准断言 D：文件夹条目应标记 isDirectory、无直链，且解析阶段不请求直链。 */
     @Test
     fun parse_marksDirectoryEntries() = runTest {
         val api = FakeQuarkApi(
@@ -150,19 +161,32 @@ class QuarkParserTest {
         val entry = (result as ParseResult.Success).files.first()
         assertTrue(entry.isDirectory)
         assertNull(entry.downloadUrl)
-        assertNull(api.lastDownloadBody, "directories must not trigger a download request")
+        assertNull(api.lastDownloadBody, "parse must not trigger a download request")
     }
 
-    /** 实测校准断言 E：download 接口返回非成功码时应映射为直链获取失败错误码。 */
+    /** 阶段 13 断言：detail 接口失败时应映射为获取文件列表失败错误码。 */
     @Test
-    fun parse_downloadFails_returnsError() = runTest {
-        val api = FakeQuarkApi(
-            files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L)),
-            downloadCode = RISK_CONTROL_CODE
-        )
+    fun parse_detailFails_returnsError() = runTest {
+        val api = FakeQuarkApi(detailCode = RISK_CONTROL_CODE)
         val result = newParser(api = api).parse(SHARE_URL, null)
         assertTrue(result is ParseResult.Error)
-        assertEquals(RISK_CONTROL_CODE.toString(), (result as ParseResult.Error).code)
+        assertEquals("QUARK_DETAIL_FAILED", (result as ParseResult.Error).message)
+    }
+
+    /** 阶段 13 断言：展开子目录须以该目录 fid 作为 pdir_fid 请求。 */
+    @Test
+    fun listChildren_requestsGivenPdirFid() = runTest {
+        val api = FakeQuarkApi(
+            childEntries = mapOf(
+                "dir-1" to listOf(
+                    QuarkFile(fid = "fid-2", file_name = "inner.txt", size = 10L)
+                )
+            )
+        )
+        val parser = newParser(api = api)
+        val children = parser.listChildren(SHARE_ID, "fake-stoken", "dir-1")
+        assertEquals("dir-1", api.lastDetailParams?.get(KEY_PDIR_FID))
+        assertEquals(listOf("fid-2"), children.map { entry -> entry.fid })
     }
 
     /** 硬伤 2 断言：成功取得的 `__puus` 必须被登记进 CookieStore，供后续请求注入。 */
@@ -197,7 +221,6 @@ class QuarkParserTest {
         cookieStore: CookieStore = CookieStore(null)
     ): QuarkParser = QuarkParser(
         api = api,
-        shareTransfer = ShareTransfer(api, TaskPoller(api), TempFolderManager()),
         okHttpClient = homeClient(homeCookie),
         cookieStore = cookieStore
     )
@@ -232,27 +255,21 @@ class QuarkParserTest {
         private val tokenTitle: String = "fake-title",
         private val stoken: String = "fake-stoken",
         private val files: List<QuarkFile> = emptyList(),
-        private val downloadCode: Int = SUCCESS_CODE,
-        private val downloadEntries: List<QuarkDownloadUrl> = emptyList(),
-        private val saveCode: Int = SUCCESS_CODE,
-        private val taskCode: Int = SUCCESS_CODE,
-        private val taskFinished: Boolean = true
+        private val childEntries: Map<String, List<QuarkFile>> = emptyMap(),
+        private val detailCode: Int = SUCCESS_CODE
     ) : QuarkApi {
 
         /** 最近一次 token 请求体，供断言「是否携带 passcode」使用。 */
         var lastTokenBody: Map<String, String>? = null
             private set
 
-        /** 最近一次 save 请求体，供断言「转存是否携带 fid / token 列表」使用。 */
-        var lastSaveBody: QuarkSaveRequest? = null
+        /** 最近一次 detail 查询参数，供断言 pdir_fid 使用。 */
+        var lastDetailParams: Map<String, String>? = null
             private set
 
-        /** 最近一次 download 请求体，供断言「文件夹是否触发直链请求」使用。 */
+        /** 最近一次 download 请求体；解析阶段应始终为 null。 */
         var lastDownloadBody: QuarkDownloadRequest? = null
             private set
-
-        /** 转存后在「本账号」中的新 fid（由 save 请求的 fid_list 派生，便于断言回填）。 */
-        private var savedFids: List<String> = emptyList()
 
         override suspend fun getShareToken(body: Map<String, String>): QuarkResponse<QuarkShareToken> {
             lastTokenBody = body
@@ -263,40 +280,57 @@ class QuarkParserTest {
             )
         }
 
-        override suspend fun getShareDetail(params: Map<String, String>): QuarkResponse<QuarkShareDetail> =
-            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkShareDetail(list = files))
-
-        override suspend fun saveShare(body: QuarkSaveRequest): QuarkResponse<QuarkSaveResult> {
-            lastSaveBody = body
-            savedFids = body.fid_list.map { fid -> SAVED_FID_PREFIX + fid }
-            val taskId = if (saveCode == SUCCESS_CODE) SAVE_TASK_ID else ""
-            return QuarkResponse(code = saveCode, message = "ok", data = QuarkSaveResult(task_id = taskId))
+        override suspend fun getShareDetail(params: Map<String, String>): QuarkResponse<QuarkShareDetail> {
+            lastDetailParams = params
+            val pdirFid = params[KEY_PDIR_FID]
+            val entries = when {
+                pdirFid == null || pdirFid == ROOT_PDIR_FID -> files
+                else -> childEntries[pdirFid].orEmpty()
+            }
+            return QuarkResponse(
+                code = detailCode,
+                message = "ok",
+                data = QuarkShareDetail(list = entries)
+            )
         }
+
+        override suspend fun saveShare(body: QuarkSaveRequest): QuarkResponse<QuarkSaveResult> =
+            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkSaveResult())
 
         override suspend fun getTask(params: Map<String, String>): QuarkResponse<QuarkTask> =
-            QuarkResponse(
-                code = taskCode,
-                message = "ok",
-                data = QuarkTask(
-                    status = if (taskFinished) TASK_STATUS_FINISHED else 0,
-                    finished_at = if (taskFinished) 1L else 0L,
-                    save_as = QuarkSaveAs(save_as_top_fids = savedFids)
-                )
-            )
+            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkTask())
 
-        override suspend fun getDownloadUrl(body: QuarkDownloadRequest): QuarkResponse<List<QuarkDownloadUrl>> {
+        override suspend fun getDownloadUrl(
+            body: QuarkDownloadRequest
+        ): QuarkResponse<List<QuarkDownloadUrl>> {
             lastDownloadBody = body
-            return QuarkResponse(code = downloadCode, message = "ok", data = downloadEntries)
+            return QuarkResponse(code = SUCCESS_CODE, message = "ok", data = emptyList())
         }
+
+        override suspend fun listFiles(params: Map<String, String>): QuarkResponse<QuarkFileList> =
+            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkFileList())
+
+        override suspend fun createFolder(
+            body: QuarkCreateFolderRequest
+        ): QuarkResponse<QuarkCreateFolderResult> =
+            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkCreateFolderResult())
+
+        override suspend fun deleteFiles(
+            body: QuarkDeleteRequest
+        ): QuarkResponse<QuarkDeleteResult> =
+            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkDeleteResult())
     }
 
     private companion object {
         const val SHARE_URL = "https://pan.quark.cn/s/abcdef123456"
         const val SHARE_ID = "abcdef123456"
         const val PASSWORD = "1234"
-        const val DIRECT_URL = "https://dl-guest-zb-u.drive.quark.cn/fake"
         const val KEY_PWD_ID = "pwd_id"
         const val KEY_PASSCODE = "passcode"
+        const val KEY_PDIR_FID = "pdir_fid"
+
+        /** 与 QuarkParser.ROOT_PDIR_FID 对齐的分享根目录取值。 */
+        const val ROOT_PDIR_FID = "0"
 
         /** 与 QuarkParser.NEED_PASSWORD_CODE 对齐的占位值（真实取值待抓包）。 */
         const val NEED_PASSWORD_CODE = 41011
@@ -310,14 +344,5 @@ class QuarkParserTest {
 
         /** 占位风控码；真实取值待抓包（见 QuarkParser 常量注释）。 */
         const val RISK_CONTROL_CODE = 31001
-
-        /** 转存任务：save 成功后返回的任务 ID。 */
-        const val SAVE_TASK_ID = "task-1"
-
-        /** 转存任务完成状态码（与 TaskPoller.STATUS_FINISHED 对齐）。 */
-        const val TASK_STATUS_FINISHED = 2
-
-        /** 转存后新 fid 前缀（用于断言「按新 fid 回填直链」）。 */
-        const val SAVED_FID_PREFIX = "saved-"
     }
 }

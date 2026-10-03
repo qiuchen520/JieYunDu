@@ -40,6 +40,9 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     val state by viewModel.uiState.collectAsState()
     val isExpanded = rememberIsExpandedLayout()
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
+    val breadcrumb = state.stack.joinToString(
+        separator = stringResource(R.string.parse_breadcrumb_separator)
+    ) { level -> level.name }
 
     Column(
         modifier = modifier
@@ -60,7 +63,14 @@ fun HomeScreen(modifier: Modifier = Modifier) {
             result = state.result,
             errorRes = state.errorRes,
             isParsing = state.isParsing,
+            level = state.currentLevel,
+            breadcrumb = breadcrumb,
+            canNavigateUp = state.canNavigateUp,
+            isLoadingDir = state.isLoadingDir,
+            dirErrorRes = state.dirErrorRes,
             onDownload = viewModel::download,
+            onOpenFolder = viewModel::openFolder,
+            onNavigateUp = viewModel::navigateUp,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),

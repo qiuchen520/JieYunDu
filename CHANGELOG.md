@@ -700,6 +700,41 @@
 - 转存先落网盘**根目录**（不传 `to_pdir_fid`）；`.极云渡临时` 目录 + 自动清理推迟到阶段 13。
 - `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE` 仍为占位值（41011 / 41012），待抓包校准。
 
+## 阶段 13：文件夹展开（含返回上一级路径栈）+ `.极云渡临时` 目录机制
+> 依据 Owner 裁定（一次做完、一次推 CI）与《抓包事实.md》§6.1⑥ / §9.1 / §10.2 / §10.3；
+> 不动其余三家解析器、不动 UI 视觉基准。规格登记见【修订 JYD-BROWSE-2026-10-03】/【修订 JYD-TEMP-2026-10-03】。
+### 架构调整：浏览与下载解耦
+- `QuarkParser.kt`：解析阶段只做「握手 → token → detail（根目录）」并返回 `pwdId` / `stoken` + 根条目；
+  实现新接口 `ShareBrowser`（`listChildren`），点文件夹以该 fid 为 `pdir_fid` 再调 detail；不再依赖 `ShareTransfer`。
+- 新增 `domain/parser/ShareBrowser.kt`：统一「列出某目录直接子项」接口（流程 A / 流程 B 共用，UI 只换底层实现）。
+- 新增 `domain/transfer/ShareDownloadPreparer.kt`：统一「转存 → 取链 / 清理」接口（`prepare` / `cleanupAfterDownload`）。
+### 临时目录机制
+- `TempFolderManager.kt`（重写）：`ensureTempFolderFid`（查→建）/ `findTempFolderFid` / `recordPendingCleanup` /
+  `deleteFromTemp`（删文件 + 空目录删除）/ `cleanupAll`（只删不建）。
+- `ShareTransfer.kt`（重写）：实现 `ShareDownloadPreparer`；`saveAndCollectFids(pwdId, stoken, files, toPdirFid)`
+  新增转存目标；`prepare` 转存到临时目录（建目录失败回退根目录 `0`）→ 轮询取新 fid → `file/download(新 fid)`。
+- `QuarkApi.kt`：新增 `listFiles`（`file/sort`）/ `createFolder`（`file`）/ `deleteFiles`（`file/delete`，`action_type=2`）；
+  新增 `QuarkFileList` / `QuarkCreateFolderRequest` / `QuarkCreateFolderResult` / `QuarkDeleteRequest` / `QuarkDeleteResult`；
+  `QuarkSaveRequest` 增补 `pdir_fid` / `to_pdir_fid`。
+### 模型 / DI / UI
+- `ParseResult.Success` 增补 `pwdId` / `stoken`；`FileInfo` 增补 `shareFidToken`。
+- `AppModule.kt`：新增 `provideShareBrowser`（QuarkParser）与 `provideShareDownloadPreparer`（ShareTransfer）绑定。
+- `HomeUiState.kt`：新增 `ShareContext` / `BrowseLevel`、`stack` / `isLoadingDir` / `dirErrorRes` 与派生属性
+  `currentLevel` / `canNavigateUp`。
+- `HomeViewModel.kt`（重写）：`startParse` 建立分享上下文与根级路径栈；新增 `openFolder`（压栈）/ `navigateUp`（弹栈）/
+  `download`（转存取链 → 投递引擎 → 完成后清理临时文件）；`buildDownloadHeaders`（Referer + Cookie）。
+- `ParseResultCard.kt`：文件夹条目显示「文件夹」而非 `0 B`、点击进入；新增面包屑与「返回上一级」；勾选状态按目录层隔离。
+- `HomeScreen.kt`：接线目录层 / 面包屑 / 返回上一级。
+- `SettingsViewModel.kt` / `SettingsScreen.kt`：新增「临时文件清理」入口（`cleanupAll`）。
+- `strings.xml`：新增文件夹展开、返回、空目录、加载中、加载失败、面包屑分隔、转存中、临时清理等文案。
+### 测试
+- `QuarkParserTest.kt`（重写）：同步 `QuarkParser` 新构造函数（去掉 `shareTransfer`）；移除解析阶段直链断言；
+  新增 `parse_fillsPwdIdAndStoken` / `parse_fillsShareFidToken` / `parse_detailFails_returnsError` /
+  `listChildren_requestsGivenPdirFid`；`FakeQuarkApi` 补齐 `listFiles` / `createFolder` / `deleteFiles`。
+### 已知限制 / 待抓包
+- 流程 B（个人网盘浏览 B1）下一批单独启动；回收站（B3）本批不做（夸克/UC/百度缺口）。
+- `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE` 仍为占位值，待抓包校准。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

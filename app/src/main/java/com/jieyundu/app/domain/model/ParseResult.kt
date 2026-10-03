@@ -17,12 +17,16 @@ sealed class ParseResult {
      *
      * @property netdiskType 所属网盘类型。
      * @property shareTitle 分享标题（没有标题时返回空串或文件名本身）。
-     * @property files 分享内的文件列表。
+     * @property files 分享根目录内的文件列表（仅一层；子目录需按需展开）。
+     * @property pwdId 分享 ID；展开子目录 / 转存时需要（可为空串，表示不可展开）。
+     * @property stoken 分享临时令牌；展开子目录 / 转存时需要（可为空串）。
      */
     data class Success(
         val netdiskType: NetdiskType,
         val shareTitle: String,
-        val files: List<FileInfo>
+        val files: List<FileInfo>,
+        val pwdId: String = "",
+        val stoken: String = ""
     ) : ParseResult()
 
     /**

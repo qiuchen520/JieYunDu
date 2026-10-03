@@ -15,12 +15,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
+import com.jieyundu.app.ui.glass.GlassButton
 import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.home.uiLabelRes
 import com.jieyundu.app.ui.theme.Dimens
@@ -41,6 +44,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
     val contentPadding: Dp =
         if (isExpanded) Dimens.PanelPadding else Dimens.PanelPaddingCompact
+    val cleanupState by viewModel.cleanupState.collectAsState()
 
     Column(
         modifier = modifier
@@ -82,6 +86,41 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = JieYunDuColors.TextPrimary
             )
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_temp_cleanup),
+            contentPadding = contentPadding
+        ) {
+            Text(
+                text = stringResource(R.string.settings_temp_cleanup_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            GlassButton(
+                text = stringResource(R.string.settings_temp_cleanup_action),
+                onClick = viewModel::cleanupTempFiles,
+                height = Dimens.ButtonHeightCompact,
+                cornerRadius = Dimens.ButtonCornerCompact,
+                fillColor = JieYunDuColors.ButtonFill,
+                borderColor = JieYunDuColors.ButtonBorder,
+                contentColor = JieYunDuColors.OnPrimary
+            )
+            val statusText = when {
+                cleanupState.running -> stringResource(R.string.settings_temp_cleanup_running)
+                cleanupState.completed -> stringResource(
+                    R.string.settings_temp_cleanup_done,
+                    cleanupState.deletedCount
+                )
+                cleanupState.failed -> stringResource(R.string.settings_temp_cleanup_failed)
+                else -> null
+            }
+            if (statusText != null) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextPrimary
+                )
+            }
         }
         SettingsCard(
             title = stringResource(R.string.settings_about),

@@ -7,8 +7,37 @@ package com.jieyundu.app.ui.screens.home
 
 import androidx.annotation.StringRes
 import com.jieyundu.app.R
+import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
+
+/**
+ * 分享浏览上下文：展开子目录与转存下载所需的不可变参数。
+ *
+ * @property netdiskType 网盘类型。
+ * @property title 分享标题（根目录展示名）。
+ * @property pwdId 分享 ID。
+ * @property stoken 分享临时令牌。
+ */
+data class ShareContext(
+    val netdiskType: NetdiskType,
+    val title: String,
+    val pwdId: String,
+    val stoken: String
+)
+
+/**
+ * 分享浏览的一层（路径栈元素）。
+ *
+ * @property pdirFid 本层目录的 fid（根为 `0`）。
+ * @property name 本层展示名（根为分享标题，子层为文件夹名）。
+ * @property files 本层条目（文件夹在前、文件在后由 UI 自行处理）。
+ */
+data class BrowseLevel(
+    val pdirFid: String,
+    val name: String,
+    val files: List<FileInfo>
+)
 
 /**
  * 首页 UI 状态。
@@ -17,9 +46,14 @@ import com.jieyundu.app.domain.model.ParseResult
  * @property inputCode 单独填写的提取码（选填，布局修订）。
  * @property isParsing 是否正在解析。
  * @property result 解析结果（domain 层模型）；尚未解析或已清空时为 null。
+ *   成功时同时填充 [shareContext] 与 [stack]，由 UI 优先按路径栈渲染。
  * @property errorRes 本地校验类错误（未识别链接 / 不支持网盘）的文案资源；无错误时为 null。
  * @property passwordPrompt 是否应弹出「输入提取码」弹窗（阶段 8 整改）。
  * @property passwordErrorRes 弹窗内的错误提示（如提取码错误）；无错误时为 null。
+ * @property shareContext 分享浏览上下文（仅解析成功后有值）。
+ * @property stack 目录路径栈；栈底为分享根目录，栈顶为当前目录。空表示未在浏览。
+ * @property isLoadingDir 是否正在展开某个子目录。
+ * @property dirErrorRes 展开子目录失败的文案资源；无错误时为 null。
  */
 data class HomeUiState(
     val inputLink: String = "",
@@ -28,11 +62,23 @@ data class HomeUiState(
     val result: ParseResult? = null,
     @StringRes val errorRes: Int? = null,
     val passwordPrompt: Boolean = false,
-    @StringRes val passwordErrorRes: Int? = null
+    @StringRes val passwordErrorRes: Int? = null,
+    val shareContext: ShareContext? = null,
+    val stack: List<BrowseLevel> = emptyList(),
+    val isLoadingDir: Boolean = false,
+    @StringRes val dirErrorRes: Int? = null
 ) {
     /** 输入非空且当前未在解析时，允许触发解析。 */
     val canParse: Boolean
         get() = inputLink.isNotBlank() && !isParsing
+
+    /** 当前浏览的目录层；未在浏览时为 null。 */
+    val currentLevel: BrowseLevel?
+        get() = stack.lastOrNull()
+
+    /** 是否可以返回上一级（栈深大于 1）。 */
+    val canNavigateUp: Boolean
+        get() = stack.size > 1
 }
 
 /**

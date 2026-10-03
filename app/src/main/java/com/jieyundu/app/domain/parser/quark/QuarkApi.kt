@@ -102,6 +102,59 @@ interface QuarkApi {
     suspend fun getDownloadUrl(
         @Body body: QuarkDownloadRequest
     ): QuarkResponse<List<QuarkDownloadUrl>>
+
+    /**
+     * 列出**本账号**个人网盘指定目录的子项（用于查临时目录、空目录检测）。
+     *
+     * 请求：`GET https://drive-pc.quark.cn/1/clouddrive/file/sort?pr=ucpro&fr=pc`
+     * 查询参数：`pdir_fid`（根为 `0`）、`_page`、`_size`、`_fetch_total`、
+     * `_fetch_sub_dirs`、`_sort`。
+     * 响应：`data.list[]`（字段与分享条目一致，但无 `share_fid_token`）。
+     *
+     * 依据：《抓包事实.md》§10.2「个人网盘文件 / 目录列表」。
+     *
+     * @param params 查询参数键值对。
+     * @return 统一响应包装体。
+     */
+    @GET("1/clouddrive/file/sort?pr=ucpro&fr=pc")
+    suspend fun listFiles(
+        @QueryMap params: Map<String, String>
+    ): QuarkResponse<QuarkFileList>
+
+    /**
+     * 在**本账号**个人网盘创建目录（用于创建 `.极云渡临时`）。
+     *
+     * 请求：`POST https://drive-pc.quark.cn/1/clouddrive/file?pr=ucpro&fr=pc`
+     * 请求体：`{"pdir_fid":"<父目录，根为 0>","file_name":"<新目录名>",
+     * "dir_path":"","dir_init_lock":false}`。
+     * 响应：`data.fid`（新目录 fid）。
+     *
+     * 依据：《抓包事实.md》§6.1⑥ 与 §9.1（夸克 / UC 请求体一致）。
+     *
+     * @param body 请求体。
+     * @return 统一响应包装体，data 含新目录 fid。
+     */
+    @POST("1/clouddrive/file?pr=ucpro&fr=pc")
+    suspend fun createFolder(
+        @Body body: QuarkCreateFolderRequest
+    ): QuarkResponse<QuarkCreateFolderResult>
+
+    /**
+     * 删除**本账号**个人网盘中的文件 / 目录（移入回收站语义）。
+     *
+     * 请求：`POST https://drive-pc.quark.cn/1/clouddrive/file/delete?pr=ucpro&fr=pc&uc_param_str=`
+     * 请求体：`{"action_type":2,"filelist":["<fid>"],"exclude_fids":[]}`。
+     * 响应：`data.task_id`（异步任务 ID）。
+     *
+     * 依据：《抓包事实.md》§10.3。
+     *
+     * @param body 请求体。
+     * @return 统一响应包装体。
+     */
+    @POST("1/clouddrive/file/delete?pr=ucpro&fr=pc&uc_param_str=")
+    suspend fun deleteFiles(
+        @Body body: QuarkDeleteRequest
+    ): QuarkResponse<QuarkDeleteResult>
 }
 
 /**
@@ -225,6 +278,8 @@ data class QuarkSaveAs(
  *
  * @property pwd_id 分享 ID。
  * @property stoken 分享临时令牌。
+ * @property pdir_fid 转存目标目录 fid（根为 `0`，临时目录为 `.极云渡临时` 的 fid）。
+ * @property to_pdir_fid 同 [pdir_fid]（接口要求两字段取值一致）。
  * @property fid_list 待转存的分享文件 fid 列表。
  * @property fid_token_list 与 [fid_list] 一一对应的 `share_fid_token` 列表。
  * @property scene 转存场景（固定 `link`，表示来自分享链接）。
@@ -233,6 +288,8 @@ data class QuarkSaveAs(
 data class QuarkSaveRequest(
     val pwd_id: String,
     val stoken: String,
+    val pdir_fid: String,
+    val to_pdir_fid: String,
     val fid_list: List<String>,
     val fid_token_list: List<String>,
     val scene: String
@@ -261,4 +318,71 @@ data class QuarkDownloadRequest(
 data class QuarkDownloadUrl(
     val fid: String = "",
     val download_url: String = ""
+)
+
+/**
+ * 个人网盘文件列表响应体（`file/sort`）。
+ *
+ * @property list 目录条目列表。
+ */
+@Serializable
+data class QuarkFileList(
+    val list: List<QuarkFile> = emptyList()
+)
+
+/**
+ * 创建目录（`file`）请求体。
+ *
+ * 依据：《抓包事实.md》§6.1⑥ / §9.1——夸克与 UC 请求体一致。
+ *
+ * @property pdir_fid 父目录 fid；根目录为 `0`。
+ * @property file_name 新目录名。
+ * @property dir_path 目录路径，实测固定空串。
+ * @property dir_init_lock 目录初始化锁，实测固定 false。
+ */
+@Serializable
+data class QuarkCreateFolderRequest(
+    val pdir_fid: String,
+    val file_name: String,
+    val dir_path: String = "",
+    val dir_init_lock: Boolean = false
+)
+
+/**
+ * 创建目录响应体。
+ *
+ * @property fid 新建目录的 fid。
+ */
+@Serializable
+data class QuarkCreateFolderResult(
+    val fid: String = ""
+)
+
+/**
+ * 删除（`file/delete`）请求体。
+ *
+ * @property action_type 操作类型；2 = 移入回收站。
+ * @property filelist 待删除的 fid 列表。
+ * @property exclude_fids 排除的 fid（固定空）。
+ */
+@Serializable
+data class QuarkDeleteRequest(
+    val action_type: Int = ACTION_TYPE_TRASH,
+    val filelist: List<String>,
+    val exclude_fids: List<String> = emptyList()
+) {
+    companion object {
+        /** `action_type`：移入回收站。 */
+        const val ACTION_TYPE_TRASH = 2
+    }
+}
+
+/**
+ * 删除响应体。
+ *
+ * @property task_id 异步删除任务 ID。
+ */
+@Serializable
+data class QuarkDeleteResult(
+    val task_id: String = ""
 )
