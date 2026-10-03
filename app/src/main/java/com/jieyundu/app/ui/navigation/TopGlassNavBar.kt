@@ -65,8 +65,8 @@ enum class GlassBarOrientation {
 /**
  * 导航弹簧预设（10.3）。
  *
- * 说明：阶段 7 仅使用 [JellyPreset]，行为与写死参数完全一致；
- * 该数据类为阶段 11 的"预设切换"预留扩展点。
+ * 说明：阶段 7 仅使用 [JellyPreset]；该数据类为阶段 11 的「预设切换」预留扩展点。
+ * 下列默认值即当前「果冻」预设（10.3 修订，见 CHANGELOG）。
  *
  * @property releaseDamping 松手吸附阻尼比。
  * @property releaseStiffness 松手吸附刚度。
@@ -78,17 +78,17 @@ enum class GlassBarOrientation {
  * @property pressStiffness 按下缩放刚度。
  */
 data class NavSpringPreset(
-    val releaseDamping: Float = 0.55f,
-    val releaseStiffness: Float = 380f,
-    val clickDamping: Float = 0.62f,
-    val clickStiffness: Float = 420f,
-    val sizeDamping: Float = 0.7f,
-    val sizeStiffness: Float = 500f,
-    val pressDamping: Float = 0.4f,
-    val pressStiffness: Float = 800f
+    val releaseDamping: Float = 0.48f,
+    val releaseStiffness: Float = 420f,
+    val clickDamping: Float = 0.52f,
+    val clickStiffness: Float = 480f,
+    val sizeDamping: Float = 0.60f,
+    val sizeStiffness: Float = 550f,
+    val pressDamping: Float = 0.38f,
+    val pressStiffness: Float = 850f
 )
 
-/** 默认"果冻"预设（10.3：0.55/380、0.62/420、0.7/500、0.4/800）。 */
+/** 默认「果冻」预设（10.3 修订：0.48/420、0.52/480、0.60/550、0.38/850）。 */
 val JellyPreset: NavSpringPreset = NavSpringPreset()
 
 /** 按下缩放目标值（10.3：0.94）。 */
@@ -99,6 +99,9 @@ private const val GRAB_SCALE = 1.04f
 
 /** 常态缩放值。 */
 private const val REST_SCALE = 1f
+
+/** 圆角比例（10.2 修订：圆角 = 短边 × 0.33，外层与指示器一致）。 */
+private const val CORNER_RADIUS_PERCENT = 33
 
 /**
  * Q 弹玻璃导航条（第十部分核心，支持双方向）。
@@ -130,7 +133,7 @@ fun TopGlassNavBar(
     val density = LocalDensity.current
     val isHorizontal = orientation == GlassBarOrientation.Horizontal
     val thickness = if (isHorizontal) Dimens.NavBarThicknessHorizontal else Dimens.NavBarThicknessVertical
-    val shape = RoundedCornerShape(thickness / 2)
+    val shape = RoundedCornerShape(percent = CORNER_RADIUS_PERCENT)
     val tabCount = labels.size.coerceAtLeast(1)
 
     val indicatorOffset = remember { Animatable(0f) }
@@ -154,7 +157,7 @@ fun TopGlassNavBar(
         val insetPx = with(density) { Dimens.NavIndicatorInset.toPx() }
         val highlightPx = with(density) { Dimens.NavIndicatorStroke.toPx() }
         val indicatorShortSide = thickness - Dimens.NavIndicatorInset * 2
-        val indicatorShape = RoundedCornerShape(indicatorShortSide / 2)
+        val indicatorShape = RoundedCornerShape(percent = CORNER_RADIUS_PERCENT)
 
         /** 依据主轴坐标换算最近的页签下标。 */
         val indexAt: (Float) -> Int = { axis ->
