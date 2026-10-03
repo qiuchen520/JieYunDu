@@ -109,17 +109,22 @@ interface QuarkApi {
     /**
      * 列出**本账号**个人网盘指定目录的子项（用于查临时目录、空目录检测）。
      *
-     * 请求：`GET https://drive-pc.quark.cn/1/clouddrive/file/sort?pr=ucpro&fr=pc`
-     * 查询参数：`pdir_fid`（根为 `0`）、`_page`、`_size`、`_fetch_total`、
+     * 请求：`GET https://drive-pc.quark.cn/1/clouddrive/file/sort`
+     * 查询参数：`pr`、`fr`、`pdir_fid`（根为 `0`）、`_page`、`_size`、`_fetch_total`、
      * `_fetch_sub_dirs`、`_sort`。
      * 响应：`data.list[]`（字段与分享条目一致，但无 `share_fid_token`）。
      *
      * 依据：《抓包事实.md》§10.2「个人网盘文件 / 目录列表」。
      *
-     * @param params 查询参数键值对。
+     * 写法约定（B1.3，依《评审清单.md》§11.1 建议）：`pr` / `fr` **不写死在路径里**，
+     * 与 `detail` / `member` / `save` 保持一致，全部由调用方的 `QueryMap` 提供。
+     * 这样「固定参数」只有一个来源，不会再出现路径与参数各带一次的重复
+     * （该重复曾在装机日志中实测出现）。
+     *
+     * @param params 查询参数键值对（**必须**包含 `pr` / `fr`）。
      * @return 统一响应包装体。
      */
-    @GET("1/clouddrive/file/sort?pr=ucpro&fr=pc")
+    @GET("1/clouddrive/file/sort")
     suspend fun listFiles(
         @QueryMap params: Map<String, String>
     ): QuarkResponse<QuarkFileList>

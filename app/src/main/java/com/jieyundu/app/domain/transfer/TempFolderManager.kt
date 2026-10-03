@@ -213,10 +213,15 @@ class TempFolderManager @Inject constructor(
     /**
      * 构造个人网盘列表查询参数（根目录 / 指定目录通用）。
      *
+     * 依据：B1.3 起 `pr` / `fr` **必须由调用方提供**（[QuarkApi.listFiles] 路径里不再写死），
+     * 与 `QuarkParser.buildPersonalListParams` 保持同款写法，见《评审清单.md》§11.1。
+     *
      * @param pdirFid 目标目录 fid。
      * @return 查询参数键值对。
      */
     private fun buildListParams(pdirFid: String): Map<String, String> = mapOf(
+        KEY_PR to QUARK_PR,
+        KEY_FR to QUARK_FR,
         KEY_PDIR_FID to pdirFid,
         KEY_PAGE to FIRST_PAGE,
         KEY_SIZE to PAGE_SIZE,
@@ -235,6 +240,10 @@ class TempFolderManager @Inject constructor(
         /** 成功状态码。 */
         const val SUCCESS_CODE = 0
 
+        /** 夸克 PC 平台固定查询参数（须与其他 `file/sort` 调用方保持一致）。 */
+        const val QUARK_PR = "ucpro"
+        const val QUARK_FR = "pc"
+
         /** 列表分页与排序固定参数（《抓包事实.md》§10.2）。 */
         const val FIRST_PAGE = "1"
         const val PAGE_SIZE = "100"
@@ -243,6 +252,8 @@ class TempFolderManager @Inject constructor(
         const val LIST_SORT = "file_type:asc,updated_at:desc"
 
         /** 查询参数名。 */
+        const val KEY_PR = "pr"
+        const val KEY_FR = "fr"
         const val KEY_PDIR_FID = "pdir_fid"
         const val KEY_PAGE = "_page"
         const val KEY_SIZE = "_size"
