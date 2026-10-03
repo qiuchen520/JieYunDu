@@ -576,6 +576,62 @@
 
 - 状态：见「推送与 CI」记录。
 
+## 阶段 8 布局重构 · 单栏流程 + 下载页筛选/删除 + 网盘入口（2026-10-03）
+> 依据 Owner 指令：「UI 是好看的，但是布局不对，改布局」，并明确「浅色底保留、
+> 顶部标题栏与左侧 Q 滑块仍为玻璃」「这个先做用于体验 UI 是否正常」。
+> 视觉沿用 9.1.1 浅色色表；阶段 11（网盘 WebView 登录）留待下一轮。
+
+### 导航（4 项）
+- `JieYunDuNavHost`：`JieYunDuTab` 由 3 项扩为 4 项，新增 `NETDISK`（文案 `tab_netdisk`「网盘」）；
+  平板竖直 rail 与手机横向导航条同步变 4 项；`NavContent` 新增 NETDISK 分支。
+- 新增 `ui/screens/login/NetdiskPickerScreen.kt`：网盘选择页（四家列表 + 登录按钮空壳，
+  `onLogin` 占位回调）。导入路径 `com.jieyundu.app.ui.screens.login`。
+
+### 首页（单栏流程）
+- `HomeScreen`：改为单栏 `Column { LinkInputCard; ParseResultCard(weight1f) }`；
+  下载列表移出首页，由「下载」页承接；保留「需要提取码」弹窗逻辑。
+- `LinkInputCard`：重写为「链接输入框 + 右置解析按钮」+ 下方常驻「提取码（选填）」框；
+  抽出私有 `InputField`（浅灰底 + 自绘占位）。按钮文案解析中切 `parse_parsing`。
+- `HomeUiState` 新增 `inputCode`；`HomeViewModel` 新增 `onCodeChange()`，
+  `parse()` 提取码取值改为 `link.password ?: inputCode.ifBlank { null }`（链接携带优先）。
+- `ParseResultCard`：重写成功态为「可勾选文件列表 +『下载选中』批量下载」；
+  自绘 `SelectionBox` / `CheckGlyph`（D8，不引 material-icons）；
+  新增空闲态 `IdleHint`；解析中 / 错误 / 需提取码沿用信息卡。
+
+### 下载页（筛选 + 删除）
+- `DownloadViewModel`：`DownloadSessionRegistry` 由「任务→文件名」扩为
+  「任务→ `RememberedTask(fileName, savePath)`」，暴露 `tasks` 流并新增 `forget()`；
+  `remember()` 新增可选 `savePath`（带默认值，保证单文件提交可编译）。
+  新增 `DownloadFilter`（ALL / DOWNLOADING / COMPLETED）+ `filter` 状态 + `onFilterChange()`；
+  `items` 改为三流 `combine`（进度 × 登记 × 筛选）；增强 `deleteTask()`。
+- 新增 `DownloadFilterBar.kt`：全部 / 下载中 / 已完成 圆角胶囊筛选条。
+- `DownloadScreen`：顶部筛选条 + 列表（`weight1f`）；空态 / 筛选空态共用一个空态视图。
+- `DownloadItem`：行尾新增 40dp 圆形删除按钮（自绘垃圾桶），新增 `onDelete` 参数（带默认值）。
+- 删除语义：先 `engine.cancel`（删分片 + 目标文件 + 清进度），再按 `savePath` 兜底删文件，
+  最后幂等 `repository.deleteProgress` + `registry.forget`。
+- **已知限制**：Room 进度表不含 savePath，路径仅存于会话内存；进程重启后历史任务无可删文件，
+  删除仅移除记录。后续如需跨重启删除，须扩展 Room schema 存路径（属独立改动）。
+
+### 尺寸与文案
+- `Dimens.kt`：新增 FilterBarHeight 44 / FilterChipHeight 36 / FilterChipCorner 12 /
+  CheckboxSize 20 / DeleteButtonSize 40。
+- `strings.xml`：新增 tab_netdisk、netdisk_picker_title/subtitle、netdisk_login_action/hint、
+  link_code_hint、parse_result_idle、parse_result_select_hint、action_download、
+  download_filter_all/downloading/completed、cd_delete_download 等（均为中文，符合 C5）。
+
+### 规格登记
+- 《要求.md》：就地修订 §9.4（单栏 + 4 项导航）、§9.6.2/3/4（提取码框、结果可勾选、筛选+删除）、
+  §9.6.5 与 §10.7（页签 4 项）；追加【布局修订 JYD-LAYOUT-2026-10-03】记录块。
+
+### 推送与 CI（本次）
+- 改动文件：`strings.xml`、`Dimens.kt`、`HomeUiState.kt`、`HomeViewModel.kt`、
+  `JieYunDuNavHost.kt`、`NetdiskPickerScreen.kt`、`LinkInputCard.kt`、`HomeScreen.kt`、
+  `ParseResultCard.kt`、`DownloadViewModel.kt`、`DownloadFilterBar.kt`、`DownloadItem.kt`、
+  `DownloadScreen.kt`、《要求.md》《CHANGELOG.md》。
+- 推送顺序（先定义后调用，避免中间态红）：DownloadViewModel → DownloadFilterBar →
+  DownloadItem → DownloadScreen → HomeViewModel → 其余首页/导航文件 → 文档。
+- 状态：见「推送与 CI」记录。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
