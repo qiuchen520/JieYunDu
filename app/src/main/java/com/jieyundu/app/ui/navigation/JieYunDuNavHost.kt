@@ -67,8 +67,7 @@ enum class JieYunDuTab(@StringRes val labelRes: Int) {
  * 导航宿主。
  *
  * 说明：手写状态导航（不引入 `androidx.navigation`——未列入第五部分技术栈，D8）。
- * 平板 → 左侧竖直玻璃条；手机 → 顶部横向玻璃条；两者均在内容区上方渲染玻璃标题栏（9.6.1，
- * 阶段 8 整改后为悬浮样式，左右各留 24dp）。
+ * 平板 → 左侧竖直玻璃条；手机 → 顶部横向玻璃条；两者均在内容区上方渲染玻璃标题栏（9.6.1）。
  * 内容切换使用淡入淡出（[Crossfade]），与指示器弹簧分离（D6）。
  *
  * @param modifier 外部修饰符。
@@ -116,7 +115,7 @@ fun JieYunDuNavHost(
 }
 
 /**
- * 顶部标题栏（9.6.1，阶段 8 整改：悬浮，左右各留 24dp）。
+ * 顶部标题栏（9.6.1）：左侧应用名，右侧圆形玻璃设置按钮。
  *
  * @param onOpenSettings 点击设置按钮的回调（切换到「设置」页签）。
  * @param modifier 外部修饰符。
@@ -128,13 +127,14 @@ private fun AppTitleBar(
 ) {
     val isExpanded = rememberIsExpandedLayout()
     val barHeight = if (isExpanded) Dimens.HeaderHeight else Dimens.HeaderHeightCompact
+    val barCorner = if (isExpanded) Dimens.TitleBarCorner else Dimens.TitleBarCornerCompact
 
     GlassPanel(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = Dimens.TitleBarMargin, vertical = Dimens.SpaceSm)
             .height(barHeight),
-        cornerRadius = Dimens.CardCorner,
+        cornerRadius = barCorner,
         contentPadding = Dimens.SpaceSm
     ) {
         Row(
