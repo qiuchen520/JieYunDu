@@ -43,7 +43,9 @@ androidx-compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
-androidx-compose-material3-window-size-class = { module = "androidx.compose.material3:material3-window-size-class" }
+# 注意：别名不能含 Gradle 保留字（class / extensions / convention），否则构建期报
+# "is not a valid alias"。故此处用 window-size（而非 window-size-class）。
+androidx-compose-material3-window-size = { module = "androidx.compose.material3:material3-window-size-class" }
 
 # --- Hilt ---
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
