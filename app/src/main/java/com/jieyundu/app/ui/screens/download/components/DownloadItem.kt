@@ -53,7 +53,7 @@ private const val APPEAR_STIFFNESS = 380f
 /**
  * 下载列表单项（9.6.4）。
  *
- * 说明：进度条用 Box 双层自绘（白 10% 轨道 + 白 70% 填充），不使用 Material 默认
+ * 说明：进度条用 Box 双层自绘（浅灰轨道 + 主色蓝填充），不使用 Material 默认
  * LinearProgressIndicator（R5 / D3）；出现时按 [index] 错开 50ms 淡入并上移 12dp（9.7）。
  *
  * @param item 列表条目（进度 + 文件名）。
@@ -147,7 +147,7 @@ fun DownloadItem(
 }
 
 /**
- * 自绘进度条（9.6.4：高 6dp、圆角 3dp，底色白 10%、填充白 70%）。
+ * 自绘进度条（9.6.4：高 6dp、圆角 3dp，底色浅灰、填充主色蓝）。
  *
  * @param fraction 进度比例，取值 0f..1f（越界自动收敛）。
  */
