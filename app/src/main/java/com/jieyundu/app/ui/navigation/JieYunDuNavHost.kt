@@ -51,9 +51,13 @@ enum class JieYunDuTab(@StringRes val labelRes: Int) {
  * 与指示器弹簧分离（D6）。
  *
  * @param modifier 外部修饰符。
+ * @param preset 弹簧预设（阶段 7 固定为 [JellyPreset]，透传至导航 wrapper）。
  */
 @Composable
-fun JieYunDuNavHost(modifier: Modifier = Modifier) {
+fun JieYunDuNavHost(
+    modifier: Modifier = Modifier,
+    preset: NavSpringPreset = JellyPreset
+) {
     var selectedOrdinal by rememberSaveable { mutableStateOf(0) }
     val tabs = JieYunDuTab.entries
     val labels = tabs.map { stringResource(it.labelRes) }
@@ -66,7 +70,8 @@ fun JieYunDuNavHost(modifier: Modifier = Modifier) {
                 labels = labels,
                 selectedIndex = selectedOrdinal,
                 onSelect = onSelect,
-                modifier = Modifier.fillMaxHeight()
+                modifier = Modifier.fillMaxHeight(),
+                preset = preset
             )
             NavContent(tab = selectedTab, modifier = Modifier.weight(1f).fillMaxHeight())
         }
@@ -76,7 +81,8 @@ fun JieYunDuNavHost(modifier: Modifier = Modifier) {
                 labels = labels,
                 selectedIndex = selectedOrdinal,
                 onSelect = onSelect,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                preset = preset
             )
             NavContent(tab = selectedTab, modifier = Modifier.weight(1f).fillMaxWidth())
         }

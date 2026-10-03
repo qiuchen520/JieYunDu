@@ -17,19 +17,22 @@ import com.jieyundu.app.ui.theme.Dimens
  * @param selectedIndex 当前选中下标。
  * @param onSelect 选中回调。
  * @param modifier 外部修饰符（调用方通常传入 `fillMaxWidth`）。
+ * @param preset 弹簧预设（阶段 7 固定为 [JellyPreset]，透传至 [TopGlassNavBar]）。
  */
 @Composable
 fun NavigationBar(
     labels: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    preset: NavSpringPreset = JellyPreset
 ) {
     TopGlassNavBar(
         labels = labels,
         selectedIndex = selectedIndex,
         onSelect = onSelect,
         orientation = GlassBarOrientation.Horizontal,
+        preset = preset,
         modifier = modifier.padding(horizontal = Dimens.NavBarLengthInsetHorizontal)
     )
 }

@@ -62,17 +62,34 @@ enum class GlassBarOrientation {
     Horizontal
 }
 
-/** 松手吸附弹簧（10.3：dampingRatio 0.55 / stiffness 380）。 */
-private val SnapSpring: SpringSpec<Float> = spring<Float>(dampingRatio = 0.55f, stiffness = 380f)
+/**
+ * 导航弹簧预设（10.3）。
+ *
+ * 说明：阶段 7 仅使用 [JellyPreset]，行为与写死参数完全一致；
+ * 该数据类为阶段 11 的"预设切换"预留扩展点。
+ *
+ * @property releaseDamping 松手吸附阻尼比。
+ * @property releaseStiffness 松手吸附刚度。
+ * @property clickDamping 点击切换阻尼比。
+ * @property clickStiffness 点击切换刚度。
+ * @property sizeDamping 尺寸 / 抓取阻尼比。
+ * @property sizeStiffness 尺寸 / 抓取刚度。
+ * @property pressDamping 按下缩放阻尼比。
+ * @property pressStiffness 按下缩放刚度。
+ */
+data class NavSpringPreset(
+    val releaseDamping: Float = 0.55f,
+    val releaseStiffness: Float = 380f,
+    val clickDamping: Float = 0.62f,
+    val clickStiffness: Float = 420f,
+    val sizeDamping: Float = 0.7f,
+    val sizeStiffness: Float = 500f,
+    val pressDamping: Float = 0.4f,
+    val pressStiffness: Float = 800f
+)
 
-/** 点击切换弹簧（10.3：0.62 / 420）。 */
-private val ClickSpring: SpringSpec<Float> = spring<Float>(dampingRatio = 0.62f, stiffness = 420f)
-
-/** 尺寸 / 抓取弹簧（10.3：0.7 / 500）。 */
-private val SizeSpring: SpringSpec<Float> = spring<Float>(dampingRatio = 0.7f, stiffness = 500f)
-
-/** 按下缩放弹簧（10.3：0.4 / 800）。 */
-private val PressSpring: SpringSpec<Float> = spring<Float>(dampingRatio = 0.4f, stiffness = 800f)
+/** 默认"果冻"预设（10.3：0.55/380、0.62/420、0.7/500、0.4/800）。 */
+val JellyPreset: NavSpringPreset = NavSpringPreset()
 
 /** 按下缩放目标值（10.3：0.94）。 */
 private const val PRESSED_SCALE = 0.94f
@@ -87,12 +104,14 @@ private const val REST_SCALE = 1f
  * Q 弹玻璃导航条（第十部分核心，支持双方向）。
  *
  * 说明：指示器由 [Animatable] 驱动，仅使用 spring（R6/D4）；拖拽时零动画跟手，
- * 松手用 [SnapSpring] 吸附最近页签，点击用 [ClickSpring]。（10.4 / 10.5）
+ * 松手吸附最近页签，点击切换。弹簧参数全部来自 [preset]，不在此硬编码
+ * （阶段 11 预留预设切换扩展点）。
  *
  * @param labels 页签文案（来自 strings.xml，禁止硬编码）。
  * @param selectedIndex 当前选中下标。
  * @param onSelect 选中回调（点击或松手吸附后触发）。
  * @param orientation 导航条方向（竖直/横向）。
+ * @param preset 弹簧预设（阶段 7 固定为 [JellyPreset]）。
  * @param modifier 外部修饰符（提供主轴向尺寸：横向填宽、竖向填高）。
  */
 @Composable
@@ -101,8 +120,13 @@ fun TopGlassNavBar(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     orientation: GlassBarOrientation,
+    preset: NavSpringPreset = JellyPreset,
     modifier: Modifier = Modifier
 ) {
+    val releaseSpec: SpringSpec<Float> = spring<Float>(preset.releaseDamping, preset.releaseStiffness)
+    val clickSpec: SpringSpec<Float> = spring<Float>(preset.clickDamping, preset.clickStiffness)
+    val sizeSpec: SpringSpec<Float> = spring<Float>(preset.sizeDamping, preset.sizeStiffness)
+    val pressSpec: SpringSpec<Float> = spring<Float>(preset.pressDamping, preset.pressStiffness)
     val density = LocalDensity.current
     val isHorizontal = orientation == GlassBarOrientation.Horizontal
     val thickness = if (isHorizontal) Dimens.NavBarThicknessHorizontal else Dimens.NavBarThicknessVertical
@@ -140,7 +164,7 @@ fun TopGlassNavBar(
 
         LaunchedEffect(selectedIndex, slotPx) {
             if (slotPx > 0f && !isDragging.value) {
-                indicatorOffset.animateTo((slotPx * selectedIndex).coerceIn(0f, maxOffsetPx), ClickSpring)
+                indicatorOffset.animateTo((slotPx * selectedIndex).coerceIn(0f, maxOffsetPx), clickSpec)
             }
         }
 
@@ -176,7 +200,12 @@ fun TopGlassNavBar(
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         contentAlignment = Alignment.Center
                     ) {
-                        NavLabel(text = label, selected = index == selectedIndex, pressed = index == pressedIndex.intValue)
+                        NavLabel(
+                            text = label,
+                            selected = index == selectedIndex,
+                            pressed = index == pressedIndex.intValue,
+                            pressSpec = pressSpec
+                        )
                     }
                 }
             }
@@ -187,7 +216,12 @@ fun TopGlassNavBar(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        NavLabel(text = label, selected = index == selectedIndex, pressed = index == pressedIndex.intValue)
+                        NavLabel(
+                            text = label,
+                            selected = index == selectedIndex,
+                            pressed = index == pressedIndex.intValue,
+                            pressSpec = pressSpec
+                        )
                     }
                 }
             }
@@ -217,7 +251,7 @@ fun TopGlassNavBar(
                             isDragging.value = true
                             scope.launch {
                                 indicatorScale.stop()
-                                indicatorScale.animateTo(GRAB_SCALE, SizeSpring)
+                                indicatorScale.animateTo(GRAB_SCALE, sizeSpec)
                             }
                             dragBase = indicatorOffset.value
                         },
@@ -230,8 +264,8 @@ fun TopGlassNavBar(
                         onDragEnd = {
                             val nearest = indexAt(indicatorOffset.value + slotPx / 2f)
                             scope.launch {
-                                indicatorOffset.animateTo((slotPx * nearest).coerceIn(0f, maxOffsetPx), SnapSpring)
-                                indicatorScale.animateTo(REST_SCALE, SizeSpring)
+                                indicatorOffset.animateTo((slotPx * nearest).coerceIn(0f, maxOffsetPx), releaseSpec)
+                                indicatorScale.animateTo(REST_SCALE, sizeSpec)
                                 isDragging.value = false
                             }
                             onSelect(nearest)
@@ -239,8 +273,8 @@ fun TopGlassNavBar(
                         onDragCancel = {
                             val nearest = indexAt(indicatorOffset.value + slotPx / 2f)
                             scope.launch {
-                                indicatorOffset.animateTo((slotPx * nearest).coerceIn(0f, maxOffsetPx), SnapSpring)
-                                indicatorScale.animateTo(REST_SCALE, SizeSpring)
+                                indicatorOffset.animateTo((slotPx * nearest).coerceIn(0f, maxOffsetPx), releaseSpec)
+                                indicatorScale.animateTo(REST_SCALE, sizeSpec)
                                 isDragging.value = false
                             }
                         }
@@ -256,12 +290,13 @@ fun TopGlassNavBar(
  * @param text 页签文案。
  * @param selected 是否选中。
  * @param pressed 是否被按下。
+ * @param pressSpec 按下缩放弹簧（来自 [NavSpringPreset]）。
  */
 @Composable
-private fun NavLabel(text: String, selected: Boolean, pressed: Boolean) {
+private fun NavLabel(text: String, selected: Boolean, pressed: Boolean, pressSpec: SpringSpec<Float>) {
     val scale by animateFloatAsState(
         targetValue = if (pressed) PRESSED_SCALE else REST_SCALE,
-        animationSpec = PressSpring,
+        animationSpec = pressSpec,
         label = "navLabelPress"
     )
     Text(
