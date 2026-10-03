@@ -1,5 +1,5 @@
 // 文件：GlassBackground.kt
-// 职责：液态玻璃背板——深色底 + 柔和彩色块 + 全局噪声
+// 职责：液态玻璃背板——浅色底 + 极淡彩色晕 + 全局噪声
 // 依赖：Compose foundation / ui、JieYunDuColors、Dimens
 // 协议：AGPL-3.0
 
@@ -23,8 +23,8 @@ import androidx.compose.ui.platform.LocalDensity
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
 
-/** 背景色块透明度（阶段 8 整改：提高以让上层玻璃明显透出紫蓝渐变）。 */
-private const val BLOB_ALPHA = 0.85f
+/** 背景色块透明度（浅色 Area 风：极淡置于角落，仅作呼吸感点缀，不喧宾夺主）。 */
+private const val BLOB_ALPHA = 0.30f
 
 /** 噪声点半径（像素）。 */
 private const val NOISE_DOT_RADIUS_PX = 0.5f
