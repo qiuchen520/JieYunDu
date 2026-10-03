@@ -283,6 +283,18 @@
 - 新增文案：`password_dialog_title / password_dialog_hint / password_error_retry /
   action_cancel / action_confirm`。
 
+### 推送与 CI（阶段 8 整改）
+- 推送拆分为 3 个提交以保持可追溯：
+  1. `e961f0c`：BUGFIX JYD-BUG-03-01（`QuarkParser.kt` + `QuarkParserTest.kt`，2 文件）。
+  2. `a3d06e7`：整改第 1 批（玻璃质感与标题栏 + 尺寸 / 颜色令牌，5 文件）。
+  3. `bea2b7a`：整改第 2 批（输入区 / 下载空态 / 首页两栏 + 提取码弹窗全链路 + 文案，8 文件）。
+- ⚠️**过程留痕**：`bea2b7a` 提交时因操作失误把 `CHANGELOG.md` 内容误置为空文件；
+  已在下一提交 `0e9782e`（「修复：恢复 CHANGELOG.md 内容」）立即恢复全文，内容无损。
+- CI：run `37102505310`（head `0e9782e`，Build APK）**全绿**；
+  artifact `jieyundu-debug-apk` **10,316,116 B（≈9.8 MB）**。
+- 状态：**CI 已绿 → 待 Owner 装机验收**（验收点：不再全圆角、玻璃质感清晰、
+  无提取码链接点解析自动弹输入框）。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
