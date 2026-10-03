@@ -41,9 +41,9 @@
 
     <!-- 解析错误码映射（UI 层把 domain 的机器可读 code 映射为文案）-->
     <string name="parse_code_invalid_link">分享链接无效</string>
-    <string name="parse_code_need_cookie">站点校验未通过，请稍后重试</string>
     <string name="parse_code_token_failed">提取码校验失败</string>
     <string name="parse_code_detail_failed">获取文件列表失败</string>
+    <string name="parse_code_download_failed">获取下载直链失败</string>
     <string name="parse_code_network">网络异常，请检查网络后重试</string>
     <string name="parse_code_protocol">响应格式异常</string>
     <string name="parse_code_not_implemented">该网盘解析功能开发中，敬请期待</string>

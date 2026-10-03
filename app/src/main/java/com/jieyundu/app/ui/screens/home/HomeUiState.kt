@@ -61,9 +61,9 @@ internal fun NetdiskType.uiLabelRes(): Int = when (this) {
 @StringRes
 internal fun parseErrorLabelRes(code: String): Int = when (code) {
     "QUARK_INVALID_LINK", "APP_INVALID_LINK" -> R.string.parse_code_invalid_link
-    "QUARK_NEED_COOKIE" -> R.string.parse_code_need_cookie
     "QUARK_TOKEN_FAILED" -> R.string.parse_code_token_failed
     "QUARK_DETAIL_FAILED" -> R.string.parse_code_detail_failed
+    "QUARK_DOWNLOAD_FAILED" -> R.string.parse_code_download_failed
     "QUARK_WRONG_PASSWORD" -> R.string.password_error_retry
     "BAIDU_NOT_IMPLEMENTED", "UC_NOT_IMPLEMENTED", "XUNLEI_NOT_IMPLEMENTED" ->
         R.string.parse_code_not_implemented

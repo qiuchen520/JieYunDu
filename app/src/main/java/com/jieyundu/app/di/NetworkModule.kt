@@ -58,6 +58,15 @@ object NetworkModule {
     /** Cookie 请求头名。 */
     private const val HEADER_COOKIE = "Cookie"
 
+    /** 响应 Cookie 头名。 */
+    private const val HEADER_SET_COOKIE = "Set-Cookie"
+
+    /** 夸克 Cookie 域名后缀（同时覆盖 pan/drive-pc/drive.quark.cn 等）。 */
+    private const val COOKIE_DOMAIN_QUARK = "quark.cn"
+
+    /** 多 Cookie 拼接分隔符（HTTP Cookie 头规范）。 */
+    private const val COOKIE_SEPARATOR = "; "
+
     /**
      * 提供全局 OkHttpClient。
      *
@@ -88,6 +97,7 @@ object NetworkModule {
                 chain.proceed(request)
             }
             .addInterceptor(CookieInterceptor(cookieStore))
+            .addInterceptor(ResponseCookieInterceptor(cookieStore))
             .apply {
                 if (BuildConfig.DEBUG) {
                     val logging = HttpLoggingInterceptor { message ->
@@ -171,6 +181,45 @@ object NetworkModule {
                     .header(HEADER_COOKIE, cookie)
                     .build()
             )
+        }
+    }
+
+    /**
+     * 响应 Cookie 持久化拦截器（夸克通道）。
+     *
+     * 背景（夸克接口实测 2026-10-03）：`file/download` 响应会下发 `__pugs` Cookie
+     * （Domain=quark.cn，Max-Age=10800），而 CDN 直链
+     * （`dl-guest-*.drive.quark.cn`）**必须**携带该 Cookie，否则返回 HTTP 412。
+     * Retrofit 的返回体不含响应头，故在此统一把 `.quark.cn` 响应的 `Set-Cookie`
+     * 登记到 [CookieStore]，供后续请求（含下载引擎的分片请求）按域名注入。
+     *
+     * 说明：受 [CookieStore] 语义限制，同一域名后缀仅保存最近一次响应的 Cookie 串；
+     * 对当前链路已足够——CDN 直链只依赖 `__pugs`，而它正是在 download 响应中下发。
+     *
+     * @param cookieStore 内存态 Cookie 仓库。
+     */
+    private class ResponseCookieInterceptor(private val cookieStore: CookieStore) : Interceptor {
+
+        /**
+         * 采集响应 Cookie。
+         *
+         * @param chain 拦截器链。
+         * @return 下游响应（原样返回，不修改）。
+         */
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val response = chain.proceed(chain.request())
+            val host = chain.request().url.host
+            if (host == COOKIE_DOMAIN_QUARK || host.endsWith(".$COOKIE_DOMAIN_QUARK")) {
+                val cookie = response.headers.values(HEADER_SET_COOKIE)
+                    .mapNotNull { raw ->
+                        raw.substringBefore(';').takeIf { pair -> pair.contains('=') }
+                    }
+                    .joinToString(COOKIE_SEPARATOR)
+                if (cookie.isNotBlank()) {
+                    cookieStore.save(COOKIE_DOMAIN_QUARK, cookie)
+                }
+            }
+            return response
         }
     }
 }

@@ -1,5 +1,5 @@
 // 文件：QuarkParserTest.kt
-// 职责：夸克解析器单元测试（含 Cookie 通道与全链路断言）
+// 职责：夸克解析器单元测试（含 Cookie 通道、标题/直链/文件夹映射与全链路断言）
 // 依赖：QuarkParser、QuarkApi、CookieStore、kotlin.test、kotlinx-coroutines-test、OkHttp
 // 协议：AGPL-3.0
 
@@ -11,6 +11,7 @@ import com.jieyundu.app.domain.model.ParseResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -24,7 +25,9 @@ import okhttp3.ResponseBody.Companion.toResponseBody
  * 说明：
  * - 用 [FakeQuarkApi] 替代真实接口，不触网；
  * - 用「短路拦截器」构造假的首页响应（含 / 不含 Set-Cookie），从而在不引入
- *   MockWebServer 依赖的前提下，验证 Cookie 通道（整改指令硬伤 1）；
+ *   MockWebServer 依赖的前提下，验证 `__puus` 通道（best-effort）；
+ * - 断言依据 2026-10-03 的夸克接口终端实测：token/detail 无需 Cookie、
+ *   download 响应 data[] 含 fid 与 download_url、条目含 dir 文件夹标记；
  * - 测试源码同样遵守 C5（注释为中文，字面量全为 ASCII）。
  */
 class QuarkParserTest {
@@ -94,36 +97,72 @@ class QuarkParserTest {
     }
 
     /**
-     * 硬伤 2 断言 A：无法取得 `__puus` 时应返回「缺少 Cookie」错误码。
+     * 实测校准断言 A：取不到 `__puus` 时**不再**返回「缺少 Cookie」错误，
+     * 而是照常走完 token -> detail（token/detail 实测无需任何 Cookie）。
      */
     @Test
-    fun parse_withoutPuusCookie_returnsCookieError() = runTest {
-        val parser = newParser(homeCookie = null)
-        val result = parser.parse(SHARE_URL, "1234")
-        assertTrue(result is ParseResult.Error, "no-cookie case must yield Error")
-        assertEquals(CODE_NEED_COOKIE, (result as ParseResult.Error).code)
-    }
-
-    /**
-     * 硬伤 2 断言 B：取得 `__puus` 后应走通 token -> detail 链路并返回文件列表。
-     */
-    @Test
-    fun parse_withPuusCookie_returnsSuccessWithFiles() = runTest {
+    fun parse_withoutPuusCookie_stillSucceeds() = runTest {
         val parser = newParser(
             api = FakeQuarkApi(
                 files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L))
-            )
+            ),
+            homeCookie = null
         )
         val result = parser.parse(SHARE_URL, "1234")
-        assertTrue(result is ParseResult.Success, "with-cookie case must yield Success")
-        val files = (result as ParseResult.Success).files
-        assertEquals(1, files.size)
-        assertEquals("fid-1", files.first().fid)
-        assertEquals("demo.txt", files.first().fileName)
-        assertEquals(1024L, files.first().fileSize)
+        assertTrue(result is ParseResult.Success, "missing __puus must not fail the parse")
     }
 
-    /** 硬伤 2 断言 C：`__puus` 必须被登记进 CookieStore，供后续请求注入。 */
+    /** 实测校准断言 B：分享标题应取自 token 响应的 data.title。 */
+    @Test
+    fun parse_fillsShareTitleFromToken() = runTest {
+        val result = newParser(
+            api = FakeQuarkApi(tokenTitle = "shared-title")
+        ).parse(SHARE_URL, null)
+        assertEquals("shared-title", (result as ParseResult.Success).shareTitle)
+    }
+
+    /** 实测校准断言 C：真实文件的 download_url 应按 fid 回填到对应 FileInfo。 */
+    @Test
+    fun parse_fillsDownloadUrlForFiles() = runTest {
+        val api = FakeQuarkApi(
+            files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L)),
+            downloadEntries = listOf(
+                QuarkDownloadUrl(fid = "fid-1", download_url = DIRECT_URL)
+            )
+        )
+        val result = newParser(api = api).parse(SHARE_URL, null)
+        val file = (result as ParseResult.Success).files.first()
+        assertEquals(DIRECT_URL, file.downloadUrl)
+    }
+
+    /** 实测校准断言 D：文件夹条目应标记 isDirectory，且不请求直链。 */
+    @Test
+    fun parse_marksDirectoryEntries() = runTest {
+        val api = FakeQuarkApi(
+            files = listOf(
+                QuarkFile(fid = "dir-1", file_name = "folder", size = 0L, dir = true)
+            )
+        )
+        val result = newParser(api = api).parse(SHARE_URL, null)
+        val entry = (result as ParseResult.Success).files.first()
+        assertTrue(entry.isDirectory)
+        assertNull(entry.downloadUrl)
+        assertNull(api.lastDownloadBody, "directories must not trigger a download request")
+    }
+
+    /** 实测校准断言 E：download 接口返回非成功码时应映射为直链获取失败错误码。 */
+    @Test
+    fun parse_downloadFails_returnsError() = runTest {
+        val api = FakeQuarkApi(
+            files = listOf(QuarkFile(fid = "fid-1", file_name = "demo.txt", size = 1024L)),
+            downloadCode = RISK_CONTROL_CODE
+        )
+        val result = newParser(api = api).parse(SHARE_URL, null)
+        assertTrue(result is ParseResult.Error)
+        assertEquals(RISK_CONTROL_CODE.toString(), (result as ParseResult.Error).code)
+    }
+
+    /** 硬伤 2 断言：成功取得的 `__puus` 必须被登记进 CookieStore，供后续请求注入。 */
     @Test
     fun parse_registersPuusCookieIntoStore() = runTest {
         val store = CookieStore()
@@ -132,7 +171,7 @@ class QuarkParserTest {
         assertEquals(HOME_PUUS_COOKIE, store.findForHost("drive-pc.quark.cn"))
     }
 
-    /** 硬伤 2 断言 D：服务端返回非成功码时应映射为 token 失败错误码。 */
+    /** 硬伤 2 断言：服务端返回非成功码时应映射为 token 失败错误码。 */
     @Test
     fun parse_withRiskControlCode_mapsTokenError() = runTest {
         val parser = newParser(api = FakeQuarkApi(tokenCode = RISK_CONTROL_CODE))
@@ -186,45 +225,58 @@ class QuarkParserTest {
      */
     private class FakeQuarkApi(
         private val tokenCode: Int = SUCCESS_CODE,
+        private val tokenTitle: String = "fake-title",
         private val stoken: String = "fake-stoken",
-        private val files: List<QuarkFile> = emptyList()
+        private val files: List<QuarkFile> = emptyList(),
+        private val downloadCode: Int = SUCCESS_CODE,
+        private val downloadEntries: List<QuarkDownloadUrl> = emptyList()
     ) : QuarkApi {
 
         /** 最近一次 token 请求体，供断言「是否携带 passcode」使用。 */
         var lastTokenBody: Map<String, String>? = null
             private set
 
+        /** 最近一次 download 请求体，供断言「文件夹是否触发直链请求」使用。 */
+        var lastDownloadBody: Map<String, Any>? = null
+            private set
+
         override suspend fun getShareToken(body: Map<String, String>): QuarkResponse<QuarkShareToken> {
             lastTokenBody = body
-            return QuarkResponse(code = tokenCode, message = "ok", data = QuarkShareToken(stoken = stoken))
+            return QuarkResponse(
+                code = tokenCode,
+                message = "ok",
+                data = QuarkShareToken(stoken = stoken, title = tokenTitle)
+            )
         }
 
         override suspend fun getShareDetail(params: Map<String, String>): QuarkResponse<QuarkShareDetail> =
             QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkShareDetail(list = files))
 
-        override suspend fun getDownloadUrl(body: Map<String, Any>): QuarkResponse<List<QuarkDownloadUrl>> =
-            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = emptyList())
+        override suspend fun getDownloadUrl(body: Map<String, Any>): QuarkResponse<List<QuarkDownloadUrl>> {
+            lastDownloadBody = body
+            return QuarkResponse(code = downloadCode, message = "ok", data = downloadEntries)
+        }
     }
 
     private companion object {
-        /** 与 QuarkParser.CODE_NEED_COOKIE 保持一致（机器可读错误码）。 */
-        const val CODE_NEED_COOKIE = "QUARK_NEED_COOKIE"
-
         const val SHARE_URL = "https://pan.quark.cn/s/abcdef123456"
         const val SHARE_ID = "abcdef123456"
         const val PASSWORD = "1234"
+        const val DIRECT_URL = "https://dl-guest-zb-u.drive.quark.cn/fake"
         const val KEY_PWD_ID = "pwd_id"
         const val KEY_PASSCODE = "passcode"
 
         /** 与 QuarkParser.NEED_PASSWORD_CODE 对齐的占位值（真实取值待抓包）。 */
         const val NEED_PASSWORD_CODE = 41011
+
+        /** 首页 Set-Cookie 样例。 */
         const val HOME_PUUS_COOKIE = "__puus=fake-puus"
         const val HEADER_SET_COOKIE = "Set-Cookie"
         const val EMPTY_BODY = ""
         const val HTTP_OK = 200
         const val SUCCESS_CODE = 0
 
-        /** 占位风控码；真实取值待抓包（见 QuarkApi 的 TODO）。 */
+        /** 占位风控码；真实取值待抓包（见 QuarkParser 常量注释）。 */
         const val RISK_CONTROL_CODE = 31001
     }
 }

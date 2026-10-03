@@ -1,6 +1,6 @@
 // 文件：QuarkParser.kt
-// 职责：夸克网盘分享链接解析器（优先实现网盘；网络参数待用户抓包后补全）
-// 依赖：QuarkApi、NetdiskParser、LinkExtractor、OkHttpClient、Timber
+// 职责：夸克网盘分享链接解析器（参数与字段已按真实接口实测校准）
+// 依赖：QuarkApi、NetdiskParser、LinkExtractor、CookieStore、OkHttpClient、Timber
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.domain.parser.quark
@@ -25,26 +25,24 @@ import timber.log.Timber
 /**
  * 夸克网盘解析器。
  *
- * 流程（见《要求.md》8.2）：
- * 1. 请求 `https://pan.quark.cn` 首页，取 `__puus` Cookie；
- * 2. 从分享链接提取 pwd_id（本项目的 [LinkExtractor.extractShareId]）；
- * 3. 调 token 接口换 stoken；
- * 4. 调 detail 接口取文件列表；
- * 5. 调 download 接口取直链；
+ * 流程（见《要求.md》8.2，已按 2026-10-03 终端实测校准）：
+ * 1. best-effort 请求 `https://pan.quark.cn` 首页取 `__puus`（**实测 token/detail 无需任何
+ *    Cookie**，故拿不到时仅告警、不再中断）；
+ * 2. 从分享链接提取 pwd_id（[LinkExtractor.extractShareId]）；
+ * 3. 调 token 接口换 stoken（同时取回分享标题 title）；
+ * 4. 调 detail 接口取文件列表（含 `dir` 文件夹标记）；
+ * 5. 对真实文件（非文件夹）调 download 接口换取直链；该接口响应还会下发 CDN 直链必需的
+ *    `__pugs` Cookie，由 di/NetworkModule 的响应拦截器登记到 [CookieStore]；
  * 6. 交由下载引擎分片下载。
  *
- * ⚠️ 当前为**骨架实现**：凡涉及真实参数、风控规则、字段名的位置一律以
- * `TODO(用户抓包):` 标注，等待抓包数据填入（铁律 R3）。
+ * 仍未闭合、需人工抓包的项（铁律 R3）：提取码「需要 / 错误」的真实业务码
+ * （[NEED_PASSWORD_CODE] / [WRONG_PASSWORD_CODE] 暂为占位值）。
  *
  * 线程约束：网络与 IO 全部运行在 [Dispatchers.IO]（编码风格 C9）。
  *
- * Cookie 传递（依据整改指令硬伤 1 · 方案 B）：第 1 步拿到的 `__puus` 写入
- * [CookieStore]，由 di/NetworkModule 中的 CookieInterceptor 按域名注入，
- * 从而在不改动 QuarkApi 签名（《要求.md》7.6）的前提下把 Cookie 送到后续请求。
- *
  * @param api 夸克接口（由 Hilt 提供，BaseUrl 与固定 Header 见 di/NetworkModule）。
- * @param okHttpClient 复用的 OkHttp 客户端，用于第 1 步取 Cookie（超时见 C4）。
- * @param cookieStore 内存态 Cookie 仓库，用于登记 `__puus`。
+ * @param okHttpClient 复用的 OkHttp 客户端，用于第 1 步 best-effort 取 Cookie（超时见 C4）。
+ * @param cookieStore 内存态 Cookie 仓库，用于登记 `__puus`（`__pugs` 由网络层拦截器登记）。
  */
 @Singleton
 class QuarkParser @Inject constructor(
@@ -81,26 +79,24 @@ class QuarkParser @Inject constructor(
         }
         return withContext(Dispatchers.IO) {
             try {
-                val puusCookie = requestPuusCookie()
-                if (puusCookie == null) {
-                    // TODO(用户抓包): 确认缺少 __puus 时夸克是否必然拒绝；若可缺省则放宽为告警
-                    return@withContext ParseResult.Error(type, CODE_NEED_COOKIE, CODE_NEED_COOKIE)
-                }
-                // 硬伤 1 修复（方案 B）：把 __puus 登记到仓库，
-                // 由 di/NetworkModule 的 CookieInterceptor 注入后续接口请求。
-                cookieStore.save(QUARK_COOKIE_HOST_SUFFIX, puusCookie)
+                // 第 1 步：best-effort 取 __puus。实测 token/detail 无需任何 Cookie，
+                // 故此处失败仅告警、不中断流程（《要求.md》8.2 TODO：若可缺省则放宽为告警）。
+                registerPuusCookie()
 
+                // 第 2 步：换 stoken。
                 val tokenResponse = api.getShareToken(buildTokenBody(pwdId, pwd))
-                if (tokenResponse.code == NEED_PASSWORD_CODE) {
-                    // 服务器明确要求提取码时才提示用户（BUGFIX JYD-BUG-03-01）
-                    return@withContext ParseResult.NeedPassword(type)
-                }
-                if (tokenResponse.code == WRONG_PASSWORD_CODE) {
-                    // 提取码错误：交由 UI 保留弹窗并提示重试（阶段 8 整改二）
-                    return@withContext ParseResult.Error(type, CODE_WRONG_PASSWORD, CODE_WRONG_PASSWORD)
-                }
-                if (tokenResponse.code != SUCCESS_CODE) {
-                    return@withContext ParseResult.Error(
+                when (tokenResponse.code) {
+                    NEED_PASSWORD_CODE ->
+                        return@withContext ParseResult.NeedPassword(type)
+                    WRONG_PASSWORD_CODE ->
+                        // 提取码错误：交由 UI 保留弹窗并提示重试（阶段 8 整改二）
+                        return@withContext ParseResult.Error(
+                            type,
+                            CODE_WRONG_PASSWORD,
+                            CODE_WRONG_PASSWORD
+                        )
+                    SUCCESS_CODE -> Unit
+                    else -> return@withContext ParseResult.Error(
                         type,
                         tokenResponse.code.toString(),
                         CODE_TOKEN_FAILED
@@ -108,6 +104,7 @@ class QuarkParser @Inject constructor(
                 }
                 val stoken = tokenResponse.data.stoken
 
+                // 第 3 步：取文件列表。
                 val detailResponse = api.getShareDetail(buildDetailParams(pwdId, stoken))
                 if (detailResponse.code != SUCCESS_CODE) {
                     return@withContext ParseResult.Error(
@@ -116,12 +113,32 @@ class QuarkParser @Inject constructor(
                         CODE_DETAIL_FAILED
                     )
                 }
+                val entries = detailResponse.data.list
+
+                // 第 4 步：仅为真实文件（非文件夹）换取直链。
+                val fileFids = entries.filterNot { entry -> entry.dir }.map { entry -> entry.fid }
+                val downloadUrls: Map<String, String> = if (fileFids.isEmpty()) {
+                    emptyMap()
+                } else {
+                    val downloadResponse = api.getDownloadUrl(
+                        buildDownloadBody(fileFids, pwdId, stoken)
+                    )
+                    if (downloadResponse.code != SUCCESS_CODE) {
+                        return@withContext ParseResult.Error(
+                            type,
+                            downloadResponse.code.toString(),
+                            CODE_DOWNLOAD_FAILED
+                        )
+                    }
+                    downloadResponse.data
+                        .filter { item -> item.fid.isNotBlank() && item.download_url.isNotBlank() }
+                        .associate { item -> item.fid to item.download_url }
+                }
 
                 ParseResult.Success(
                     netdiskType = type,
-                    // TODO(用户抓包): 分享标题字段名（当前占位空串，UI 侧以文件名兜底）
-                    shareTitle = SHARE_TITLE_PLACEHOLDER,
-                    files = detailResponse.data.list.map { quarkFile -> quarkFile.toFileInfo() }
+                    shareTitle = tokenResponse.data.title,
+                    files = entries.map { entry -> entry.toFileInfo(downloadUrls[entry.fid]) }
                 )
             } catch (cancellation: CancellationException) {
                 // C3：协程取消必须原样抛出，不得吞掉
@@ -137,38 +154,41 @@ class QuarkParser @Inject constructor(
     }
 
     /**
-     * 第 1 步：访问夸克首页并取出 `__puus` Cookie。
+     * 第 1 步（best-effort）：访问夸克首页并取出 `__puus` Cookie。
      *
-     * // TODO(用户抓包): 核对是否需要改为先访问分享页 /s/{pwdId} 才能拿到可用 __puus
-     * // TODO(用户抓包): 核对是否需要额外 Header（如 Referer、Accept-Language）
+     * 实测（2026-10-03）：token 与 detail 接口**无需任何 Cookie**，故本步骤已由
+     * 硬门槛放宽为「取到就登记、取不到仅告警」，任何失败都不影响解析流程。
      *
-     * @return `__puus` 的键值对（形如 `__puus=xxx`）；失败时返回 null。
+     * 说明：`__puus` 若成功取得，会写入 [CookieStore] 供后续请求按域名注入；
+     * 随后的 download 响应下发的 `__pugs` 会覆盖同一域名后缀下的 Cookie 串，
+     * 因 CDN 直链仅依赖 `__pugs`，该覆盖对下载链路无影响。
      */
-    private fun requestPuusCookie(): String? {
+    private fun registerPuusCookie() {
         val request = Request.Builder()
             .url(QUARK_HOME_URL)
             .get()
             .build()
-        return try {
+        try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    Timber.e("QuarkParser home request failed with code %d", response.code)
-                    return null
+                    Timber.w(
+                        "QuarkParser home request failed with code %d (__puus optional)",
+                        response.code
+                    )
+                    return
                 }
                 response.headers("Set-Cookie")
                     .firstOrNull { cookie -> cookie.startsWith(PUUS_COOKIE_NAME) }
                     ?.substringBefore(';')
+                    ?.let { cookie -> cookieStore.save(QUARK_COOKIE_HOST_SUFFIX, cookie) }
             }
         } catch (io: IOException) {
-            Timber.e(io, "QuarkParser home request failed")
-            null
+            Timber.w(io, "QuarkParser home request failed (__puus optional)")
         }
     }
 
     /**
      * 构造 token 接口请求体。
-     *
-     * // TODO(用户抓包): 补齐固定参数并核对参数名大小写与类型
      *
      * 说明（BUGFIX JYD-BUG-03-01）：无提取码时**不带** `passcode` 字段，
      * 交由服务器判定该分享是否需要提取码；只有服务器返回「需要提取码」时，
@@ -186,37 +206,61 @@ class QuarkParser @Inject constructor(
         }
 
     /**
-     * 构造 detail 接口查询参数。
-     *
-     * // TODO(用户抓包): 补齐固定查询参数，并确认根目录 pdir_fid 的取值（当前按 `0` 占位）
+     * 构造 detail 接口查询参数（固定参数与排序已按实测校准）。
      *
      * @param pwdId 分享 ID。
      * @param stoken 临时令牌。
      * @return 查询参数键值对。
      */
     private fun buildDetailParams(pwdId: String, stoken: String): Map<String, String> = mapOf(
+        KEY_PR to QUARK_PR,
+        KEY_FR to QUARK_FR,
         KEY_PWD_ID to pwdId,
         KEY_STOKEN to stoken,
-        KEY_PDIR_FID to ROOT_PDIR_FID
+        KEY_PDIR_FID to ROOT_PDIR_FID,
+        KEY_FORCE to FORCE_VALUE,
+        KEY_PAGE to FIRST_PAGE,
+        KEY_SIZE to PAGE_SIZE,
+        KEY_SORT to DETAIL_SORT
+    )
+
+    /**
+     * 构造 download 接口请求体。
+     *
+     * 实测：`fids` 为数组字段，且**必须**同时携带 `pwd_id` 与 `stoken`，
+     * 否则返回 `code:31001 require login [share missing]`。
+     *
+     * @param fids 待换取直链的文件 ID 列表（已剔除文件夹）。
+     * @param pwdId 分享 ID。
+     * @param stoken 临时令牌。
+     * @return 请求体键值对（值为任意类型，含数组）。
+     */
+    private fun buildDownloadBody(
+        fids: List<String>,
+        pwdId: String,
+        stoken: String
+    ): Map<String, Any> = mapOf(
+        KEY_FIDS to fids,
+        KEY_PWD_ID to pwdId,
+        KEY_STOKEN to stoken
     )
 
     /**
      * 把夸克的文件条目映射为领域模型。
      *
-     * // TODO(用户抓包): 补齐文件夹判定字段；文件夹不应进入下载队列
-     *
+     * @param downloadUrl 该文件的直链；文件夹或无直链时为 null。
      * @return 领域层文件描述。
      */
-    private fun QuarkFile.toFileInfo(): FileInfo = FileInfo(
+    private fun QuarkFile.toFileInfo(downloadUrl: String?): FileInfo = FileInfo(
         fid = fid,
         fileName = file_name,
         fileSize = size,
-        isDirectory = false,
-        downloadUrl = null
+        isDirectory = dir,
+        downloadUrl = downloadUrl?.takeIf { url -> url.isNotBlank() }
     )
 
     private companion object {
-        /** 夸克首页，用于获取 __puus Cookie。 */
+        /** 夸克首页，用于 best-effort 获取 __puus Cookie。 */
         const val QUARK_HOME_URL = "https://pan.quark.cn"
 
         /** __puus Cookie 名前缀。 */
@@ -225,20 +269,33 @@ class QuarkParser @Inject constructor(
         /** Cookie 域名后缀：同时覆盖 pan.quark.cn（握手）与 drive-pc.quark.cn（接口）。 */
         const val QUARK_COOKIE_HOST_SUFFIX = "quark.cn"
 
-        /** 根目录的 pdir_fid 占位值。 */
+        /** 根目录的 pdir_fid 取值（实测根目录为 "0"）。 */
         const val ROOT_PDIR_FID = "0"
 
-        /** 分享标题占位值。 */
-        const val SHARE_TITLE_PLACEHOLDER = ""
+        /** 夸克 PC 平台固定查询参数。 */
+        const val QUARK_PR = "ucpro"
+        const val QUARK_FR = "pc"
+
+        /** detail 接口固定查询参数。 */
+        const val FORCE_VALUE = "0"
+        const val FIRST_PAGE = "1"
+        const val PAGE_SIZE = "50"
+        const val DETAIL_SORT = "file_type:asc,updated_at:desc"
 
         /** 请求参数名。 */
         const val KEY_PWD_ID = "pwd_id"
         const val KEY_PASSCODE = "passcode"
         const val KEY_STOKEN = "stoken"
         const val KEY_PDIR_FID = "pdir_fid"
+        const val KEY_PR = "pr"
+        const val KEY_FR = "fr"
+        const val KEY_FORCE = "force"
+        const val KEY_PAGE = "_page"
+        const val KEY_SIZE = "_size"
+        const val KEY_SORT = "_sort"
+        const val KEY_FIDS = "fids"
 
-        /** 成功状态码。 */
-        // TODO(用户抓包): 核对夸克成功码是否为 0
+        /** 成功状态码（实测为 0）。 */
         const val SUCCESS_CODE = 0
 
         /**
@@ -260,9 +317,9 @@ class QuarkParser @Inject constructor(
          * code 与 message 均使用机器可读标识，由 UI 层映射为 strings.xml 文案。
          */
         const val CODE_INVALID_LINK = "QUARK_INVALID_LINK"
-        const val CODE_NEED_COOKIE = "QUARK_NEED_COOKIE"
         const val CODE_TOKEN_FAILED = "QUARK_TOKEN_FAILED"
         const val CODE_DETAIL_FAILED = "QUARK_DETAIL_FAILED"
+        const val CODE_DOWNLOAD_FAILED = "QUARK_DOWNLOAD_FAILED"
         const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
         const val CODE_NETWORK = "QUARK_NETWORK_ERROR"
         const val CODE_PROTOCOL = "QUARK_PROTOCOL_ERROR"
