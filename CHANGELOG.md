@@ -71,7 +71,8 @@
 - 已执行：`libs.versions.toml` 删除 `cloudy` 版本与库声明；`app/build.gradle.kts` 删除
   `implementation(libs.cloudy)`；`settings.gradle.kts` 移除仅因 cloudy 而加的 JitPack 仓库。
 - 代码自始未引用任何 Cloudy API，故删除依赖不需要改动任何 Kotlin 源码。
-- 状态：**以上删除 + 本 CHANGELOG 更新合并为一次推送，触发 CI run#4 验证。**
+- 状态：**已推送（run#4）。删除后依赖解析即通过；后续 run#4–#6 暴露并修复了 2 个
+  Kotlin 编译问题（`GlassPanel.drawOutline` 的 import），最终 run#6 全绿。详见下节。**
 
 ## 阶段 6 交付后整改（依据《阶段 6 交付后整改指令（整合版）》）
 
@@ -115,26 +116,44 @@
 - 处置：先推送看 CI；若绿则保留；若红且错误指向 cloudy，**贴日志交 Owner 裁决，不擅自注释**。
 - 结论：**已确认红，且根因指向 cloudy → 已按指令停止并上报；Owner 已裁决「方案 A：删除 cloudy」（见上一节“后续”）。**
 
-## CI 实跑结果（已回填，2026-10-03）
-仓库 `qiuchen520/JieYunDu`，仓库 `.github/workflows/build.yml` 触发（每次 push main 触发一轮）。
+## CI 实跑结果（最终回填，2026-10-03）
+仓库 `qiuchen520/JieYunDu`，`.github/workflows/build.yml` 触发（每次 push main 触发一轮）。
 
-| run | head sha | 失败步骤 | 原因 |
+| run | head sha | 结果 | 说明 |
 |---|---|---|---|
-| #1 | `3c9358b` | Set up Gradle | `Error: Gradle version 8.2.2 does not exist`（**真 bug**：Gradle 无 8.2.2 发行版，8.2.2 是 AGP 版本号） |
-| #2 | `c407d14` | Build Debug APK | `Invalid catalog definition: alias 'androidx-compose-material3-window-size-class' ... contains a reserved name`（**真 bug**：目录别名含 Gradle 保留字 `class`） |
-| #3 | `e36d0d3` | Build Debug APK | `:app:checkDebugAarMetadata` 31 条 AAR 元数据错误，要求 compileSdk≥35 / AGP≥8.6（**根因：cloudy**） |
-| #4 | 本次推送 | 待验证 | 已按方案 A 删除 cloudy，预期通过（结果于后续回填） |
+| #1 | `3c9358b` | ❌ Set up Gradle | `Error: Gradle version 8.2.2 does not exist`（**真 bug**：Gradle 无 8.2.2 发行版，8.2.2 是 AGP 版本号） |
+| #2 | `c407d14` | ❌ Build Debug APK | `Invalid catalog definition: alias 'androidx-compose-material3-window-size-class' ... contains a reserved name`（**真 bug**：目录别名含 Gradle 保留字 `class`） |
+| #3 | `e36d0d3` | ❌ Build Debug APK | `:app:checkDebugAarMetadata` 31 条 AAR 元数据错误，要求 compileSdk≥35 / AGP≥8.6（**根因：cloudy**） |
+| #4 | `b47f9d1` | ❌ Build Debug APK | 删除 cloudy 后依赖解析即通过，转出 Kotlin 编译错误 `GlassPanel.kt Unresolved reference: drawOutline`（**真 bug**：缺 import） |
+| #5 | `3e946ba` | ❌ Build Debug APK | 补 import 但包名写错（`androidx.compose.ui.graphics.drawscope.drawOutline`），仍 unresolved（**真 bug**：正确包名为 `androidx.compose.ui.graphics`） |
+| #6 | `9622dff` | ✅ **全绿** | `BUILD SUCCESSFUL`；`testDebugUnitTest` 亦 `BUILD SUCCESSFUL` |
 
-- artifact：run#1–#3 **无**（构建从未成功）；run#4 待验证。
-- 修复记录（均已推送）：
-  - #1 → `gradle/wrapper/gradle-wrapper.properties` 与 workflow 统一改 Gradle **8.2.1**；README 同步。
-  - #2 → `libs.versions.toml` 别名改 `androidx-compose-material3-window-size`，`app/build.gradle.kts` 引用同步。
-- #3 根因证据：`com.github.skydoves:cloudy:1.0.0-alpha01`（Maven Central）POM 依赖
-  `kotlin-stdlib:2.4.0` + `org.jetbrains.compose.*:1.11.1`，把整条 androidx 链拉高
-  （core-ktx 1.19.0 / lifecycle 2.11.0 / compose 1.11.4 / transition 1.6.0）。
-- 状态：**Owner 已裁决方案 A；cloudy 已删除，随本文件一并推送，等待 run#4 验证。**
+### run#6 成功详情
+- 步骤：Set up / Checkout / JDK17 / Gradle → **Build Debug APK ✔** → **Upload APK ✔** → **Run unit tests ✔**。
+- artifact：**`jieyundu-debug-apk`，10,177,231 字节（≈9.7 MB）**，未过期，可从 Actions 页面下载。
+- 单元测试：`QuarkParserTest` 编译并执行成功（仅 3 条无害警告 `No cast needed`），
+  **硬伤 2 的 4 条真实断言已在云端真实跑通**。
+
+### 六个 run 的根因与修复（全部为 CI 才暴露的真问题）
+1. **Gradle 版本号张冠李戴**：把 AGP 的 `8.2.2` 当成 Gradle 发行版号。修复：统一改 `8.2.1`
+   （`gradle-wrapper.properties` + workflow + README）。
+2. **版本目录别名保留字**：别名含 `class` → 非法。修复：别名改 `androidx-compose-material3-window-size`，
+   `app/build.gradle.kts` 引用同步。
+3. **cloudy 阻断构建**：POM 依赖 `kotlin-stdlib:2.4.0` + `org.jetbrains.compose.*:1.11.1`，
+   把 androidx 链拉高（core-ktx 1.19.0 / lifecycle 2.11.0 / compose 1.11.4 / transition 1.6.0）。
+   修复：按 Owner 裁决（方案 A）删除 cloudy + 移除 JitPack 仓库。
+4. **`drawOutline` 未解析**：`GlassPanel.kt` 漏 import。修复：补 import（并纠正包名）。
+
+### 待披露技术债（阶段 10 扫描报告用）
+- `kotlin-test` 在 Android 单元测试会解析到 `kotlin-test-junit` 变体，JUnit4（EPL-1.0）可能作为
+  传递依赖进入 **test classpath**（不进 APK）；run#6 已跑通 `testDebugUnitTest`，可据此撰写扫描报告。
+- 已移除的 `cloudy` 若后续需重新引入，须先解决其对新版 androidx / Kotlin 2.4 的依赖，
+  与本项目 compileSdk34 / AGP8.2.2 / Kotlin1.9.22 档位兼容，详见上方 run#3。
 
 ## 待办 / 已知项
 - 评审清单 §1、§2 同步（评审方执行）。
+- 评审清单 §8 P0「构建日志」：**已具备**（run#6 全绿 + artifact `jieyundu-debug-apk` 可下载）。
+- 《要求.md》§5 仍将 `skydoves/Cloudy 1.0.0-alpha01` 列为指定依赖，与当前实现（方案 A 移除）
+  已不一致，**待评审方/Owner 出勘误登记**（开发方按铁律不改规格文件）。
 - 夸克 UA 等 27 条 `// TODO(用户抓包):` 待抓包数据。
 - R1 边界已在 README 如实披露。
