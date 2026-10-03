@@ -1,6 +1,6 @@
 // 文件：ParseResultCard.kt
-// 职责：解析结果展示卡片（解析中 / 成功文件列表 / 需要提取码 / 失败）
-// 依赖：GlassCard、FileSizeFormatter、ParseResult、Dimens、JieYunDuColors
+// 职责：解析结果展示卡片（空闲提示 / 解析中 / 成功文件列表可选下载 / 需要提取码 / 失败）
+// 依赖：GlassCard、GlassButton、FileSizeFormatter、ParseResult、Dimens、JieYunDuColors
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.home.components
@@ -8,6 +8,7 @@ package com.jieyundu.app.ui.screens.home.components
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,12 +16,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +37,7 @@ import com.jieyundu.app.R
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.ParseResult
 import com.jieyundu.app.domain.util.FileSizeFormatter
+import com.jieyundu.app.ui.glass.GlassButton
 import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.home.parseErrorLabelRes
 import com.jieyundu.app.ui.screens.home.uiLabelRes
@@ -40,15 +45,15 @@ import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
 
 /**
- * 解析结果卡片（9.6.3）。
+ * 解析结果卡片（9.6.3 + 布局修订）。
  *
- * 说明：按 [ParseResult] 的四个状态分支渲染；成功时列出文件并提供圆形下载按钮，
+ * 说明：按 [ParseResult] 分支渲染；成功时可勾选文件并点击「下载选中」批量投递下载。
  * 卡片整体点击缩放 0.98 回弹由 [GlassCard] 提供（9.6.3）。
  *
  * @param result 解析结果；未解析时为 null。
  * @param errorRes 本地校验错误的文案资源；无错误时为 null。
  * @param isParsing 是否正在解析。
- * @param onDownload 点击文件下载按钮的回调。
+ * @param onDownload 点击下载单个文件的回调。
  * @param modifier 外部修饰符。
  * @param isExpanded true 表示平板尺寸档位，false 表示手机档位。
  */
@@ -97,7 +102,27 @@ fun ParseResultCard(
             contentPadding = contentPadding
         )
 
-        else -> Unit
+        else -> IdleHint(modifier = modifier)
+    }
+}
+
+/**
+ * 空闲态提示卡（尚未解析时的占位）。
+ *
+ * @param modifier 外部修饰符。
+ */
+@Composable
+private fun IdleHint(modifier: Modifier = Modifier) {
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        cornerRadius = Dimens.CardCorner,
+        contentPadding = Dimens.PanelPadding
+    ) {
+        Text(
+            text = stringResource(R.string.parse_result_idle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = JieYunDuColors.TextTertiary
+        )
     }
 }
 
@@ -128,10 +153,10 @@ private fun InfoCard(
 }
 
 /**
- * 解析成功卡片：头部展示网盘类型，下方逐条列出文件。
+ * 解析成功卡片：头部展示网盘类型，下方为可勾选的文件列表与「下载选中」按钮。
  *
  * @param result 解析成功结果。
- * @param onDownload 下载回调。
+ * @param onDownload 下载回调（逐个文件投递）。
  * @param modifier 外部修饰符。
  * @param contentPadding 卡内边距。
  */
@@ -142,6 +167,8 @@ private fun SuccessCard(
     modifier: Modifier = Modifier,
     contentPadding: Dp = Dimens.PanelPadding
 ) {
+    val selectedFids = remember { mutableStateListOf<String>() }
+
     GlassCard(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = Dimens.CardCorner,
@@ -163,29 +190,65 @@ private fun SuccessCard(
                     color = JieYunDuColors.TextSecondary
                 )
             } else {
+                Text(
+                    text = stringResource(R.string.parse_result_select_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = JieYunDuColors.TextTertiary
+                )
                 result.files.forEach { file ->
-                    FileRow(file = file, onDownload = onDownload)
+                    SelectableFileRow(
+                        file = file,
+                        checked = selectedFids.contains(file.fid),
+                        onToggle = {
+                            if (selectedFids.contains(file.fid)) {
+                                selectedFids.remove(file.fid)
+                            } else {
+                                selectedFids.add(file.fid)
+                            }
+                        }
+                    )
                 }
+                GlassButton(
+                    text = stringResource(R.string.action_download),
+                    onClick = {
+                        result.files
+                            .filter { selectedFids.contains(it.fid) }
+                            .forEach(onDownload)
+                    },
+                    height = Dimens.ButtonHeightCompact,
+                    cornerRadius = Dimens.ButtonCornerCompact,
+                    fillColor = JieYunDuColors.ButtonFill,
+                    borderColor = JieYunDuColors.ButtonBorder,
+                    contentColor = JieYunDuColors.OnPrimary
+                )
             }
         }
     }
 }
 
 /**
- * 单条文件行：左侧文件名与大小，右侧圆形下载按钮。
+ * 可勾选的单条文件行：左侧勾选框，右侧文件名与大小。
  *
  * @param file 文件条目。
- * @param onDownload 下载回调。
+ * @param checked 是否已勾选。
+ * @param onToggle 切换勾选回调。
  */
 @Composable
-private fun FileRow(
+private fun SelectableFileRow(
     file: FileInfo,
-    onDownload: (FileInfo) -> Unit
+    checked: Boolean,
+    onToggle: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.SpaceSm))
+            .clickable(onClick = onToggle)
+            .padding(vertical = Dimens.SpaceXs),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        SelectionBox(checked = checked)
+        Spacer(modifier = Modifier.width(Dimens.SpaceMd))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = file.fileName,
@@ -200,74 +263,58 @@ private fun FileRow(
                 color = JieYunDuColors.TextTertiary
             )
         }
-        Spacer(modifier = Modifier.width(Dimens.SpaceLg))
-        DownloadCircleButton(onClick = { onDownload(file) })
     }
 }
 
 /**
- * 圆形下载按钮（9.6.3：56dp，主色浅底 #E8EEFF，图标主色蓝）。
+ * 自绘勾选框（选中为主色蓝底 + 白勾）。
  *
- * @param onClick 点击回调。
+ * @param checked 是否选中。
  */
 @Composable
-private fun DownloadCircleButton(onClick: () -> Unit) {
+private fun SelectionBox(checked: Boolean) {
+    val shape = RoundedCornerShape(Dimens.SpaceXs)
     Box(
         modifier = Modifier
-            .size(Dimens.DownloadButtonSize)
-            .clip(CircleShape)
-            .background(JieYunDuColors.IconButtonFill)
-            .clickable(onClick = onClick),
+            .size(Dimens.CheckboxSize)
+            .clip(shape)
+            .background(if (checked) JieYunDuColors.Primary else JieYunDuColors.InputFieldFill)
+            .border(
+                width = Dimens.HighlightStroke,
+                color = if (checked) JieYunDuColors.Primary else JieYunDuColors.GlassBorder,
+                shape = shape
+            ),
         contentAlignment = Alignment.Center
     ) {
-        DownloadGlyph(modifier = Modifier.size(Dimens.SpaceXxl))
+        if (checked) {
+            CheckGlyph(modifier = Modifier.size(Dimens.SpaceMd))
+        }
     }
 }
 
 /**
- * 自绘「向下箭头 + 底线」下载图标。
- *
- * 说明（D8）：不引入 material-icons-extended（不在第五部分技术栈内），
- * 以 Compose 原生 [Canvas] 绘制，避免额外依赖。
+ * 自绘「对勾」图标（D8：不引入 material-icons）。
  *
  * @param modifier 外部修饰符。
  */
 @Composable
-private fun DownloadGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.Primary
+private fun CheckGlyph(modifier: Modifier = Modifier) {
+    val color = JieYunDuColors.OnPrimary
     Canvas(modifier = modifier) {
-        val stroke = size.width * GLYPH_STROKE_RATIO
-        val centerX = size.width / 2f
-        val topY = size.height * GLYPH_TOP_RATIO
-        val midY = size.height * GLYPH_MID_RATIO
-        val baseY = size.height * GLYPH_BASE_RATIO
-        val wing = size.width * GLYPH_WING_RATIO
+        val w = size.width
+        val h = size.height
         drawLine(
             color = color,
-            start = Offset(centerX, topY),
-            end = Offset(centerX, midY),
-            strokeWidth = stroke,
+            start = Offset(w * CHECK_START_X, h * CHECK_MID_Y),
+            end = Offset(w * CHECK_MID_X, h * CHECK_BOTTOM_Y),
+            strokeWidth = w * CHECK_STROKE_RATIO,
             cap = StrokeCap.Round
         )
         drawLine(
             color = color,
-            start = Offset(centerX - wing, midY - wing),
-            end = Offset(centerX, midY),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(centerX + wing, midY - wing),
-            end = Offset(centerX, midY),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * GLYPH_BASE_START_RATIO, baseY),
-            end = Offset(size.width * GLYPH_BASE_END_RATIO, baseY),
-            strokeWidth = stroke,
+            start = Offset(w * CHECK_MID_X, h * CHECK_BOTTOM_Y),
+            end = Offset(w * CHECK_END_X, h * CHECK_TOP_Y),
+            strokeWidth = w * CHECK_STROKE_RATIO,
             cap = StrokeCap.Round
         )
     }
@@ -307,23 +354,23 @@ private fun NeedPasswordCard(
     }
 }
 
-/** 图标线宽相对边长比例。 */
-private const val GLYPH_STROKE_RATIO = 0.09f
+/** 对勾起点横向占比。 */
+private const val CHECK_START_X = 0.15f
 
-/** 箭头竖线起点占比。 */
-private const val GLYPH_TOP_RATIO = 0.18f
+/** 对勾折点横向占比。 */
+private const val CHECK_MID_X = 0.42f
 
-/** 箭头交汇点占比。 */
-private const val GLYPH_MID_RATIO = 0.62f
+/** 对勾终点横向占比。 */
+private const val CHECK_END_X = 0.85f
 
-/** 底线纵向占比。 */
-private const val GLYPH_BASE_RATIO = 0.82f
+/** 对勾起点纵向占比。 */
+private const val CHECK_TOP_Y = 0.25f
 
-/** 箭头两翼长度占比。 */
-private const val GLYPH_WING_RATIO = 0.18f
+/** 对勾折点纵向占比。 */
+private const val CHECK_MID_Y = 0.55f
 
-/** 底线起点横向占比。 */
-private const val GLYPH_BASE_START_RATIO = 0.22f
+/** 对勾终点纵向占比。 */
+private const val CHECK_BOTTOM_Y = 0.78f
 
-/** 底线终点横向占比。 */
-private const val GLYPH_BASE_END_RATIO = 0.78f
+/** 对勾线宽相对宽度比例。 */
+private const val CHECK_STROKE_RATIO = 0.14f
