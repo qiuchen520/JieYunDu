@@ -155,6 +155,12 @@ object Dimens {
     /** 悬浮标题栏左右画面边距（整改：左右各留 24dp）。 */
     val TitleBarMargin: Dp = 24.dp
 
+    /** 标题栏圆角（平板，≈ 高度 72dp × 0.33）。 */
+    val TitleBarCorner: Dp = 24.dp
+
+    /** 标题栏圆角（手机，≈ 高度 64dp × 0.33）。 */
+    val TitleBarCornerCompact: Dp = 21.dp
+
     /** 空态图标边长（下载列表空态）。 */
     val EmptyIconSize: Dp = 64.dp
 
