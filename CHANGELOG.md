@@ -444,6 +444,14 @@
   ② Cookie 须随响应持续合并回写 + 90 分钟刷新 `__puus`。
 - 该文件可直接填充 `UserAgentProvider.kt` 四处 UA 及 `QuarkApi.kt` 字段名等 `TODO(用户抓包)`。
 
+### 推送与 CI（本次）
+- 推送方式：《要求.md》与《CHANGELOG.md》分别单提交，经 GitHub Contents API 直推（base64 直接读取本地文件，
+  推送字节数与本地 `wc -c` 一致：要求.md 52221 / CHANGELOG.md 36183，无截断无损坏）。
+- 《要求.md》sha `7f23f2c5b299771817576482dde4752858ab4c8c` → CI run `#24` ✅ **全绿**。
+- 《CHANGELOG.md》sha `997bfce1288302339591ab34c15720d5b999c723` → CI run `#25`（`37104509356`）
+  ✅ **全绿**，artifact `jieyundu-debug-apk` **10,326,247 B（≈9.8 MB）**。
+- `抓包事实.md` **未推送**（含迅雷客户端凭据常量，是否入公开仓库待 Owner 定夺）。
+
 ### 待 Owner 裁定 / 澄清（未自行决定）
 1. 《要求.md》正文是否需就地改写，或以上述追加式“修订记录”块为准。
 2. 《评审清单.md》由评审方维护（其 §0 明示）；指令要求“开发方更新 §1”，与既有约定冲突，
