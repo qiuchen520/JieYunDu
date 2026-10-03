@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 文件：themes.xml
+     职责：仅提供窗口级主题（深色、无 ActionBar）。真正的视觉主题在 Compose 层（阶段 6）
+     依赖：无
+     协议：AGPL-3.0 -->
+<resources>
+    <style name="Theme.JieYunDu" parent="@android:style/Theme.Material.NoActionBar">
+        <!-- 背板深色底色 #0A0A0F，避免启动白闪（细节玻璃由 Compose 的 GlassBackground 绘制） -->
+        <item name="android:windowBackground">#FF0A0A0F</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

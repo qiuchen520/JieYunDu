@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 文件：ic_launcher_foreground.xml
+     职责：自适应图标前景层（云 + 向下箭头，示意“云盘下载”）
+     依赖：mipmap-anydpi-v26/ic_launcher.xml
+     协议：AGPL-3.0 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 云朵 -->
+    <path
+        android:fillAlpha="0.94"
+        android:fillColor="#E8EAF6"
+        android:pathData="M40,60h30a13,13 0 0,0 1.6,-25.9A15,15 0 0,0 43.8,31.3A12,12 0 0,0 40,60z" />
+
+    <!-- 下载箭头 -->
+    <path
+        android:fillColor="#7C4DFF"
+        android:pathData="M52,64h4v12h7l-9,10l-9,-10h7z" />
+</vector>

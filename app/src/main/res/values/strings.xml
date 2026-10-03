@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 文件：strings.xml
+     职责：全部字符串资源（C5：禁止在 .kt 中硬编码中文）
+     依赖：AndroidManifest.xml
+     协议：AGPL-3.0 -->
+<resources>
+    <string name="app_name">极云渡</string>
+
+    <!-- 下载通知 -->
+    <string name="notification_channel_download_name">下载任务</string>
+    <string name="notification_channel_download_desc">显示网盘文件的下载进度</string>
+    <string name="notification_download_title">正在下载</string>
+    <string name="notification_download_progress_text">已完成 %1$d%%</string>
+    <string name="notification_download_completed_title">下载完成</string>
+    <string name="notification_download_completed_text">文件已保存到本地</string>
+
+    <!-- 主界面占位（阶段 6 最小壳；阶段 8 替换为真实界面） -->
+    <string name="home_placeholder">粘贴网盘分享链接开始解析</string>
+    <string name="home_glass_sample">液态玻璃面板预览</string>
+</resources>
