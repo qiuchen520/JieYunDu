@@ -38,6 +38,9 @@ object Dimens {
     /** 玻璃面板内边距（手机）。 */
     val PanelPaddingCompact: Dp = 16.dp
 
+    /** 输入区玻璃卡片内边距（9.6.2：20dp）。 */
+    val InputCardPadding: Dp = 20.dp
+
     /** 卡片圆角。 */
     val CardCorner: Dp = 24.dp
 
