@@ -15,8 +15,9 @@ import timber.log.Timber
 /**
  * 下载进度持久化实体，主键为任务 ID。
  *
- * 说明：本实体只承载下载进度端口（`DownloadProgressPort`）能提供的信息；
- * 文件名、保存路径等展示字段属于历史记录，见 [HistoryEntity]。
+ * 说明：本实体承载下载进度端口（`DownloadProgressPort`）能提供的信息，
+ * 并自【修订 JYD-SAVEPATH-2026-10-03】起额外持久化落盘路径 [savePath]；
+ * 文件名等纯展示字段仍属历史记录，见 [HistoryEntity]。
  *
  * @property taskId 任务 ID。
  * @property downloadedBytes 已下载字节数。
@@ -25,6 +26,8 @@ import timber.log.Timber
  * @property chunkCount 分片总数。
  * @property completedChunks 已完成分片数。
  * @property updatedAt 最后更新时间戳。
+ * @property savePath 目标文件绝对路径；未知时为 null。
+ *   【修订 JYD-SAVEPATH-2026-10-03】新增 `save_path` 列，用于持久化落盘路径。
  */
 @Entity(tableName = "download_progress")
 data class DownloadEntity(
@@ -42,7 +45,9 @@ data class DownloadEntity(
     @ColumnInfo(name = "completed_chunks")
     val completedChunks: Int,
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long
+    val updatedAt: Long,
+    @ColumnInfo(name = "save_path")
+    val savePath: String? = null
 ) {
 
     /**
@@ -58,7 +63,8 @@ data class DownloadEntity(
         totalBytes = totalBytes,
         speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE,
         chunkCount = chunkCount,
-        completedChunks = completedChunks
+        completedChunks = completedChunks,
+        savePath = savePath
     )
 
     companion object {
@@ -79,7 +85,8 @@ data class DownloadEntity(
             state = progress.state.name,
             chunkCount = progress.chunkCount,
             completedChunks = progress.completedChunks,
-            updatedAt = updatedAt
+            updatedAt = updatedAt,
+            savePath = progress.savePath
         )
 
         /**
