@@ -36,9 +36,9 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
  * 说明：
  * - 输入框使用 Compose Foundation 的 [BasicTextField] 并自绘占位文字，
  *   不使用 Material 默认样式的 TextField（R5 / D3）；
- * - 输入框为半透明玻璃底 + 圆角（≈ 高度 × 0.33），自绘占位文字；
- * - 按钮复用 [GlassButton]，按 9.6.2 使用白色 15% 底 + 白色 30% 边框，
- *   宽度自适应并位于输入框右侧（整改：不再横跨全屏）。
+ * - 输入框为浅灰底（InputFieldFill）+ 圆角（≈ 高度 × 0.33），自绘占位文字；
+ * - 按钮复用 [GlassButton]，主色蓝实底 + 白字，
+ *   宽度自适应并位于输入框右侧（9.6.2 整改：不再横跨全屏）。
  *
  * @param input 当前输入文本。
  * @param onInputChange 输入变化回调。
@@ -76,7 +76,7 @@ fun LinkInputCard(
                     .weight(1f)
                     .height(inputHeight)
                     .clip(RoundedCornerShape(inputCorner))
-                    .background(JieYunDuColors.GlassFill)
+                    .background(JieYunDuColors.InputFieldFill)
                     .padding(horizontal = Dimens.SpaceLg),
                 contentAlignment = Alignment.CenterStart
             ) {
@@ -107,7 +107,8 @@ fun LinkInputCard(
                 height = buttonHeight,
                 cornerRadius = buttonCorner,
                 fillColor = JieYunDuColors.ButtonFill,
-                borderColor = JieYunDuColors.ButtonBorder
+                borderColor = JieYunDuColors.ButtonBorder,
+                contentColor = JieYunDuColors.OnPrimary
             )
         }
     }
