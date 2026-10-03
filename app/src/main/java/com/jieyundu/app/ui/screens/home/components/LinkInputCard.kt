@@ -60,8 +60,7 @@ fun LinkInputCard(
     val buttonHeight: Dp = if (isExpanded) Dimens.ButtonHeight else Dimens.ButtonHeightCompact
     val inputCorner: Dp = if (isExpanded) Dimens.InputCorner else Dimens.InputCornerCompact
     val buttonCorner: Dp = if (isExpanded) Dimens.ButtonCorner else Dimens.ButtonCornerCompact
-    val contentPadding: Dp =
-        if (isExpanded) Dimens.PanelPadding else Dimens.PanelPaddingCompact
+    val contentPadding: Dp = Dimens.InputCardPadding
 
     GlassCard(
         modifier = modifier.fillMaxWidth(),
