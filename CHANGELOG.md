@@ -632,6 +632,27 @@
   DownloadItem → DownloadScreen → HomeViewModel → 其余首页/导航文件 → 文档。
 - 状态：见「推送与 CI」记录。
 
+## savePath 修复（批次 1 · JYD-SAVEPATH-2026-10-03）
+> 背景：旧实现落盘路径仅存于会话内存 `DownloadSessionRegistry`，进程重启后
+> 「删除任务」无法定位本地文件。Owner 要求修复，并与阶段 11 分两批推送。
+> 本批次不改任何 UI（配色与阶段 8 布局冻结）。
+- `DownloadState.kt`：`DownloadProgressState` 新增 `savePath: String? = null`（带默认值，兼容既有构造）。
+- `DownloadEntity.kt`：新增 `@ColumnInfo("save_path") savePath`，`toProgress`/`fromProgress` 双向映射；类注释同步。
+- `AppDatabase.kt`：version `1 → 2`，新增 `MIGRATION_1_2`
+  （`ALTER TABLE download_progress ADD COLUMN save_path TEXT`）。
+- `DatabaseModule.kt`：`databaseBuilder(...).addMigrations(AppDatabase.MIGRATION_1_2)`。
+- `DownloadEngine.kt`：`start()` 构造进度时写入 `savePath = task.savePath`，并新增
+  `downloadDao.upsert(runtime.progress.value)`——启动即落库（顺带修复「新任务不立即出现在列表」）。
+  后续 `publishProgress`/`pause`/完成态 `copy()` 自动保留该字段；`cancel()` 删除逻辑不变。
+- `DownloadViewModel.kt`：`DownloadListItem.savePath` 改为 `remembered?.savePath ?: progress.savePath`
+  （会话登记优先，回退持久化值）；相关 KDoc 同步。
+### 验收方式（Owner）
+- 下载一个文件 → 退出 App → 重开 → 删除任务 → 本地文件随之消失。
+### 已知限制
+- 文件名仍不持久化，重启后回退为「未命名任务」占位（不影响文件删除）。
+### 规格登记
+- 《要求.md》：就地更新 §4.4 下载页实现说明；追加【修订 JYD-SAVEPATH-2026-10-03】记录块。
+
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
