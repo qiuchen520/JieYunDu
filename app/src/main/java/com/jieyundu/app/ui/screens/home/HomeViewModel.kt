@@ -75,6 +75,15 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 更新单独填写的提取码（选填）。
+     *
+     * @param text 最新的提取码文本。
+     */
+    fun onCodeChange(text: String) {
+        _uiState.value = _uiState.value.copy(inputCode = text)
+    }
+
+    /**
      * 执行解析（阶段 8 整改：把「需要提取码」转为弹窗，不再中断流程）。
      *
      * 说明：本方法非 suspend；内部协程捕获 [IOException] / [SerializationException] 并转成
@@ -101,7 +110,11 @@ class HomeViewModel @Inject constructor(
             )
             return
         }
-        startParse(link = link, parser = parser, password = link.password)
+        startParse(
+            link = link,
+            parser = parser,
+            password = link.password ?: _uiState.value.inputCode.ifBlank { null }
+        )
     }
 
     /**
@@ -203,7 +216,7 @@ class HomeViewModel @Inject constructor(
             fileSize = file.fileSize,
             savePath = File(directory, file.fileName).absolutePath
         )
-        downloadSessionRegistry.remember(taskId, file.fileName)
+        downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 downloadEngine.start(task)
