@@ -103,4 +103,21 @@ object Dimens {
 
     /** 噪声点间距。 */
     val NoiseDotSpacing: Dp = 8.dp
+
+    // --- 导航（阶段 7，第十部分；双方向玻璃条）---
+
+    /** 横向导航条厚度（高度，10.2 手机）。 */
+    val NavBarThicknessHorizontal: Dp = 64.dp
+
+    /** 竖直导航条厚度（宽度，Owner 裁决 · 平板）。 */
+    val NavBarThicknessVertical: Dp = 96.dp
+
+    /** 横向导航条画面边距（10.8：宽度 = 屏宽 − 32dp → 每侧 16dp）。 */
+    val NavBarLengthInsetHorizontal: Dp = 16.dp
+
+    /** 指示器沿厚度方向的单侧留白（10.2：上下/左右各 4dp）。 */
+    val NavIndicatorInset: Dp = 4.dp
+
+    /** 指示器边缘高光厚度（10.2：1dp）。 */
+    val NavIndicatorStroke: Dp = 1.dp
 }

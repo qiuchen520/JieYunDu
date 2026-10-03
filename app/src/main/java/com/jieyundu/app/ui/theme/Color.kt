@@ -63,4 +63,10 @@ object JieYunDuColors {
 
     /** 进度条填充（白色 70%）。 */
     val ProgressFill: Color = Color(0xB3FFFFFF)
+
+    /** 导航指示器底色（白色 18%，10.2）。 */
+    val NavIndicatorFill: Color = Color(0x2EFFFFFF)
+
+    /** 指示器边缘高光起始（白色 50%，10.2）。 */
+    val NavIndicatorHighlight: Color = Color(0x80FFFFFF)
 }
