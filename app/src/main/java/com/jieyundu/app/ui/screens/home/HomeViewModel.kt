@@ -189,7 +189,7 @@ class HomeViewModel @Inject constructor(
                     passwordErrorRes = null
                 )
                 // 提取码错误 → 弹窗保留并提示重试
-                result is ParseResult.Error && result.code == CODE_WRONG_PASSWORD ->
+                result is ParseResult.Error && result.code in WRONG_PASSWORD_CODES ->
                     _uiState.value.copy(
                         isParsing = false,
                         result = null,
@@ -343,9 +343,11 @@ class HomeViewModel @Inject constructor(
             var authFailure = false
             try {
                 val context = _uiState.value.shareContext
+                // 源目录 fid：当前浏览层级的 pdirFid（分享内该文件所在目录），供转存 `save.pdir_fid` 使用。
+                val sourcePdirFid = _uiState.value.stack.lastOrNull()?.pdirFid ?: ROOT_PDIR_FID
                 targets.forEach { file ->
                     try {
-                        startDownload(file, context)
+                        startDownload(file, context, sourcePdirFid)
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (http: HttpException) {
@@ -378,12 +380,14 @@ class HomeViewModel @Inject constructor(
      *
      * @param file 目标文件。
      * @param context 分享上下文；为 null 时回退到文件自带直链（如个人网盘文件）。
+     * @param sourcePdirFid 分享内该文件所在目录的 fid（根为 `0`）；转存 `save` 时作为 `pdir_fid`
+     *   （见《抓包事实.md》§9.3③）。
      */
-    private suspend fun startDownload(file: FileInfo, context: ShareContext?) {
+    private suspend fun startDownload(file: FileInfo, context: ShareContext?, sourcePdirFid: String) {
         // 按网盘类型取转存器（B2：多网盘路由）。
         val preparer = context?.let { ctx -> netdiskRouter.shareDownloadPreparerFor(ctx.netdiskType) }
         val prepared = if (context != null && preparer != null) {
-            preparer.prepare(context.pwdId, context.stoken, file)
+            preparer.prepare(context.pwdId, context.stoken, file, sourcePdirFid)
         } else {
             null
         }
@@ -530,8 +534,14 @@ class HomeViewModel @Inject constructor(
         /** 兜底错误码：未归类的运行时异常（UI 映射为「未知错误」）。 */
         const val CODE_UNKNOWN = "APP_UNKNOWN_ERROR"
 
-        /** 解析器在提取码错误时返回的机器码（与 QuarkParser 对齐），UI 据此保留弹窗并提示重试。 */
-        const val CODE_WRONG_PASSWORD = "QUARK_WRONG_PASSWORD"
+        /**
+         * 解析器在提取码错误时返回的机器码集合。
+         *
+         * 说明（B2 修正）：夸克 / UC 两家的机器码前缀不同（`QUARK_` / `UC_`），
+         * 此前只识别 `QUARK_WRONG_PASSWORD`，导致 UC 分享提取码错误时不会保留弹窗重试。
+         * 现统一识别两家（与 [com.jieyundu.app.ui.screens.home.parseErrorLabelRes] 对齐）。
+         */
+        val WRONG_PASSWORD_CODES = setOf("QUARK_WRONG_PASSWORD", "UC_WRONG_PASSWORD")
 
         /** HTTP 来源请求头名。 */
         const val HEADER_REFERER = "Referer"

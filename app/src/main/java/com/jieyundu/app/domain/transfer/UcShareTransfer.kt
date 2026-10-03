@@ -41,26 +41,41 @@ class UcShareTransfer @Inject constructor(
     /**
      * 转存指定分享文件并返回本账号中的新 fid。
      *
+     * 字段语义（依《抓包事实.md》§9.3③「原样实录」）：
+     * `pdir_fid` = **分享内的源目录**（[sourcePdirFid]），`to_pdir_fid` = 转存目标（[toPdirFid]）。
+     * 此前两者都填了转存目标，与抓包不符 → 服务端按「转存文件 token 校验异常」拒绝（实测 403 / code 41020）。
+     *
      * @param pwdId 分享 ID。
      * @param stoken 分享临时令牌。
      * @param files 待转存的分享文件（需含 `fid` 与 `share_fid_token`）。
-     * @param toPdirFid 转存目标目录 fid。
+     * @param sourcePdirFid 分享内源目录 fid（根为 `0`）。
+     * @param toPdirFid 转存目标目录 fid（本账号）。
      * @return 本账号中的新 fid 列表；失败返回空列表。
      */
     suspend fun saveAndCollectFids(
         pwdId: String,
         stoken: String,
         files: List<UcFile>,
+        sourcePdirFid: String,
         toPdirFid: String
     ): List<String> {
         val fidList = files.map { file -> file.fid }
         val fidTokenList = files.map { file -> file.share_fid_token }
+        // 诊断（方案 A）：把实际将发出的关键字段写日志，便于核对 token 是否为空 / 目录 fid 是否正确。
+        Timber.d(
+            "UcShareTransfer save req pdir_fid=%s to_pdir_fid=%s fidCount=%d fidTokenCount=%d tokenBlank=%d",
+            sourcePdirFid,
+            toPdirFid,
+            fidList.size,
+            fidTokenList.size,
+            fidTokenList.count { token -> token.isBlank() }
+        )
         val response = callWithHttpLog(STEP_SAVE) {
             api.saveShare(
                 UcSaveRequest(
                     pwd_id = pwdId,
                     stoken = stoken,
-                    pdir_fid = toPdirFid,
+                    pdir_fid = sourcePdirFid,
                     to_pdir_fid = toPdirFid,
                     fid_list = fidList,
                     fid_token_list = fidTokenList,
@@ -84,12 +99,15 @@ class UcShareTransfer @Inject constructor(
      * @param pwdId 分享 ID。
      * @param stoken 分享临时令牌。
      * @param file 待下载的分享文件（需含 `fid` 与 `shareFidToken`）。
+     * @param sourcePdirFid 分享内该文件所在目录的 fid（根为 `0`），作为 `save` 的 `pdir_fid`
+     *   （见《抓包事实.md》§9.3③）。
      * @return 转存并取链结果；任一步失败返回 null。
      */
     override suspend fun prepare(
         pwdId: String,
         stoken: String,
-        file: FileInfo
+        file: FileInfo,
+        sourcePdirFid: String
     ): PreparedDownload? {
         val targetFid = tempFolderManager.ensureTempFolderFid() ?: ROOT_PDIR_FID.also {
             Timber.w("UcShareTransfer temp folder unavailable, fallback to root")
@@ -98,6 +116,7 @@ class UcShareTransfer @Inject constructor(
             pwdId = pwdId,
             stoken = stoken,
             files = listOf(file.toUcFile()),
+            sourcePdirFid = sourcePdirFid,
             toPdirFid = targetFid
         )
         val newFid = newFids.firstOrNull()?.takeIf { fid -> fid.isNotBlank() } ?: return null

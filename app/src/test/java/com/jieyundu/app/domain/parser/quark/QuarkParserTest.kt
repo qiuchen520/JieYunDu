@@ -69,11 +69,12 @@ class QuarkParserTest {
     }
 
     /**
-     * BUGFIX JYD-BUG-03-01 断言 B：仅当服务器明确返回「需要提取码」时才提示用户输入。
+     * 提取码判定（《评审清单.md》§12）：服务端**不使用「提取码」专用数字业务码**，
+     * 失败以 `status` / `code` 表达。本次**未携带**提取码时 token 失败 → 归类为「需要提取码」。
      */
     @Test
-    fun parse_withoutPassword_whenServerAsks_returnsNeedPassword() = runTest {
-        val api = FakeQuarkApi(tokenCode = NEED_PASSWORD_CODE)
+    fun parse_withoutPassword_whenTokenFails_returnsNeedPassword() = runTest {
+        val api = FakeQuarkApi(tokenCode = FAILURE_CODE)
         val result = newParser(api = api).parse(SHARE_URL, null)
         assertTrue(result is ParseResult.NeedPassword)
     }
@@ -167,7 +168,7 @@ class QuarkParserTest {
     /** 阶段 13 断言：detail 接口失败时应映射为获取文件列表失败错误码。 */
     @Test
     fun parse_detailFails_returnsError() = runTest {
-        val api = FakeQuarkApi(detailCode = RISK_CONTROL_CODE)
+        val api = FakeQuarkApi(detailCode = FAILURE_CODE)
         val result = newParser(api = api).parse(SHARE_URL, null)
         assertTrue(result is ParseResult.Error)
         assertEquals("QUARK_DETAIL_FAILED", (result as ParseResult.Error).message)
@@ -198,13 +199,16 @@ class QuarkParserTest {
         assertEquals(HOME_PUUS_COOKIE, store.findForHost("drive-pc.quark.cn"))
     }
 
-    /** 硬伤 2 断言：服务端返回非成功码时应映射为 token 失败错误码。 */
+    /**
+     * 提取码判定（《评审清单.md》§12）：**已携带**提取码时 token 失败 → 归类为「提取码错误」，
+     * 供 UI 保留弹窗并提示重试（不再依赖已删除的 41011 / 41012 数字占位码）。
+     */
     @Test
-    fun parse_withRiskControlCode_mapsTokenError() = runTest {
-        val parser = newParser(api = FakeQuarkApi(tokenCode = RISK_CONTROL_CODE))
+    fun parse_withPasscode_whenTokenFails_returnsWrongPassword() = runTest {
+        val parser = newParser(api = FakeQuarkApi(tokenCode = FAILURE_CODE))
         val result = parser.parse(SHARE_URL, "1234")
-        assertTrue(result is ParseResult.Error, "risk-control code must yield Error")
-        assertEquals(RISK_CONTROL_CODE.toString(), (result as ParseResult.Error).code)
+        assertTrue(result is ParseResult.Error, "token failure with passcode must yield Error")
+        assertEquals("QUARK_WRONG_PASSWORD", (result as ParseResult.Error).code)
     }
 
     /**
@@ -335,8 +339,8 @@ class QuarkParserTest {
         /** 与 QuarkParser.ROOT_PDIR_FID 对齐的分享根目录取值。 */
         const val ROOT_PDIR_FID = "0"
 
-        /** 与 QuarkParser.NEED_PASSWORD_CODE 对齐的占位值（真实取值待抓包）。 */
-        const val NEED_PASSWORD_CODE = 41011
+        /** 服务端失败的任意非零业务码（不使用提取码专用码，见《评审清单.md》§12）。 */
+        const val FAILURE_CODE = 400
 
         /** 首页 Set-Cookie 样例。 */
         const val HOME_PUUS_COOKIE = "__puus=fake-puus"
@@ -344,8 +348,5 @@ class QuarkParserTest {
         const val EMPTY_BODY = ""
         const val HTTP_OK = 200
         const val SUCCESS_CODE = 0
-
-        /** 占位风控码；真实取值待抓包（见 QuarkParser 常量注释）。 */
-        const val RISK_CONTROL_CODE = 31001
     }
 }

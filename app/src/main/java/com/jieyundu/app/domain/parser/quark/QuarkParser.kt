@@ -39,8 +39,9 @@ import timber.log.Timber
  * 该链路推迟到用户点下载时由 [com.jieyundu.app.domain.transfer.ShareTransfer] 执行
  * （《解析Bug分析.md》P0-1）。这样解析只负责"浏览"，下载只负责"转存取链"，职责清晰。
  *
- * 仍未闭合、需人工抓包的项（铁律 R3）：提取码「需要 / 错误」的真实业务码
- * （[NEED_PASSWORD_CODE] / [WRONG_PASSWORD_CODE] 暂为占位值）。
+ * 提取码判定（《评审清单.md》§12）：夸克 / UC **不使用「提取码」专用数字业务码**，
+ * 失败以 `status` / `code` + `message` 表达；本类改按「本次是否携带提取码」归类（见 [parse]），
+ * 原 `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE`（41011 / 41012）自造占位已移除。
  *
  * 线程约束：网络与 IO 全部运行在 [Dispatchers.IO]（编码风格 C9）。
  *
@@ -88,24 +89,19 @@ class QuarkParser @Inject constructor(
 
                 // 第 2 步：换 stoken。
                 val tokenResponse = api.getShareToken(buildTokenBody(pwdId, pwd))
-                when (tokenResponse.code) {
-                    NEED_PASSWORD_CODE ->
-                        return@withContext ParseResult.NeedPassword(type)
-
-                    WRONG_PASSWORD_CODE ->
-                        return@withContext ParseResult.Error(
-                            type,
-                            CODE_WRONG_PASSWORD,
-                            CODE_WRONG_PASSWORD
-                        )
-
-                    SUCCESS_CODE -> Unit
-
-                    else -> return@withContext ParseResult.Error(
-                        type,
-                        tokenResponse.code.toString(),
-                        CODE_TOKEN_FAILED
-                    )
+                if (tokenResponse.code != SUCCESS_CODE) {
+                    // 《评审清单.md》§12：夸克 / UC **不使用「提取码」专用数字业务码**，
+                    // 失败一律以 `status` / `code` + `message` 表达（《抓包事实.md》§6.1①）。
+                    // 原 `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE`（41011 / 41012）为自造
+                    // 占位，已废弃。domain 层不得内嵌中文（C5），无法按 `message` 文案匹配，
+                    // 故改按**请求上下文**归类：本次未携带提取码 → 提示输入；已携带 → 判为提取码错误。
+                    // 精确区分（如「分享已失效」）需对接独立提取码校验接口，标 TODO(用户抓包)。
+                    Timber.w("QuarkParser token failed, code=%d", tokenResponse.code)
+                    return@withContext if (pwd.isNullOrBlank()) {
+                        ParseResult.NeedPassword(type)
+                    } else {
+                        ParseResult.Error(type, CODE_WRONG_PASSWORD, CODE_WRONG_PASSWORD)
+                    }
                 }
                 val tokenData = tokenResponse.data
                 val stoken = tokenData?.stoken.orEmpty()
@@ -412,20 +408,6 @@ class QuarkParser @Inject constructor(
 
         /** 成功状态码（实测为 0）。 */
         const val SUCCESS_CODE = 0
-
-        /**
-         * 「需要提取码」状态码。
-         *
-         * TODO(用户抓包): 核对夸克在分享需要提取码时 token 接口返回的业务码（当前为占位值）。
-         */
-        const val NEED_PASSWORD_CODE = 41011
-
-        /**
-         * 「提取码错误」状态码。
-         *
-         * TODO(用户抓包): 核对夸克在提取码错误时 token 接口返回的业务码（当前为占位值）。
-         */
-        const val WRONG_PASSWORD_CODE = 41012
 
         /**
          * 错误码。为保持 domain 层不依赖 Android 资源系统，

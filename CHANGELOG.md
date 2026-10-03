@@ -972,3 +972,42 @@
   · Manifest 增 REQUEST_INSTALL_PACKAGES；file_paths.xml 增私有 Download 与外部存储根白名单。
 约束：未改动玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
 ================================================================================
+
+
+================================================================================
+【B2 收尾 · 评审清单 §12 占位码废弃 + 抓包事实 §9.3 实证修正 + 方案 A 诊断日志】2026-10-03
+--------------------------------------------------------------------------------
+一、评审清单 §12：废弃自造占位码 41011 / 41012（改为「按上下文判定」）
+  · QuarkParser / UcParser：token 失败判定改为——服务端 code != 成功码时，
+    依「本次请求是否携带提取码」归类：未携带 → NeedPassword；已携带仍失败 → 提取码错误码。
+    不再依赖任何数字占位码（响应同时带 status 与 code，无「提取码」专用数字码）。
+  · 删除常量 NEED_PASSWORD_CODE = 41011 / WRONG_PASSWORD_CODE = 41012 及 when(code) 分派；
+    类头 KDoc 同步订正为「不使用提取码专用数字码」。
+  · HomeViewModel：提取码错误识别改为集合 {QUARK_WRONG_PASSWORD, UC_WRONG_PASSWORD}，
+    修复「UC 分享提取码错误时不弹窗重试」的 B2 遗漏 bug。
+  · QuarkParserTest 同步：以 FAILURE_CODE(400) 取代占位码，删除 RISK_CONTROL_CODE，
+    「需要提取码 / 提取码错误」两条用例改名并按新逻辑断言。
+  · 本批订正：CHANGELOG 各处「41011/41012 占位 · 待抓包校准」（第 254 / 389 / 701 / 736 行）
+    与 要求.md 第 1669 行原文均作废——该占位码系自造哨兵，无对应协议事实，非「待抓包」项。
+二、评审清单 §11：订正为「已在 B1.2/B1.3 修复」的陈旧条目
+  · §11.1 `file/sort` 的 pr/fr 重复：QuarkApi.listFiles 路径已去 pr/fr，由
+    QuarkParser.buildPersonalListParams 提供（B1.3），已修。
+  · §11.2 `save` 缺 ?pr=ucpro&fr=pc：QuarkApi.saveShare 已补（B1.3），已修。
+  · §11.3 握手 302（pan.quark.cn → /list）：仍为观察项，未处置（best-effort，不阻断）。
+三、抓包事实 §9.3 实证修正（UC 分享链路，Owner 补录原样实录）
+  · 接口层 UcApi：getShareDetail 路径补 &ve=2.5.20（与游客 UA uc-cloud-drive/2.5.20 一致）。
+  · save 字段语义修正：pdir_fid = 分享内「源目录」fid（根为 0）、to_pdir_fid = 转存目标；
+    此前两者同填转存目标（临时目录），与抓包不符——疑似 403 / code 41020「转存文件 token
+    校验异常」根因（§6.1③ 旧文与 §9.3③ 冲突，以 §9.3 为准，代码内已登记）。
+  · ShareDownloadPreparer.prepare 新增 sourcePdirFid 参数；
+    UcShareTransfer.prepare / saveAndCollectFids 适配，pdir_fid = sourcePdirFid。
+  · HomeViewModel.startDownload 传当前浏览层级 stack.last().pdirFid 作为源目录 fid。
+  · 夸克侧（R3）：§6.1③ 记为两字段同值、§9.3③ 已实证（UC 取源目录）；夸克无专项抓包，
+    本批**不改其请求取值**，在 ShareTransfer 内以 TODO(用户抓包) 登记歧义，待夸克 save 报文到手再定。
+四、方案 A（诊断日志）
+  · UcShareTransfer / ShareTransfer 在 save 前加 Timber.d，打印 pdir_fid / to_pdir_fid /
+    fid 数 / token 数 / 空 token 数（不泄露内容），供装机后与抓包逐字比对。
+  · 背景：0.1.0 装机日志已能记录服务端失败响应体（callWithHttpLog 生效），
+    UC save 实测 403 / code 41020；本包用于验证修正后是否转为成功。
+约束：未改动玻璃质感 / 圆角 / Q 弹手感 / 浅色配色；未改任何 UI。
+================================================================================

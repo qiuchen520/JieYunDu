@@ -40,9 +40,17 @@ interface ShareDownloadPreparer {
      * @param pwdId 分享 ID。
      * @param stoken 分享临时令牌。
      * @param file 待下载的分享文件（需含 `fid` 与 `shareFidToken`）。
+     * @param sourcePdirFid **分享内**该文件所在目录的 fid（根为 `0`）。
+     *   依《抓包事实.md》§9.3③，`save` 的 `pdir_fid` 指**源目录**、`to_pdir_fid` 指转存目标，
+     *   二者不是同一个值；故调用方需把「当前浏览层级」的目录 fid 传进来。
      * @return 转存并取链结果；任一步失败返回 null。
      */
-    suspend fun prepare(pwdId: String, stoken: String, file: FileInfo): PreparedDownload?
+    suspend fun prepare(
+        pwdId: String,
+        stoken: String,
+        file: FileInfo,
+        sourcePdirFid: String
+    ): PreparedDownload?
 
     /**
      * 下载完成后清理该文件的转存副本（失败时调用方不应调用，以便保留续传）。

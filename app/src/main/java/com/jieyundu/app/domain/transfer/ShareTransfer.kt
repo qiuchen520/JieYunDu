@@ -45,6 +45,10 @@ class ShareTransfer @Inject constructor(
      * @param pwdId 分享 ID。
      * @param stoken 分享临时令牌。
      * @param files 待转存的分享文件（需含 `fid` 与 `share_fid_token`）。
+     * @param sourcePdirFid 分享内源目录 fid（根为 `0`）；**仅用于诊断日志**。
+     *   说明（R3）：《抓包事实.md》§9.3③ 就 **UC 链路**实证 `save.pdir_fid` = 源目录，
+     *   但夸克侧尚无专项抓包，故本类仍按 §6.1③（两字段同值 = 转存目标）发送，
+     *   不改请求取值。TODO(用户抓包)：待夸克 `save` 抓到实际报文后确认是否同样取源目录。
      * @param toPdirFid 转存目标目录 fid。
      * @return 本账号中的新 fid 列表；失败返回空列表。
      */
@@ -52,10 +56,20 @@ class ShareTransfer @Inject constructor(
         pwdId: String,
         stoken: String,
         files: List<QuarkFile>,
+        sourcePdirFid: String,
         toPdirFid: String
     ): List<String> {
         val fidList = files.map { file -> file.fid }
         val fidTokenList = files.map { file -> file.share_fid_token }
+        // 诊断（方案 A）：记录源 / 目标目录 fid，便于后续与抓包比对（见上方 TODO）。
+        Timber.d(
+            "ShareTransfer save req pdir_fid=%s to_pdir_fid=%s fidCount=%d fidTokenCount=%d tokenBlank=%d",
+            toPdirFid,
+            toPdirFid,
+            fidList.size,
+            fidTokenList.size,
+            fidTokenList.count { token -> token.isBlank() }
+        )
         val response = callWithHttpLog(STEP_SAVE) {
             api.saveShare(
                 QuarkSaveRequest(
@@ -85,12 +99,15 @@ class ShareTransfer @Inject constructor(
      * @param pwdId 分享 ID。
      * @param stoken 分享临时令牌。
      * @param file 待下载的分享文件（需含 `fid` 与 `shareFidToken`）。
+     * @param sourcePdirFid 分享内该文件所在目录的 fid（根为 `0`）；本类仅转交
+     *   [saveAndCollectFids] 供诊断（夸克 `save` 语义见该方法 KDoc 的 R3 说明）。
      * @return 转存并取链结果；任一步失败返回 null。
      */
     override suspend fun prepare(
         pwdId: String,
         stoken: String,
-        file: FileInfo
+        file: FileInfo,
+        sourcePdirFid: String
     ): PreparedDownload? {
         val targetFid = tempFolderManager.ensureTempFolderFid() ?: ROOT_PDIR_FID.also {
             Timber.w("ShareTransfer temp folder unavailable, fallback to root")
@@ -99,6 +116,7 @@ class ShareTransfer @Inject constructor(
             pwdId = pwdId,
             stoken = stoken,
             files = listOf(file.toQuarkFile()),
+            sourcePdirFid = sourcePdirFid,
             toPdirFid = targetFid
         )
         val newFid = newFids.firstOrNull()?.takeIf { fid -> fid.isNotBlank() } ?: return null

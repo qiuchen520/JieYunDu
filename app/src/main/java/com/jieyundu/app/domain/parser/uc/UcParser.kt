@@ -37,9 +37,12 @@ import timber.log.Timber
  *
  * 转存 + 轮询 + 取直链不在解析阶段（由 [com.jieyundu.app.domain.transfer.UcShareTransfer] 在点下载时执行）。
  *
- * 未闭合、需人工抓包的项（铁律 R3）：
- * - **容量接口**：文档未给出 UC 的容量端点 → [fetchQuota] 返回 null 并标 `TODO(用户抓包)`；
- * - 提取码「需要 / 错误」的真实业务码（占位值）。
+ * 容量（[fetchQuota]）：UC 与夸克同构，走 `1/clouddrive/member`（《抓包事实.md》§10.1）——
+ * 原「文档未给出端点、返回 null」的占位说明已随 B2 落地修正。
+ *
+ * 提取码判定（《评审清单.md》§12）：夸克 / UC **不使用「提取码」专用数字业务码**，
+ * 失败以 `status` / `code` + `message` 表达；本类改按「本次是否携带提取码」归类（见 [parse]），
+ * 原 `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE`（41011 / 41012）自造占位已移除。
  *
  * 线程约束：网络与 IO 全部运行在 [Dispatchers.IO]（编码风格 C9）。
  *
@@ -85,21 +88,19 @@ class UcParser @Inject constructor(
                 registerHandshakeCookies()
                 // 第 2 步：换 stoken（UC 携带 share_for_transfer）。
                 val tokenResponse = api.getShareToken(buildTokenBody(pwdId, pwd))
-                when (tokenResponse.code) {
-                    NEED_PASSWORD_CODE ->
-                        return@withContext ParseResult.NeedPassword(type)
-                    WRONG_PASSWORD_CODE ->
-                        return@withContext ParseResult.Error(
-                            type,
-                            CODE_WRONG_PASSWORD,
-                            CODE_WRONG_PASSWORD
-                        )
-                    SUCCESS_CODE -> Unit
-                    else -> return@withContext ParseResult.Error(
-                        type,
-                        tokenResponse.code.toString(),
-                        CODE_TOKEN_FAILED
-                    )
+                if (tokenResponse.code != SUCCESS_CODE) {
+                    // 《评审清单.md》§12：夸克 / UC **不使用「提取码」专用数字业务码**，
+                    // 失败一律以 `status` / `code` + `message` 表达（《抓包事实.md》§6.1①）。
+                    // 原 `NEED_PASSWORD_CODE` / `WRONG_PASSWORD_CODE`（41011 / 41012）为自造
+                    // 占位，已废弃。domain 层不得内嵌中文（C5），无法按 `message` 文案匹配，
+                    // 故改按**请求上下文**归类：本次未携带提取码 → 提示输入；已携带 → 判为提取码错误。
+                    // 精确区分（如「分享已失效」）需对接独立提取码校验接口，标 TODO(用户抓包)。
+                    Timber.w("UcParser token failed, code=%d", tokenResponse.code)
+                    return@withContext if (pwd.isNullOrBlank()) {
+                        ParseResult.NeedPassword(type)
+                    } else {
+                        ParseResult.Error(type, CODE_WRONG_PASSWORD, CODE_WRONG_PASSWORD)
+                    }
                 }
                 val tokenData = tokenResponse.data
                 val stoken = tokenData?.stoken.orEmpty()
@@ -388,20 +389,6 @@ class UcParser @Inject constructor(
 
         /** 成功状态码（实测为 0）。 */
         const val SUCCESS_CODE = 0
-
-        /**
-         * 「需要提取码」状态码。
-         *
-         * TODO(用户抓包): 核对 UC 在分享需要提取码时 token 接口返回的业务码（当前为占位值）。
-         */
-        const val NEED_PASSWORD_CODE = 41011
-
-        /**
-         * 「提取码错误」状态码。
-         *
-         * TODO(用户抓包): 核对 UC 在提取码错误时 token 接口返回的业务码（当前为占位值）。
-         */
-        const val WRONG_PASSWORD_CODE = 41012
 
         /**
          * 错误码。为保持 domain 层不依赖 Android 资源系统，

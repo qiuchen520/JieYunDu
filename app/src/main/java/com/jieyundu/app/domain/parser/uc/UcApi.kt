@@ -43,7 +43,8 @@ interface UcApi {
     /**
      * 列出分享内指定目录的条目（UC 为 `v2/detail`，用 POST + 请求体）。
      *
-     * 请求：`POST https://pc-api.uc.cn/1/clouddrive/share/sharepage/v2/detail?pr=UCBrowser&fr=pc`
+     * 请求：`POST https://pc-api.uc.cn/1/clouddrive/share/sharepage/v2/detail?pr=UCBrowser&fr=pc&ve=2.5.20`
+     * （`ve=2.5.20` 依《抓包事实.md》§9.3②「原样实录」补入，与游客 UA `uc-cloud-drive/2.5.20` 一致。）
      * 请求体见 [UcShareDetailRequest]。
      * 响应：优先 `data.detail_info.list[]`，兼容 `data.list[]`。
      *
@@ -52,7 +53,7 @@ interface UcApi {
      * @param body 请求体。
      * @return 统一响应包装体。
      */
-    @POST("1/clouddrive/share/sharepage/v2/detail?pr=UCBrowser&fr=pc")
+    @POST("1/clouddrive/share/sharepage/v2/detail?pr=UCBrowser&fr=pc&ve=2.5.20")
     suspend fun getShareDetail(
         @Body body: UcShareDetailRequest
     ): UcResponse<UcShareDetail>
@@ -63,7 +64,12 @@ interface UcApi {
      * 请求：`POST https://pc-api.uc.cn/1/clouddrive/share/sharepage/save?pr=UCBrowser&fr=pc`
      * 响应：`data.task_id`。
      *
-     * 依据：《抓包事实.md》§2 与 §6.1③。
+     * ⚠️ 字段语义（依《抓包事实.md》§9.3③「原样实录」，**与 §6.1③ 的旧描述冲突，以 §9.3 为准**）：
+     * - `pdir_fid` = **分享内的源目录** fid（根为 `0`）；
+     * - `to_pdir_fid` = **转存目标**（本账号）目录 fid。
+     * 二者**不是同一个值**（§6.1③ 旧文误写为「目标目录，根为 0」且两者相同）。
+     *
+     * 依据：《抓包事实.md》§2 与 §6.1③（请求体字段集），字段语义见 §9.3③。
      *
      * @param body 请求体。
      * @return 统一响应包装体，data 含 task_id。
