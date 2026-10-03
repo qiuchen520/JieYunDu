@@ -153,6 +153,7 @@
     <string name="parse_breadcrumb_separator"> / </string>
     <string name="parse_download_preparing">正在转存并获取直链…</string>
     <string name="parse_download_failed">下载启动失败，请重试</string>
+    <string name="parse_download_auth_failed">登录态已失效，请在网盘页退出后重新登录</string>
     <string name="parse_download_count">下载选中 (%1$d)</string>
 
     <!-- 下载页筛选与删除（阶段 8 布局修订）-->

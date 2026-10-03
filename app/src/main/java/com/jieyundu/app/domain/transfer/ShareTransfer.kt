@@ -13,6 +13,7 @@ import com.jieyundu.app.domain.parser.quark.QuarkFile
 import com.jieyundu.app.domain.parser.quark.QuarkSaveRequest
 import javax.inject.Inject
 import javax.inject.Singleton
+import retrofit2.HttpException
 import timber.log.Timber
 
 /**
@@ -55,17 +56,19 @@ class ShareTransfer @Inject constructor(
     ): List<String> {
         val fidList = files.map { file -> file.fid }
         val fidTokenList = files.map { file -> file.share_fid_token }
-        val response = api.saveShare(
-            QuarkSaveRequest(
-                pwd_id = pwdId,
-                stoken = stoken,
-                pdir_fid = toPdirFid,
-                to_pdir_fid = toPdirFid,
-                fid_list = fidList,
-                fid_token_list = fidTokenList,
-                scene = SCENE_LINK
+        val response = callWithHttpLog(STEP_SAVE) {
+            api.saveShare(
+                QuarkSaveRequest(
+                    pwd_id = pwdId,
+                    stoken = stoken,
+                    pdir_fid = toPdirFid,
+                    to_pdir_fid = toPdirFid,
+                    fid_list = fidList,
+                    fid_token_list = fidTokenList,
+                    scene = SCENE_LINK
+                )
             )
-        )
+        }
         val taskId = response.data?.task_id.orEmpty()
         if (response.code != SUCCESS_CODE || taskId.isBlank()) {
             Timber.e("ShareTransfer save failed code=%d", response.code)
@@ -100,7 +103,9 @@ class ShareTransfer @Inject constructor(
         )
         val newFid = newFids.firstOrNull()?.takeIf { fid -> fid.isNotBlank() } ?: return null
 
-        val downloadResponse = api.getDownloadUrl(QuarkDownloadRequest(fids = listOf(newFid)))
+        val downloadResponse = callWithHttpLog(STEP_DOWNLOAD_URL) {
+            api.getDownloadUrl(QuarkDownloadRequest(fids = listOf(newFid)))
+        }
         if (downloadResponse.code != SUCCESS_CODE) {
             Timber.e("ShareTransfer get download url failed code=%d", downloadResponse.code)
             return null
@@ -139,6 +144,29 @@ class ShareTransfer @Inject constructor(
         share_fid_token = shareFidToken
     )
 
+    /**
+     * 调用夸克接口，并在 HTTP 失败时把**服务端返回体**一并写入日志。
+     *
+     * 背景（B1 装机反馈）：Retrofit 在非 2xx 时抛 [HttpException]，此前只记录了异常本身
+     * （形如 `HTTP 401`），服务端给出的具体原因随响应体一起丢失，导致无法定位。
+     * 此处按步骤名记录状态码与响应体前 [MAX_ERROR_BODY_CHARS] 字符。
+     *
+     * 约束：异常**原样抛出**（C3，不吞不改）；响应体读取是阻塞 IO，调用方已运行在
+     * [kotlinx.coroutines.Dispatchers.IO]（见 HomeViewModel.download），故不重复切换调度器。
+     *
+     * @param step 步骤名（写日志用，区分转存 / 取链）。
+     * @param block 实际的接口调用。
+     * @return 接口返回值。
+     */
+    private suspend fun <T> callWithHttpLog(step: String, block: suspend () -> T): T =
+        try {
+            block()
+        } catch (http: HttpException) {
+            val body = http.response()?.errorBody()?.string()?.take(MAX_ERROR_BODY_CHARS)
+            Timber.e("ShareTransfer %s HTTP %d body=%s", step, http.code(), body)
+            throw http
+        }
+
     private companion object {
         /** 成功状态码（实测为 0）。 */
         const val SUCCESS_CODE = 0
@@ -148,5 +176,14 @@ class ShareTransfer @Inject constructor(
 
         /** 转存目标回退值：根目录。 */
         const val ROOT_PDIR_FID = "0"
+
+        /** 日志步骤名：转存（save）。 */
+        const val STEP_SAVE = "save"
+
+        /** 日志步骤名：取直链（file/download）。 */
+        const val STEP_DOWNLOAD_URL = "download-url"
+
+        /** 写入日志的响应体最大字符数（防止超长响应体淹没有用信息）。 */
+        const val MAX_ERROR_BODY_CHARS = 500
     }
 }

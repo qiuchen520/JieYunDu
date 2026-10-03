@@ -814,6 +814,36 @@
   改为在可组合体内提前求值 `val rootLabel = stringResource(...)` 后传入 lambda。
 - CI：#37120866025 `build` 失败（本因）→ 修复后 #37121018106 ✅。
 - 交付提交：`e0b2bd67abd91e57486cc6c2e01d3604cc91cd68`（父 `80925faeb3874b6c6f66c172c6f9fe797c318599`）。
+
+## 阶段 B1.1：装机反馈修复（JYD-FIX-2026-10-03）
+> 依据 Owner 装机反馈：① 夸克网盘管理页「容量」文字重叠；② 提供运行日志
+> （`jieyundu_runlog_20261003_200100.txt`）。
+
+### ① 容量卡文字重叠（已修复）
+- 根因：`GlassCard` 的内容槽类型是 `BoxScope.() -> Unit`（即 **Box**），`QuotaCard` 直接传入
+  3 个 `Text` 子项，Box 把它们叠放在同一位置 → 视觉重叠。
+- 修复：`QuotaCard` 内容自带 `Column`（`Arrangement.spacedBy(Dimens.SpaceSm)` + `fillMaxWidth`）。
+- 复核：`NetdiskPickerScreen` / `SettingsScreen` 的同类卡片本就包了 `Column` / `Row`，未受影响。
+- 未改动玻璃质感、圆角、Q 弹手感与浅色配色。
+
+### ② 下载失败真因（日志实证）
+- Owner 日志显示：读接口**全部 200**（`file/sort`、`member`、`sharepage/token`、`sharepage/detail`），
+  仅 `POST /1/clouddrive/share/sharepage/save` 返回 **HTTP 401**，随后抛
+  `retrofit2.HttpException: HTTP 401`。
+- 结论：失败点是**转存（save）**这一步——不是解析、不是取链、不是下载引擎；性质是鉴权层面拒绝。
+- 待确认（不臆造，R3）：401 的服务端返回体此前未被记录，具体业务码未知，已补日志（见 ③）。
+
+### ③ 失败可观测性（新增）
+- `ShareTransfer.callWithHttpLog(step, block)`：HTTP 非 2xx 时记录步骤名、状态码与响应体前 500 字；
+  异常**原样抛出**（C3）。
+- `HomeViewModel`：单独识别 401 → 提示走新增文案 `parse_download_auth_failed`
+  （「登录态已失效，请在网盘页退出后重新登录」）；其余失败仍为 `parse_download_failed`。
+
+### 已知限制（本批边界）
+- 401 的具体成因（Cookie 缺失 / 过期 / 客户端标识校验）**尚未定论**，需下一份运行日志确认。
+- 未改动任何未获抓包证实的请求头或参数。
+- 观察到一处无害瑕疵：`file/sort` 的 URL 出现重复的 `pr/fr`（接口注解与 `QueryMap` 各带一次），
+  服务端正常响应，留待 B2 与 UC 共用参数构造器时一并收敛。
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

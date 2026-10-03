@@ -184,35 +184,42 @@ private fun QuotaCard(quota: QuotaInfo?, contentPadding: Dp) {
         cornerRadius = Dimens.CardCorner,
         contentPadding = contentPadding
     ) {
-        Text(
-            text = stringResource(R.string.netdisk_browser_quota),
-            style = MaterialTheme.typography.titleMedium,
-            color = JieYunDuColors.TextPrimary
-        )
-        if (quota == null) {
+        // 注意：GlassCard 的内容槽是 Box（BoxScope），多个子项会互相叠放而非纵向排列。
+        // 因此多行文本必须自带 Column 布局，否则「已用 / 总量」与「剩余」会重叠（装机反馈修复）。
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+        ) {
             Text(
-                text = stringResource(R.string.netdisk_browser_quota_unknown),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-        } else {
-            Text(
-                text = stringResource(
-                    R.string.netdisk_browser_quota_format,
-                    FileSizeFormatter.format(quota.used),
-                    FileSizeFormatter.format(quota.total)
-                ),
-                style = MaterialTheme.typography.bodyMedium,
+                text = stringResource(R.string.netdisk_browser_quota),
+                style = MaterialTheme.typography.titleMedium,
                 color = JieYunDuColors.TextPrimary
             )
-            Text(
-                text = stringResource(
-                    R.string.netdisk_browser_quota_remaining,
-                    FileSizeFormatter.format(quota.remaining)
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = JieYunDuColors.TextTertiary
-            )
+            if (quota == null) {
+                Text(
+                    text = stringResource(R.string.netdisk_browser_quota_unknown),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextSecondary
+                )
+            } else {
+                Text(
+                    text = stringResource(
+                        R.string.netdisk_browser_quota_format,
+                        FileSizeFormatter.format(quota.used),
+                        FileSizeFormatter.format(quota.total)
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextPrimary
+                )
+                Text(
+                    text = stringResource(
+                        R.string.netdisk_browser_quota_remaining,
+                        FileSizeFormatter.format(quota.remaining)
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = JieYunDuColors.TextTertiary
+                )
+            }
         }
     }
 }

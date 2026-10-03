@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
+import retrofit2.HttpException
 import timber.log.Timber
 
 /**
@@ -317,6 +318,9 @@ class HomeViewModel @Inject constructor(
      * `HttpException`、响应体异常时抛 [SerializationException]，均属未捕获的运行时异常，
      * 会直接崩溃 App。现统一以 [Exception] 兜底（[CancellationException] 仍原样抛出，C3）。
      *
+     * 提示区分（B1 装机反馈）：捕获 [HttpException] 并单独识别 401——此时问题是**登录态**
+     * （缺 Cookie / 已过期），提示用户重新登录比笼统的「下载启动失败」可操作。
+     *
      * @param files 用户勾选待下载的文件条目列表（内部会过滤掉文件夹）。
      */
     fun download(files: List<FileInfo>) {
@@ -330,6 +334,7 @@ class HomeViewModel @Inject constructor(
         )
         viewModelScope.launch(Dispatchers.IO) {
             var hasFailure = false
+            var authFailure = false
             try {
                 val context = _uiState.value.shareContext
                 targets.forEach { file ->
@@ -337,6 +342,13 @@ class HomeViewModel @Inject constructor(
                         startDownload(file, context)
                     } catch (cancellation: CancellationException) {
                         throw cancellation
+                    } catch (http: HttpException) {
+                        // 401：登录态缺失 / 失效（服务端拒绝写入类操作）。单独标记，UI 给出可操作提示。
+                        hasFailure = true
+                        if (http.code() == HTTP_UNAUTHORIZED) {
+                            authFailure = true
+                        }
+                        Timber.e(http, "HomeViewModel failed to start download for %s", file.fileName)
                     } catch (exception: Exception) {
                         hasFailure = true
                         Timber.e(exception, "HomeViewModel failed to start download for %s", file.fileName)
@@ -345,7 +357,11 @@ class HomeViewModel @Inject constructor(
             } finally {
                 _uiState.value = _uiState.value.copy(
                     isPreparingDownload = false,
-                    downloadErrorRes = if (hasFailure) R.string.parse_download_failed else null
+                    downloadErrorRes = when {
+                        authFailure -> R.string.parse_download_auth_failed
+                        hasFailure -> R.string.parse_download_failed
+                        else -> null
+                    }
                 )
             }
         }
@@ -456,5 +472,8 @@ class HomeViewModel @Inject constructor(
 
         /** HTTP Cookie 请求头名。 */
         const val HEADER_COOKIE = "Cookie"
+
+        /** HTTP 401：未授权（登录态缺失 / 失效）。 */
+        const val HTTP_UNAUTHORIZED = 401
     }
 }
