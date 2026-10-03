@@ -49,8 +49,9 @@ private const val PRESS_SPRING_STIFFNESS = 800f
  * @param modifier 外部修饰符。
  * @param height 按钮高度。
  * @param cornerRadius 圆角半径。
- * @param fillColor 底色；默认白色 12% 玻璃底。
- * @param borderColor 边框色；默认白色 15% 玻璃描边。
+ * @param fillColor 底色；默认白色实心底（浅色 Area 风）。
+ * @param borderColor 边框色；默认浅灰描边。
+ * @param contentColor 文字颜色；默认主文字色，主色按钮传入白色。
  */
 @Composable
 fun GlassButton(
@@ -60,7 +61,8 @@ fun GlassButton(
     height: Dp = Dimens.ButtonHeight,
     cornerRadius: Dp = Dimens.ButtonCorner,
     fillColor: Color = JieYunDuColors.GlassFillStrong,
-    borderColor: Color = JieYunDuColors.GlassBorder
+    borderColor: Color = JieYunDuColors.GlassBorder,
+    contentColor: Color = JieYunDuColors.TextPrimary
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     val interactionSource = remember { MutableInteractionSource() }
@@ -94,7 +96,7 @@ fun GlassButton(
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = JieYunDuColors.TextPrimary
+            color = contentColor
         )
     }
 }
