@@ -206,7 +206,7 @@ private fun FileRow(
 }
 
 /**
- * 圆形下载按钮（9.6.3：56dp，白色 20% 底，图标白色）。
+ * 圆形下载按钮（9.6.3：56dp，主色浅底 #E8EEFF，图标主色蓝）。
  *
  * @param onClick 点击回调。
  */
@@ -234,7 +234,7 @@ private fun DownloadCircleButton(onClick: () -> Unit) {
  */
 @Composable
 private fun DownloadGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.TextPrimary
+    val color = JieYunDuColors.Primary
     Canvas(modifier = modifier) {
         val stroke = size.width * GLYPH_STROKE_RATIO
         val centerX = size.width / 2f
