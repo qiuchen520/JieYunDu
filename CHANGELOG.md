@@ -807,6 +807,13 @@
 - 网盘管理当前仅夸克可用；UC / 百度 / 迅雷在 B2–B4 接入（其 UA 仍是空串待填，见 §5）。
 - 个人网盘文件的「下载」按钮本批未加（先看文件；下载链路复用现有引擎，下一批接）。
 - 夸克 / UC / 百度的「回收站列表」仍未抓包（《抓包事实.md》§10.4），不臆造。
+### CI 修复（B1 追加，JYD-CI-2026-10-03）
+- `NetdiskBrowserScreen.kt`：面包屑原在 `joinToString` 的 lambda 内调用 `stringResource`，该 lambda
+  非 `@Composable` 上下文，导致 `compileDebugKotlin` 报
+  `@Composable invocations can only happen from the context of a @Composable function`（117:33）。
+  改为在可组合体内提前求值 `val rootLabel = stringResource(...)` 后传入 lambda。
+- CI：#37120866025 `build` 失败（本因）→ 修复后 #37121018106 ✅。
+- 交付提交：`e0b2bd67abd91e57486cc6c2e01d3604cc91cd68`（父 `80925faeb3874b6c6f66c172c6f9fe797c318599`）。
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；
