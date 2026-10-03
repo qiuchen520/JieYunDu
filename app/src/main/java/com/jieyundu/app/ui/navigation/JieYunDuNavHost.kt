@@ -29,6 +29,8 @@ import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
 import com.jieyundu.app.ui.screens.download.DownloadScreen
 import com.jieyundu.app.ui.screens.home.HomeScreen
+import com.jieyundu.app.ui.screens.login.NetdiskBrowserScreen
+import com.jieyundu.app.ui.screens.login.NetdiskBrowserViewModel
 import com.jieyundu.app.ui.screens.login.NetdiskLoginViewModel
 import com.jieyundu.app.ui.screens.login.NetdiskPickerScreen
 import com.jieyundu.app.ui.screens.login.WebViewLoginScreen
@@ -143,19 +145,36 @@ private fun NavContent(
 private fun NetdiskSection(loginViewModel: NetdiskLoginViewModel) {
     val loginTarget by loginViewModel.loginTarget.collectAsState()
     val loggedIn by loginViewModel.loggedIn.collectAsState()
+    val browserViewModel: NetdiskBrowserViewModel = hiltViewModel()
+    val browserState by browserViewModel.uiState.collectAsState()
     val target = loginTarget
-    if (target != null) {
-        WebViewLoginScreen(
-            viewModel = loginViewModel,
-            type = target,
-            modifier = Modifier.fillMaxSize()
-        )
-    } else {
-        NetdiskPickerScreen(
-            modifier = Modifier.fillMaxSize(),
-            loggedInTypes = loggedIn,
-            onLogin = loginViewModel::startLogin,
-            onLogout = loginViewModel::logout
-        )
+    when {
+        target != null -> {
+            WebViewLoginScreen(
+                viewModel = loginViewModel,
+                type = target,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        browserState.open -> {
+            NetdiskBrowserScreen(
+                state = browserState,
+                onOpenFolder = browserViewModel::openFolder,
+                onNavigateUp = browserViewModel::navigateUp,
+                onClose = browserViewModel::close,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        else -> {
+            NetdiskPickerScreen(
+                modifier = Modifier.fillMaxSize(),
+                loggedInTypes = loggedIn,
+                onLogin = loginViewModel::startLogin,
+                onLogout = loginViewModel::logout,
+                onOpenNetdisk = browserViewModel::open
+            )
+        }
     }
 }

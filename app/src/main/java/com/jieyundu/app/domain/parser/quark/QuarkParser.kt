@@ -9,7 +9,9 @@ import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
+import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskParser
+import com.jieyundu.app.domain.parser.PersonalBrowser
 import com.jieyundu.app.domain.parser.ShareBrowser
 import com.jieyundu.app.domain.util.LinkExtractor
 import java.io.IOException
@@ -51,8 +53,7 @@ class QuarkParser @Inject constructor(
     private val api: QuarkApi,
     private val okHttpClient: OkHttpClient,
     private val cookieStore: CookieStore
-) : NetdiskParser, ShareBrowser {
-
+) : NetdiskParser, ShareBrowser, PersonalBrowser {
     override val type: NetdiskType = NetdiskType.QUARK
 
     /**
@@ -106,8 +107,16 @@ class QuarkParser @Inject constructor(
                         CODE_TOKEN_FAILED
                     )
                 }
-                val stoken = tokenResponse.data.stoken
-
+                val tokenData = tokenResponse.data
+                val stoken = tokenData?.stoken.orEmpty()
+                if (stoken.isBlank()) {
+                    Timber.w("QuarkParser token data missing, code=%d", tokenResponse.code)
+                    return@withContext ParseResult.Error(
+                        type,
+                        CODE_TOKEN_FAILED,
+                        CODE_TOKEN_FAILED
+                    )
+                }
                 // 第 3 步：取根目录文件列表（真实结构 data.detail_info.list，兼容 data.list）。
                 val entries = fetchEntries(pwdId, stoken, ROOT_PDIR_FID)
                     ?: return@withContext ParseResult.Error(
@@ -115,10 +124,9 @@ class QuarkParser @Inject constructor(
                         CODE_DETAIL_FAILED,
                         CODE_DETAIL_FAILED
                     )
-
                 ParseResult.Success(
                     netdiskType = type,
-                    shareTitle = tokenResponse.data.title,
+                    shareTitle = tokenData?.title.orEmpty(),
                     files = entries.map { entry -> entry.toFileInfo() },
                     pwdId = pwdId,
                     stoken = stoken
@@ -170,8 +178,72 @@ class QuarkParser @Inject constructor(
             Timber.w("QuarkParser detail code=%d pdir=%s", detailResponse.code, pdirFid)
             return null
         }
-        return detailResponse.data.entries
+        return detailResponse.data?.entries ?: emptyList()
     }
+
+    /**
+     * 列出**个人网盘**指定目录的直接子项（流程 B：网盘管理）。
+     *
+     * 依据：《抓包事实.md》§10.2——夸克走 `file/sort`。
+     *
+     * @param pdirFid 目标目录 fid；根目录为 `0`。
+     * @return 该目录下的条目列表；失败返回空列表。
+     */
+    override suspend fun listPersonalChildren(pdirFid: String): List<FileInfo> =
+        withContext(Dispatchers.IO) {
+            val response = api.listFiles(buildPersonalListParams(pdirFid))
+            if (response.code != SUCCESS_CODE) {
+                Timber.w("QuarkParser personal list code=%d pdir=%s", response.code, pdirFid)
+                return@withContext emptyList()
+            }
+            response.data?.list.orEmpty().map { entry -> entry.toFileInfo() }
+        }
+
+    /**
+     * 查询**个人网盘**容量（流程 B：网盘管理头部）。
+     *
+     * 依据：《抓包事实.md》§10.1——夸克走 `member`。
+     *
+     * @return 容量信息；失败返回 null。
+     */
+    override suspend fun fetchQuota(): QuotaInfo? = withContext(Dispatchers.IO) {
+        val response = api.getMember(buildMemberParams())
+        if (response.code != SUCCESS_CODE) {
+            Timber.w("QuarkParser member code=%d", response.code)
+            return@withContext null
+        }
+        val member = response.data ?: return@withContext null
+        QuotaInfo(used = member.use_capacity, total = member.total_capacity)
+    }
+
+    /**
+     * 构造个人网盘列表查询参数（《抓包事实.md》§10.2）。
+     *
+     * @param pdirFid 目标目录 fid。
+     * @return 查询参数键值对。
+     */
+    private fun buildPersonalListParams(pdirFid: String): Map<String, String> = mapOf(
+        KEY_PR to QUARK_PR,
+        KEY_FR to QUARK_FR,
+        KEY_PDIR_FID to pdirFid,
+        KEY_PAGE to FIRST_PAGE,
+        KEY_SIZE to PERSONAL_PAGE_SIZE,
+        KEY_FETCH_TOTAL to ONE_VALUE,
+        KEY_FETCH_SUB_DIRS to ZERO_VALUE,
+        KEY_SORT to PERSONAL_SORT
+    )
+
+    /**
+     * 构造容量查询参数（《抓包事实.md》§10.1）。
+     *
+     * @return 查询参数键值对。
+     */
+    private fun buildMemberParams(): Map<String, String> = mapOf(
+        KEY_PR to QUARK_PR,
+        KEY_FR to QUARK_FR,
+        KEY_FETCH_SUBSCRIBE to TRUE_VALUE,
+        KEY_CH to HOME_CHANNEL
+    )
 
     /**
      * 第 1 步（best-effort）：访问夸克首页并合并取出 `__pus` 与 `__puus`。
@@ -315,6 +387,21 @@ class QuarkParser @Inject constructor(
         const val KEY_PAGE = "_page"
         const val KEY_SIZE = "_size"
         const val KEY_SORT = "_sort"
+        const val KEY_FETCH_TOTAL = "_fetch_total"
+        const val KEY_FETCH_SUB_DIRS = "_fetch_sub_dirs"
+        const val KEY_FETCH_SUBSCRIBE = "fetch_subscribe"
+        const val KEY_CH = "_ch"
+
+        /** 个人网盘列表分页与排序（《抓包事实.md》§10.2）。 */
+        const val PERSONAL_PAGE_SIZE = "100"
+        const val PERSONAL_SORT = "file_type:asc,updated_at:desc"
+
+        /** 布尔 / 占位字面量。 */
+        const val ONE_VALUE = "1"
+        const val ZERO_VALUE = "0"
+
+        /** 容量查询的首页频道（《抓包事实.md》§10.1）。 */
+        const val HOME_CHANNEL = "home"
 
         /** 成功状态码（实测为 0）。 */
         const val SUCCESS_CODE = 0

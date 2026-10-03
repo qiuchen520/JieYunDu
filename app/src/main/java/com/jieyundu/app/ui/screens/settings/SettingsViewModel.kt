@@ -157,6 +157,43 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    private val _runtimeState = MutableStateFlow(RuntimeLogState())
+
+    /** 运行日志导出的状态流。 */
+    val runtimeState: StateFlow<RuntimeLogState> = _runtimeState.asStateFlow()
+
+    /**
+     * 准备导出当前运行日志。
+     *
+     * 说明：把内存中最近的 Timber 日志缓冲落盘为可分享文件，用于反馈「下载失败 / 解析失败」
+     * 等**被捕获**的错误现场（这类错误不触发崩溃，因此不会出现在崩溃日志里）。
+     * 进行中重复点击将被忽略；[CancellationException] 原样抛出（C3）。
+     */
+    fun exportRuntimeLog() {
+        if (_runtimeState.value.busy) return
+        _runtimeState.value = _runtimeState.value.copy(busy = true, failed = false)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = CrashReporter.prepareRuntimeLogShareFile(appContext)
+                _runtimeState.value = if (file == null) {
+                    _runtimeState.value.copy(busy = false, failed = true)
+                } else {
+                    _runtimeState.value.copy(busy = false, shareFile = file)
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                Timber.e(exception, "SettingsViewModel export runtime log failed")
+                _runtimeState.value = _runtimeState.value.copy(busy = false, failed = true)
+            }
+        }
+    }
+
+    /** 消费待分享的运行日志文件（UI 已弹出分享面板后调用）。 */
+    fun consumeRuntimeShareFile() {
+        _runtimeState.value = _runtimeState.value.copy(shareFile = null)
+    }
 }
 
 /**
@@ -176,6 +213,19 @@ data class CrashLogState(
     val failed: Boolean = false,
     val shareFile: File? = null,
     val clearedCount: Int = 0
+)
+
+/**
+ * 运行日志导出的 UI 状态。
+ *
+ * @property busy 是否正在执行导出。
+ * @property failed 本次导出是否失败。
+ * @property shareFile 待分享的运行日志文件；UI 消费后置回 null。
+ */
+data class RuntimeLogState(
+    val busy: Boolean = false,
+    val failed: Boolean = false,
+    val shareFile: File? = null
 )
 
 /**

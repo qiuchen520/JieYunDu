@@ -47,6 +47,9 @@ object CrashReporter {
     /** 导出（分享）文件名前缀。 */
     private const val SHARE_PREFIX = "jieyundu_crash_"
 
+    /** 运行日志导出（分享）文件名前缀。 */
+    private const val RUNTIME_PREFIX = "jieyundu_runlog_"
+
     /** 文件名时间戳格式。 */
     private const val TIME_PATTERN = "yyyyMMdd_HHmmss"
 
@@ -156,6 +159,41 @@ object CrashReporter {
         val target = File(shareDir, "$SHARE_PREFIX$stamp.txt")
         latest.copyTo(target, overwrite = true)
         return target
+    }
+
+    /**
+     * 把**当前运行日志缓冲**导出为可分享文件（不依赖是否发生过崩溃）。
+     *
+     * 用途（B1）：下载失败 / 解析失败等**被捕获的错误**不会触发崩溃，但会经 Timber
+     * 落入 [recentLines] 环形缓冲。本方法把该缓冲落盘，供用户「导出运行日志」分享，
+     * 从而拿到真实错误现场（业务码 / 堆栈）。
+     *
+     * @param context 应用上下文。
+     * @return 可分享的缓存文件；创建目录失败时为 null（缓冲为空也会产出一个仅含头部的文件）。
+     */
+    fun prepareRuntimeLogShareFile(context: Context): File? {
+        val shareDir = File(context.cacheDir, DIR_NAME)
+        if (!shareDir.exists() && !shareDir.mkdirs()) {
+            Timber.e("CrashReporter failed to create share dir: %s", shareDir.absolutePath)
+            return null
+        }
+        val target = File(shareDir, "$RUNTIME_PREFIX${currentStamp()}.txt")
+        return try {
+            target.bufferedWriter().use { writer ->
+                writer.appendLine("===== 极云渡 运行日志 =====")
+                writer.appendLine("时间：" + formatTime(System.currentTimeMillis()))
+                writer.appendLine("版本：" + BuildConfig.VERSION_NAME)
+                writer.appendLine("Android：" + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")")
+                writer.appendLine("设备：" + Build.MANUFACTURER + " " + Build.MODEL)
+                writer.appendLine()
+                writer.appendLine("----- 最近 $MAX_RECENT_LINES 行日志 -----")
+                writer.appendLine(recentSnapshot())
+            }
+            target
+        } catch (exception: Exception) {
+            Timber.e(exception, "CrashReporter failed to export runtime log")
+            null
+        }
     }
 
     /**

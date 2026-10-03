@@ -38,9 +38,11 @@ class TaskPoller @Inject constructor(
             val response = api.getTask(buildTaskParams(taskId))
             if (response.code == SUCCESS_CODE) {
                 val data = response.data
-                val finished = data.finished_at > 0L || data.status == STATUS_FINISHED
-                if (finished) {
-                    return data.save_as?.save_as_top_fids.orEmpty()
+                if (data != null) {
+                    val finished = data.finished_at > 0L || data.status == STATUS_FINISHED
+                    if (finished) {
+                        return data.save_as?.save_as_top_fids.orEmpty()
+                    }
                 }
             }
             Timber.d("TaskPoller waiting task=%s attempt=%d", taskId, attempt + 1)

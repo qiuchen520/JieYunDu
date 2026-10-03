@@ -771,6 +771,42 @@
 ### 已知限制 / 待办
 - 崩溃日志仅存本机、不上传；导出走系统分享。
 - QQ/微信等第三方分享目标能否读取 `content://` 取决于其是否支持 `ACTION_SEND` 文件流。
+## 阶段 B1：网盘管理（流程 B）+ 运行日志导出 + 下载错误码可读化（JYD-MANAGE-2026-10-03）
+> 依据 Owner 指令：做网盘管理、四大网盘逐步支持、并更新崩溃/日志链路。本批为 B1（先夸克）。
+> 抓包依据：《抓包事实.md》§10.1（容量）/ §10.2（个人目录列表）；不臆造字段（R3）。
+### 网盘管理（流程 B：个人网盘浏览）
+- 新增 `domain/parser/PersonalBrowser.kt`：统一「浏览本账号个人网盘」接口
+  （`listPersonalChildren(pdirFid)` / `fetchQuota()`），与流程 A 的 `ShareBrowser` 对称。
+- 新增 `domain/model/QuotaInfo.kt`：`used` / `total` / `usedInTrash` + 派生 `remaining`。
+- `QuarkApi.kt`：新增 `getMember`（容量，§10.1）与 `QuarkMember` 响应模型。
+- `QuarkParser.kt`：实现 `PersonalBrowser`——`listPersonalChildren` 走 `file/sort`（§10.2），
+  `fetchQuota` 走 `member`（§10.1）。
+- `AppModule.kt`：新增 `providePersonalBrowser`（当前绑定夸克）。
+- 新增 `ui/screens/login/NetdiskBrowserViewModel.kt` + `NetdiskBrowserScreen.kt`：
+  容量卡 + 面包屑 + 目录列表（LazyColumn 可滚动）+ 进入文件夹 / 返回上一级 / 返回列表；
+  未实现管理的网盘给出「开发中」提示。
+- `NetdiskPickerScreen.kt`：已登录网盘新增「管理」入口（原「退出登录」保留）。
+- `JieYunDuNavHost.kt`：`NetdiskSection` 增加第三态（管理页），由 `NetdiskBrowserState.open` 驱动。
+- `strings.xml`：新增网盘管理相关文案。
+### 运行日志导出（让「被捕获的错误」也能取证）
+- `CrashReporter.kt`：新增 `prepareRuntimeLogShareFile(context)`——把内存中最近 100 行 Timber
+  日志缓冲落盘为 `cache/crash_logs/jieyundu_runlog_<stamp>.txt`（不依赖是否发生过崩溃）。
+- `SettingsViewModel.kt` / `SettingsScreen.kt`：新增「导出运行日志」按钮 + `RuntimeLogState`；
+  复用 FileProvider 系统分享（分享函数泛化为 `shareLogFile(context, file, titleRes)`）。
+- `strings.xml`：新增运行日志相关文案。
+> 用途：「下载启动失败 / 解析失败」这类错误**不触发崩溃**，此前只能看到笼统提示；现在可一键
+> 导出运行日志，看到真实业务码 / 堆栈。
+### 下载错误码可读化（根因修复）
+- 根因：`QuarkResponse<T>.data` 原为非空；服务端业务失败返回 `"data":` 时会抛
+  `SerializationException`，把真实业务码一并吞掉，调用方只能得到笼统「失败」。
+- `QuarkApi.kt`：`QuarkResponse.data` 改为可空（`T? = null`），`code` 缺省 `-1`。
+- `QuarkParser.kt` / `TaskPoller.kt` / `ShareTransfer.kt` / `TempFolderManager.kt`：全部改为
+  先判 `code`、再读 `data?.xxx`，业务失败得到明确错误码而非异常。
+- `QuarkParserTest.kt`：`FakeQuarkApi` 补 `getMember` 实现。
+### 已知限制（本批边界）
+- 网盘管理当前仅夸克可用；UC / 百度 / 迅雷在 B2–B4 接入（其 UA 仍是空串待填，见 §5）。
+- 个人网盘文件的「下载」按钮本批未加（先看文件；下载链路复用现有引擎，下一批接）。
+- 夸克 / UC / 百度的「回收站列表」仍未抓包（《抓包事实.md》§10.4），不臆造。
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
   原三点：①「不需要这么远」②「带点方形」③「不是很 Q弹」——其中 ②③ 已由修订一 / 二落地；

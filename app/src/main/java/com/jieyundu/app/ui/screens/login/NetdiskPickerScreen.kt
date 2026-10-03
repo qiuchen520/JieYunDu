@@ -35,18 +35,19 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
  *
  * 说明：列出全部支持的网盘并提供「登录」入口；点击后由 [onLogin] 交由上层打开内嵌
  * WebView 登录页。[loggedInTypes] 中已登录的网盘展示「已登录」并提供 [onLogout] 退出。
- *
  * @param modifier 外部修饰符。
  * @param loggedInTypes 已登录的网盘集合（用于展示登录态）。
  * @param onLogin 点击某网盘「登录」的回调。
  * @param onLogout 点击某网盘「退出登录」的回调。
+ * @param onOpenNetdisk 点击某网盘「管理」的回调（流程 B）。
  */
 @Composable
 fun NetdiskPickerScreen(
     modifier: Modifier = Modifier,
     loggedInTypes: Set<NetdiskType> = emptySet(),
     onLogin: (NetdiskType) -> Unit = {},
-    onLogout: (NetdiskType) -> Unit = {}
+    onLogout: (NetdiskType) -> Unit = {},
+    onOpenNetdisk: (NetdiskType) -> Unit = {}
 ) {
     val isExpanded = rememberIsExpandedLayout()
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
@@ -73,26 +74,29 @@ fun NetdiskPickerScreen(
                 type = type,
                 loggedIn = type in loggedInTypes,
                 onLogin = { onLogin(type) },
-                onLogout = { onLogout(type) }
+                onLogout = { onLogout(type) },
+                onOpen = { onOpenNetdisk(type) }
             )
         }
     }
 }
 
 /**
- * 单个网盘行：左侧名称与登录态说明，右侧「登录」或「退出登录」按钮。
+ * 单个网盘行：左侧名称与登录态说明，右侧「登录」或「管理 + 退出登录」按钮。
  *
  * @param type 网盘类型。
  * @param loggedIn 是否已登录。
  * @param onLogin 点击登录的回调。
  * @param onLogout 点击退出的回调。
+ * @param onOpen 点击管理的回调（流程 B）。
  */
 @Composable
 private fun NetdiskRow(
     type: NetdiskType,
     loggedIn: Boolean,
     onLogin: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onOpen: () -> Unit
 ) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -118,21 +122,37 @@ private fun NetdiskRow(
                 )
             }
             Spacer(modifier = Modifier.width(Dimens.SpaceLg))
-            GlassButton(
-                text = stringResource(
-                    if (loggedIn) R.string.netdisk_logout_action else R.string.netdisk_login_action
-                ),
-                onClick = if (loggedIn) onLogout else onLogin,
-                height = Dimens.ButtonHeightCompact,
-                cornerRadius = Dimens.ButtonCornerCompact,
-                fillColor = if (loggedIn) JieYunDuColors.GlassFillStrong else JieYunDuColors.ButtonFill,
-                borderColor = if (loggedIn) {
-                    JieYunDuColors.GlassBorder
-                } else {
-                    JieYunDuColors.ButtonBorder
-                },
-                contentColor = if (loggedIn) JieYunDuColors.TextPrimary else JieYunDuColors.OnPrimary
-            )
+            if (loggedIn) {
+                GlassButton(
+                    text = stringResource(R.string.netdisk_browser_action),
+                    onClick = onOpen,
+                    height = Dimens.ButtonHeightCompact,
+                    cornerRadius = Dimens.ButtonCornerCompact,
+                    fillColor = JieYunDuColors.ButtonFill,
+                    borderColor = JieYunDuColors.ButtonBorder,
+                    contentColor = JieYunDuColors.OnPrimary
+                )
+                Spacer(modifier = Modifier.width(Dimens.SpaceSm))
+                GlassButton(
+                    text = stringResource(R.string.netdisk_logout_action),
+                    onClick = onLogout,
+                    height = Dimens.ButtonHeightCompact,
+                    cornerRadius = Dimens.ButtonCornerCompact,
+                    fillColor = JieYunDuColors.GlassFillStrong,
+                    borderColor = JieYunDuColors.GlassBorder,
+                    contentColor = JieYunDuColors.TextPrimary
+                )
+            } else {
+                GlassButton(
+                    text = stringResource(R.string.netdisk_login_action),
+                    onClick = onLogin,
+                    height = Dimens.ButtonHeightCompact,
+                    cornerRadius = Dimens.ButtonCornerCompact,
+                    fillColor = JieYunDuColors.ButtonFill,
+                    borderColor = JieYunDuColors.ButtonBorder,
+                    contentColor = JieYunDuColors.OnPrimary
+                )
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ package com.jieyundu.app.di
 
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.ParserRegistry
+import com.jieyundu.app.domain.parser.PersonalBrowser
 import com.jieyundu.app.domain.parser.ShareBrowser
 import com.jieyundu.app.domain.parser.baidu.BaiduParser
 import com.jieyundu.app.domain.parser.quark.QuarkParser
@@ -94,6 +95,18 @@ object AppModule {
     @Provides
     @Singleton
     fun provideShareBrowser(parser: QuarkParser): ShareBrowser = parser
+
+    /**
+     * 提供个人网盘浏览器（当前仅夸克实现；UC / 百度 / 迅雷接入后按 type 路由）。
+     *
+     * 流程 B（网盘管理）：浏览本账号个人网盘目录与容量。
+     *
+     * @param parser 夸克解析器实例（同时实现 [NetdiskParser] / [ShareBrowser] / [PersonalBrowser]）。
+     * @return 以 [PersonalBrowser] 身份暴露的同一实例。
+     */
+    @Provides
+    @Singleton
+    fun providePersonalBrowser(parser: QuarkParser): PersonalBrowser = parser
 
     /**
      * 提供分享下载准备器（转存到临时目录 + 轮询 + 取直链）。

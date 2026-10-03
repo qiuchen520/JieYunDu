@@ -122,6 +122,22 @@ interface QuarkApi {
     ): QuarkResponse<QuarkFileList>
 
     /**
+     * 查询**本账号**个人网盘容量信息（已用 / 总量）。
+     *
+     * 请求：`GET https://drive-pc.quark.cn/1/clouddrive/member?pr=ucpro&fr=pc&fetch_subscribe=true&_ch=home`
+     * 响应：`data.use_capacity`（已用）/ `data.total_capacity`（总量）。
+     *
+     * 依据：《抓包事实.md》§10.1「容量 / 空间查询」。
+     *
+     * @param params 查询参数键值对。
+     * @return 统一响应包装体，data 含容量。
+     */
+    @GET("1/clouddrive/member")
+    suspend fun getMember(
+        @QueryMap params: Map<String, String>
+    ): QuarkResponse<QuarkMember>
+
+    /**
      * 在**本账号**个人网盘创建目录（用于创建 `.极云渡临时`）。
      *
      * 请求：`POST https://drive-pc.quark.cn/1/clouddrive/file?pr=ucpro&fr=pc`
@@ -163,16 +179,26 @@ interface QuarkApi {
  * 实测：成功 `code == 0`；风控/业务失败携带非 0 业务码
  * （例：`31001` 表示 share missing / 需登录）。
  *
- * @property code 业务状态码。
+ * 说明（B1 修复）：`data` 改为**可空**。服务端在业务失败时会返回 `"data":`，
+ * 若仍按非空解析会抛 `SerializationException`，把真实业务码 `code` 一并吞掉，
+ * 使调用方只能得到笼统的"失败"。改为可空后，调用方可直接读取 `code` / `message`
+ * 做出精确判定（下载失败不再显示为含义不明的异常）。
+ *
+ * @property code 业务状态码；缺省时按 -1 处理（视为未知错误）。
  * @property message 服务端描述。
- * @property data 业务数据。
+ * @property data 业务数据；业务失败或该接口无返回体时为 null。
  */
 @Serializable
 data class QuarkResponse<T>(
-    val code: Int,
-    val message: String,
-    val data: T
-)
+    val code: Int = CODE_UNKNOWN,
+    val message: String = "",
+    val data: T? = null
+) {
+    companion object {
+        /** 缺省（未提供）状态码，表示未知错误。 */
+        const val CODE_UNKNOWN = -1
+    }
+}
 
 /**
  * stoken 响应体。
@@ -328,6 +354,20 @@ data class QuarkDownloadUrl(
 @Serializable
 data class QuarkFileList(
     val list: List<QuarkFile> = emptyList()
+)
+
+/**
+ * 个人网盘容量响应体（`member`）。
+ *
+ * 依据：《抓包事实.md》§10.1。字段保持服务端原始命名以便逐一核对。
+ *
+ * @property use_capacity 已用容量（字节）。
+ * @property total_capacity 总容量（字节）。
+ */
+@Serializable
+data class QuarkMember(
+    val use_capacity: Long = 0L,
+    val total_capacity: Long = 0L
 )
 
 /**

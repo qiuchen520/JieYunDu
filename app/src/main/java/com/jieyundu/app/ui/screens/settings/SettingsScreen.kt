@@ -8,6 +8,7 @@ package com.jieyundu.app.ui.screens.settings
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,6 +54,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         if (isExpanded) Dimens.PanelPadding else Dimens.PanelPaddingCompact
     val cleanupState by viewModel.cleanupState.collectAsState()
     val crashState by viewModel.crashState.collectAsState()
+    val runtimeState by viewModel.runtimeState.collectAsState()
     val context = LocalContext.current
 
     // 崩溃日志操作反馈：有可分享文件 → 系统分享；无日志 / 失败 / 已清空 → Toast 提示。
@@ -61,7 +63,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         val shareFile = crashState.shareFile
         when {
             shareFile != null -> {
-                shareCrashLog(context, shareFile)
+                shareLogFile(context, shareFile, R.string.settings_crash_share_title)
                 viewModel.consumeCrashShareFile()
             }
 
@@ -81,6 +83,25 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         R.string.settings_crash_cleared,
                         crashState.clearedCount
                     ),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    // 运行日志导出反馈：产出可分享文件 → 系统分享；失败 → Toast（B1）。
+    LaunchedEffect(runtimeState) {
+        val shareFile = runtimeState.shareFile
+        when {
+            shareFile != null -> {
+                shareLogFile(context, shareFile, R.string.settings_runtime_share_title)
+                viewModel.consumeRuntimeShareFile()
+            }
+
+            runtimeState.failed -> {
+                Toast.makeText(
+                    context,
+                    R.string.settings_runtime_export_failed,
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -194,6 +215,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 borderColor = JieYunDuColors.GlassBorder,
                 contentColor = JieYunDuColors.TextPrimary
             )
+            Text(
+                text = stringResource(R.string.settings_runtime_export_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            GlassButton(
+                text = if (runtimeState.busy) {
+                    stringResource(R.string.settings_runtime_exporting)
+                } else {
+                    stringResource(R.string.settings_runtime_export)
+                },
+                onClick = viewModel::exportRuntimeLog,
+                height = Dimens.ButtonHeightCompact,
+                cornerRadius = Dimens.ButtonCornerCompact,
+                fillColor = JieYunDuColors.GlassFillStrong,
+                borderColor = JieYunDuColors.GlassBorder,
+                contentColor = JieYunDuColors.TextPrimary
+            )
         }
         SettingsCard(
             title = stringResource(R.string.settings_about),
@@ -246,31 +285,29 @@ private fun SettingsCard(
 }
 
 /**
- * 通过系统分享面板导出崩溃日志文件。
+ * 通过系统分享面板导出一个日志文件（崩溃日志 / 运行日志共用）。
  *
- * 说明：用 [FileProvider] 暴露 cache 下的崩溃日志，赋予临时读权限后走 [Intent.ACTION_SEND]，
- * 不改变分享目标的文件名（`jieyundu_crash_yyyyMMdd_HHmmss.txt` 由日志层生成）。
+ * 说明：用 [FileProvider] 暴露 cache 下的日志目录，赋予临时读权限后走 [Intent.ACTION_SEND]；
+ * 文件名由日志层生成（`jieyundu_crash_*.txt` / `jieyundu_runlog_*.txt`）。
  *
  * @param context 上下文（用于解析 FileProvider authority 与发起分享）。
- * @param file 待分享的崩溃日志文件。
+ * @param file 待分享的日志文件。
+ * @param titleRes 分享面板标题文案资源。
  */
-private fun shareCrashLog(context: Context, file: File) {
+private fun shareLogFile(context: Context, file: File, @StringRes titleRes: Int) {
     val uri = FileProvider.getUriForFile(
         context,
         "${context.packageName}.fileprovider",
         file
     )
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
-        type = CRASH_LOG_MIME_TYPE
+        type = LOG_MIME_TYPE
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    val chooser = Intent.createChooser(
-        sendIntent,
-        context.getString(R.string.settings_crash_share_title)
-    )
+    val chooser = Intent.createChooser(sendIntent, context.getString(titleRes))
     context.startActivity(chooser)
 }
 
-/** 崩溃日志分享 MIME 类型（纯文本）。 */
-private const val CRASH_LOG_MIME_TYPE = "text/plain"
+/** 日志分享 MIME 类型（纯文本）。 */
+private const val LOG_MIME_TYPE = "text/plain"

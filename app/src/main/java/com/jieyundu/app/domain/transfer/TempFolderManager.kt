@@ -63,7 +63,7 @@ class TempFolderManager @Inject constructor(
             Timber.w(error, "TempFolderManager create folder failed")
             return null
         }
-        val fid = created.data.fid.takeIf { created.code == SUCCESS_CODE && it.isNotBlank() }
+        val fid = created.data?.fid?.takeIf { created.code == SUCCESS_CODE && it.isNotBlank() }
         if (fid == null) {
             Timber.w("TempFolderManager create folder returned no fid, code=%d", created.code)
             return null
@@ -88,7 +88,7 @@ class TempFolderManager @Inject constructor(
             Timber.w("TempFolderManager list root code=%d", listed.code)
             return null
         }
-        val folder = listed.data.list.firstOrNull { entry ->
+        val folder = listed.data?.list.orEmpty().firstOrNull { entry ->
             entry.dir && entry.file_name == TEMP_FOLDER_NAME
         }
         val fid = folder?.fid
@@ -181,7 +181,7 @@ class TempFolderManager @Inject constructor(
                 Timber.w(error, "TempFolderManager list temp folder failed")
                 return
             }
-        if (listed.code != SUCCESS_CODE || listed.data.list.isNotEmpty()) {
+        if (listed.code != SUCCESS_CODE || listed.data?.list.orEmpty().isNotEmpty()) {
             return
         }
         if (deleteFids(listOf(tempFid))) {

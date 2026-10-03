@@ -310,6 +310,9 @@ class QuarkParserTest {
         override suspend fun listFiles(params: Map<String, String>): QuarkResponse<QuarkFileList> =
             QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkFileList())
 
+        override suspend fun getMember(params: Map<String, String>): QuarkResponse<QuarkMember> =
+            QuarkResponse(code = SUCCESS_CODE, message = "ok", data = QuarkMember())
+
         override suspend fun createFolder(
             body: QuarkCreateFolderRequest
         ): QuarkResponse<QuarkCreateFolderResult> =

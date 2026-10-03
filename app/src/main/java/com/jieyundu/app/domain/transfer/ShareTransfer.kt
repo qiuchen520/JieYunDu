@@ -66,11 +66,12 @@ class ShareTransfer @Inject constructor(
                 scene = SCENE_LINK
             )
         )
-        if (response.code != SUCCESS_CODE || response.data.task_id.isBlank()) {
+        val taskId = response.data?.task_id.orEmpty()
+        if (response.code != SUCCESS_CODE || taskId.isBlank()) {
             Timber.e("ShareTransfer save failed code=%d", response.code)
             return emptyList()
         }
-        val newFids = taskPoller.awaitSavedFids(response.data.task_id)
+        val newFids = taskPoller.awaitSavedFids(taskId)
         tempFolderManager.recordPendingCleanup(newFids)
         return newFids
     }
@@ -104,11 +105,12 @@ class ShareTransfer @Inject constructor(
             Timber.e("ShareTransfer get download url failed code=%d", downloadResponse.code)
             return null
         }
-        val url = downloadResponse.data
+        val items = downloadResponse.data.orEmpty()
+        val url = items
             .firstOrNull { item -> item.fid == newFid }
             ?.download_url
             ?.takeIf { value -> value.isNotBlank() }
-            ?: downloadResponse.data.firstOrNull()
+            ?: items.firstOrNull()
                 ?.download_url
                 ?.takeIf { value -> value.isNotBlank() }
             ?: return null
