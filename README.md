@@ -31,6 +31,18 @@ CI 使用官方 `gradle/actions/setup-gradle`（固定 Gradle 8.2.1），不依�
 
 AGPL-3.0
 
+## 贡献指南
+
+欢迎提交 Issue 与 Pull Request。**提交 PR 前需先签署 CLA（贡献者许可协议）**——
+CLA 是「贡献门槛」，与项目自身的 AGPL-3.0 是两回事：贡献者保留版权，同时授予本项目
+所有者永久、免费、可再许可的权利（详见 [`docs/CLA.md`](docs/CLA.md)）。
+
+签署方式：在 PR 评论区回复
+
+    I have read the CLA Document and I hereby sign the CLA
+
+完整流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+
 ## 致谢与声明
 
 本项目的架构设计、功能规格、验收标准、文档体系由作者独立完成。

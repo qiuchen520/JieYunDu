@@ -1,0 +1,47 @@
+# 文件：.github/workflows/cla.yml
+# 职责：CLA（贡献者许可协议）签署助手——首次 PR 自动提示签署，签署后在 signatures 分支留档。
+# 说明：CLA 是「贡献门槛」，与项目自身协议（AGPL-3.0）无关，不改动 LICENSE。
+# 工具：contributor-assistant/github-action（最新稳定 tag v2.6.1）。
+name: CLA Assistant
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+# 需要写权限以在 signatures 分支创建 / 更新签署记录文件。
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  CLAAssistant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "CLA Assistant"
+        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        uses: contributor-assistant/github-action@v2.6.1
+        env:
+          # 同仓库留档时 GITHUB_TOKEN 即可；若仓库开启了分支保护或改用独立签名仓库，
+          # 请另配 secrets.PERSONAL_ACCESS_TOKEN（具 repo 权限的 PAT）并在此追加一行。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # 签署记录文件（存于下方 branch），首次签署时自动创建。
+          path-to-signatures: 'signatures/version1/cla.json'
+          # CLA 正文（用于机器人留言中的链接与校验）。
+          path-to-document: 'https://github.com/qiuchen520/JieYunDu/blob/main/docs/CLA.md'
+          # 存放签署记录的分支。
+          branch: 'signatures'
+          # 免签名单：仓库所有者本人 + 机器人账号。
+          allowlist: 'qiuchen520,bot*'
+          # 未签署时的留言。
+          custom-notsigned-prcomment: '感谢你的贡献！提交本 PR 前请先签署 CLA（见 docs/CLA.md）。请在下方评论中回复：'
+          # 表示「已签署」的评论语句（必须与文档一致）。
+          custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
+          # 自定义签署留言文案。
+          custom-allsigned-prcomment: '所有贡献者均已签署 CLA，感谢配合。'
+          # 合并后不锁定 PR（保持简洁；如需锁定改为 true）。
+          lock-pullrequest-aftermerge: false
