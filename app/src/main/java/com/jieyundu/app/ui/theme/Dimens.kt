@@ -41,8 +41,11 @@ object Dimens {
     /** 输入区玻璃卡片内边距（9.6.2：20dp）。 */
     val InputCardPadding: Dp = 20.dp
 
-    /** 卡片圆角。 */
-    val CardCorner: Dp = 24.dp
+    /** 卡片外阴影高度（浅色 Area 风：极淡投影，模糊约 8dp、下偏 2dp）。 */
+    val CardElevation: Dp = 6.dp
+
+    /** 卡片圆角（浅色 Area 风：16dp）。 */
+    val CardCorner: Dp = 16.dp
 
     /** 圆角下限（9.2 规定不得小于 16dp）。 */
     val MinCorner: Dp = 16.dp
