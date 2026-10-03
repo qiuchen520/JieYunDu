@@ -12,7 +12,7 @@ import com.jieyundu.app.R
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.QuotaInfo
-import com.jieyundu.app.domain.parser.PersonalBrowser
+import com.jieyundu.app.domain.parser.NetdiskServiceRouter
 import com.jieyundu.app.ui.screens.home.BrowseLevel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -30,13 +30,13 @@ import timber.log.Timber
  * 职责：打开某网盘管理页 → 拉根目录 + 容量 → 点文件夹压栈 → 返回上一级弹栈。
  * 个人网盘浏览不需要 pwdId/stoken，只维护「目录 fid 路径栈」。
  *
- * 说明：当前仅 [PersonalBrowser] 支持的网盘（夸克）可浏览；其余类型给出「开发中」提示。
+ * 说明：当前夸克与 UC 均有个人网盘浏览实现；其余类型给出「开发中」提示。
  *
- * @param personalBrowser 个人网盘浏览器（当前由夸克实现）。
+ * @param netdiskRouter 网盘能力路由器（B2：按 type 取对应个人网盘浏览器）。
  */
 @HiltViewModel
 class NetdiskBrowserViewModel @Inject constructor(
-    private val personalBrowser: PersonalBrowser
+    private val netdiskRouter: NetdiskServiceRouter
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NetdiskBrowserState())
@@ -53,7 +53,9 @@ class NetdiskBrowserViewModel @Inject constructor(
      * @param type 网盘类型。
      */
     fun open(type: NetdiskType) {
-        if (type != personalBrowser.type) {
+        // 按网盘类型取对应的个人网盘浏览器（B2：多网盘路由，替代单例硬绑）。
+        val browser = netdiskRouter.personalBrowserFor(type)
+        if (browser == null) {
             _uiState.value = NetdiskBrowserState(
                 open = true,
                 netdiskType = type,
@@ -68,8 +70,8 @@ class NetdiskBrowserViewModel @Inject constructor(
         )
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val root = personalBrowser.listPersonalChildren(ROOT_PDIR_FID)
-                val quota = personalBrowser.fetchQuota()
+                val root = browser.listPersonalChildren(ROOT_PDIR_FID)
+                val quota = browser.fetchQuota()
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     stack = listOf(BrowseLevel(pdirFid = ROOT_PDIR_FID, name = "", files = root)),
@@ -100,10 +102,13 @@ class NetdiskBrowserViewModel @Inject constructor(
     fun openFolder(folder: FileInfo) {
         if (!folder.isDirectory) return
         if (_uiState.value.isLoading) return
+        // 按当前网盘类型取个人网盘浏览器（B2：多网盘路由）。
+        val type = _uiState.value.netdiskType ?: return
+        val browser = netdiskRouter.personalBrowserFor(type) ?: return
         _uiState.value = _uiState.value.copy(isLoading = true, errorRes = null)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val children = personalBrowser.listPersonalChildren(folder.fid)
+                val children = browser.listPersonalChildren(folder.fid)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     stack = _uiState.value.stack + BrowseLevel(

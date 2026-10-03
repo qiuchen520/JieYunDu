@@ -6,6 +6,7 @@
 package com.jieyundu.app.di
 
 import com.jieyundu.app.domain.parser.NetdiskParser
+import com.jieyundu.app.domain.parser.NetdiskServiceRouter
 import com.jieyundu.app.domain.parser.ParserRegistry
 import com.jieyundu.app.domain.parser.PersonalBrowser
 import com.jieyundu.app.domain.parser.ShareBrowser
@@ -15,6 +16,7 @@ import com.jieyundu.app.domain.parser.uc.UcParser
 import com.jieyundu.app.domain.parser.xunlei.XunleiParser
 import com.jieyundu.app.domain.transfer.ShareDownloadPreparer
 import com.jieyundu.app.domain.transfer.ShareTransfer
+import com.jieyundu.app.domain.transfer.UcShareTransfer
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -87,34 +89,79 @@ object AppModule {
         ParserRegistry(parsers.toList())
 
     /**
-     * 提供分享目录浏览器（当前仅夸克实现；流程 B 个人网盘浏览接入后按 type 路由）。
+     * 注册夸克分享目录浏览器（多绑定）。
      *
      * @param parser 夸克解析器实例（同时实现 [NetdiskParser] 与 [ShareBrowser]）。
      * @return 以 [ShareBrowser] 身份暴露的同一实例。
      */
     @Provides
-    @Singleton
-    fun provideShareBrowser(parser: QuarkParser): ShareBrowser = parser
+    @IntoSet
+    fun provideQuarkShareBrowser(parser: QuarkParser): ShareBrowser = parser
 
     /**
-     * 提供个人网盘浏览器（当前仅夸克实现；UC / 百度 / 迅雷接入后按 type 路由）。
+     * 注册 UC 分享目录浏览器（多绑定，B2）。
      *
-     * 流程 B（网盘管理）：浏览本账号个人网盘目录与容量。
+     * @param parser UC 解析器实例（同时实现 [NetdiskParser] 与 [ShareBrowser]）。
+     * @return 以 [ShareBrowser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideUcShareBrowser(parser: UcParser): ShareBrowser = parser
+
+    /**
+     * 注册夸克个人网盘浏览器（多绑定）。
      *
      * @param parser 夸克解析器实例（同时实现 [NetdiskParser] / [ShareBrowser] / [PersonalBrowser]）。
      * @return 以 [PersonalBrowser] 身份暴露的同一实例。
      */
     @Provides
-    @Singleton
-    fun providePersonalBrowser(parser: QuarkParser): PersonalBrowser = parser
+    @IntoSet
+    fun provideQuarkPersonalBrowser(parser: QuarkParser): PersonalBrowser = parser
 
     /**
-     * 提供分享下载准备器（转存到临时目录 + 轮询 + 取直链）。
+     * 注册 UC 个人网盘浏览器（多绑定，B2）。
+     *
+     * @param parser UC 解析器实例（同时实现 [NetdiskParser] / [ShareBrowser] / [PersonalBrowser]）。
+     * @return 以 [PersonalBrowser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideUcPersonalBrowser(parser: UcParser): PersonalBrowser = parser
+
+    /**
+     * 注册夸克分享下载准备器（多绑定）。
      *
      * @param transfer 夸克转存器实例。
      * @return 以 [ShareDownloadPreparer] 身份暴露的同一实例。
      */
     @Provides
+    @IntoSet
+    fun provideQuarkShareDownloadPreparer(transfer: ShareTransfer): ShareDownloadPreparer = transfer
+
+    /**
+     * 注册 UC 分享下载准备器（多绑定，B2）。
+     *
+     * @param transfer UC 转存器实例。
+     * @return 以 [ShareDownloadPreparer] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideUcShareDownloadPreparer(transfer: UcShareTransfer): ShareDownloadPreparer = transfer
+
+    /**
+     * 提供网盘能力路由器（按 type 取用多绑定实现）。
+     *
+     * @param shareBrowsers 全部分享目录浏览器。
+     * @param personalBrowsers 全部个人网盘浏览器。
+     * @param preparers 全部分享转存器。
+     * @return 路由器实例。
+     */
+    @Provides
     @Singleton
-    fun provideShareDownloadPreparer(transfer: ShareTransfer): ShareDownloadPreparer = transfer
+    fun provideNetdiskServiceRouter(
+        shareBrowsers: Set<@JvmSuppressWildcards ShareBrowser>,
+        personalBrowsers: Set<@JvmSuppressWildcards PersonalBrowser>,
+        preparers: Set<@JvmSuppressWildcards ShareDownloadPreparer>
+    ): NetdiskServiceRouter =
+        NetdiskServiceRouter(shareBrowsers, personalBrowsers, preparers)
 }

@@ -6,4 +6,8 @@
 <paths>
     <!-- 崩溃日志导出文件位于 cache/crash_logs/ —— 只暴露这一个子目录。 -->
     <cache-path name="crash_logs" path="crash_logs/" />
+    <!-- 应用私有下载目录（默认 A3 模式的中转成品） -->
+    <external-files-path name="downloads" path="Download/" />
+    <!-- 公共存储根（自定义下载目录 / 已发布成品；分享与安装时按 Uri 临时授权读取） -->
+    <external-path name="external_root" path="." />
 </paths>

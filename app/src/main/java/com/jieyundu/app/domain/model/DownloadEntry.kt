@@ -19,7 +19,7 @@ package com.jieyundu.app.domain.model
  * @property fileSize 文件总大小，单位字节；未知时为 -1。
  * @property downloadUrl 下载直链（有时效，过期后需重新解析）。
  * @property savePath 目标文件绝对路径。
- * @property chunkCount 分片数量（并发数），默认 8，上限 32。
+ * @property chunkCount 分片数量（并发数），默认 64，范围 32..512。
  * @property downloadedBytes 已下载字节数（断点续传依据）。
  * @property createdAt 创建时间戳（毫秒）。
  * @property updatedAt 最近更新时间戳（毫秒）。

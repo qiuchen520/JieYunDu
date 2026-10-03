@@ -66,6 +66,8 @@ private const val APPEAR_STIFFNESS = 380f
  * @param item 列表条目（进度 + 文件名 + 落盘路径）。
  * @param onClick 点击回调（由上层决定暂停 / 继续）。
  * @param onDelete 点击删除按钮的回调（删除任务与本地文件）。
+ * @param onShare 点击分享按钮的回调（B2 功能③；仅已完成条目展示）。
+ * @param onInstall 点击安装按钮的回调；为 null 表示不展示安装按钮（非 APK）。
  * @param modifier 外部修饰符。
  * @param isExpanded true 表示平板尺寸档位，false 表示手机档位。
  * @param index 在列表中的下标，用于错开动画。
@@ -75,6 +77,8 @@ fun DownloadItem(
     item: DownloadListItem,
     onClick: () -> Unit,
     onDelete: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onInstall: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     isExpanded: Boolean = true,
     index: Int = 0
@@ -158,6 +162,15 @@ fun DownloadItem(
                     )
                 }
             }
+            // 功能③：仅「已完成」条目展示分享 / 安装按钮（APK 才显示安装）。
+            if (item.progress.state == DownloadState.COMPLETED) {
+                Spacer(modifier = Modifier.width(Dimens.SpaceMd))
+                ShareButton(onClick = onShare)
+                if (onInstall != null) {
+                    Spacer(modifier = Modifier.width(Dimens.SpaceSm))
+                    InstallButton(onClick = onInstall)
+                }
+            }
             Spacer(modifier = Modifier.width(Dimens.SpaceMd))
             DeleteButton(onClick = onDelete)
         }
@@ -181,6 +194,114 @@ private fun DeleteButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         TrashGlyph(modifier = Modifier.size(Dimens.SpaceXxl))
+    }
+}
+
+/**
+ * 圆形分享按钮（B2 功能③；D8：自绘三节点分享图标，不引入 material-icons）。
+ *
+ * @param onClick 点击回调。
+ */
+@Composable
+private fun ShareButton(onClick: () -> Unit) {
+    val label = stringResource(R.string.cd_share_download)
+    Box(
+        modifier = Modifier
+            .size(Dimens.DeleteButtonSize)
+            .clip(CircleShape)
+            .background(JieYunDuColors.IconButtonFill)
+            .clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        ShareGlyph(modifier = Modifier.size(Dimens.SpaceXxl))
+    }
+}
+
+/**
+ * 圆形安装按钮（B2 功能③；仅 APK 条目展示）。
+ *
+ * @param onClick 点击回调。
+ */
+@Composable
+private fun InstallButton(onClick: () -> Unit) {
+    val label = stringResource(R.string.cd_install_download)
+    Box(
+        modifier = Modifier
+            .size(Dimens.DeleteButtonSize)
+            .clip(CircleShape)
+            .background(JieYunDuColors.IconButtonFill)
+            .clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        InstallGlyph(modifier = Modifier.size(Dimens.SpaceXxl))
+    }
+}
+
+/**
+ * 自绘「分享」图标（三个节点 + 两条连线）。
+ *
+ * @param modifier 外部修饰符。
+ */
+@Composable
+private fun ShareGlyph(modifier: Modifier = Modifier) {
+    val color = JieYunDuColors.TextSecondary
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = w * SHARE_STROKE_RATIO
+        val left = Offset(w * SHARE_LEFT_X, h * SHARE_MID_Y)
+        val topRight = Offset(w * SHARE_RIGHT_X, h * SHARE_TOP_Y)
+        val bottomRight = Offset(w * SHARE_RIGHT_X, h * SHARE_BOTTOM_Y)
+        drawLine(color, left, topRight, strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, left, bottomRight, strokeWidth = stroke, cap = StrokeCap.Round)
+        val nodeRadius = w * SHARE_NODE_RADIUS_RATIO
+        drawCircle(color, radius = nodeRadius, center = left)
+        drawCircle(color, radius = nodeRadius, center = topRight)
+        drawCircle(color, radius = nodeRadius, center = bottomRight)
+    }
+}
+
+/**
+ * 自绘「安装 / 下载到托盘」图标（下箭头 + 底部托盘）。
+ *
+ * @param modifier 外部修饰符。
+ */
+@Composable
+private fun InstallGlyph(modifier: Modifier = Modifier) {
+    val color = JieYunDuColors.TextSecondary
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = w * TRASH_STROKE_RATIO
+        val centerX = w / 2f
+        drawLine(
+            color = color,
+            start = Offset(centerX, h * INSTALL_TOP_Y),
+            end = Offset(centerX, h * INSTALL_MID_Y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(centerX - w * INSTALL_WING_RATIO, h * (INSTALL_MID_Y - INSTALL_WING_RATIO)),
+            end = Offset(centerX, h * INSTALL_MID_Y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(centerX + w * INSTALL_WING_RATIO, h * (INSTALL_MID_Y - INSTALL_WING_RATIO)),
+            end = Offset(centerX, h * INSTALL_MID_Y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(w * INSTALL_BASE_START, h * INSTALL_BASE_Y),
+            end = Offset(w * INSTALL_BASE_END, h * INSTALL_BASE_Y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
     }
 }
 
@@ -317,3 +438,42 @@ private const val TRASH_BODY_RIGHT_BOTTOM = 0.68f
 
 /** 桶底纵向占比。 */
 private const val TRASH_BODY_BOTTOM = 0.88f
+
+/** 分享图标线宽相对宽度比例。 */
+private const val SHARE_STROKE_RATIO = 0.07f
+
+/** 分享图标左节点横向占比。 */
+private const val SHARE_LEFT_X = 0.28f
+
+/** 分享图标右节点横向占比。 */
+private const val SHARE_RIGHT_X = 0.74f
+
+/** 分享图标中间纵向占比。 */
+private const val SHARE_MID_Y = 0.5f
+
+/** 分享图标右上节点纵向占比。 */
+private const val SHARE_TOP_Y = 0.22f
+
+/** 分享图标右下节点纵向占比。 */
+private const val SHARE_BOTTOM_Y = 0.78f
+
+/** 分享图标节点半径相对宽度比例。 */
+private const val SHARE_NODE_RADIUS_RATIO = 0.08f
+
+/** 安装图标箭头竖线起点纵向占比。 */
+private const val INSTALL_TOP_Y = 0.16f
+
+/** 安装图标箭头交汇点纵向占比。 */
+private const val INSTALL_MID_Y = 0.62f
+
+/** 安装图标箭头两翼长度占比。 */
+private const val INSTALL_WING_RATIO = 0.18f
+
+/** 安装图标托盘底线纵向占比。 */
+private const val INSTALL_BASE_Y = 0.86f
+
+/** 安装图标托盘底线起点横向占比。 */
+private const val INSTALL_BASE_START = 0.24f
+
+/** 安装图标托盘底线终点横向占比。 */
+private const val INSTALL_BASE_END = 0.76f

@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  *
  * 覆盖点：
  * 1. 分片区间连续、无重叠、无空洞，且完整覆盖 `[0, fileSize-1]`；
- * 2. 分片数收敛规则（1..32，且不超过文件字节数）；
+ * 2. 分片数收敛规则（32..512，且不超过文件字节数）；
  * 3. 大小未知时退化为单个开放式分片；
  * 4. 分片临时文件命名与合并结果正确、合并后临时文件被清理。
  */
@@ -25,13 +25,13 @@ class ChunkManagerTest {
 
     private val manager = ChunkManager()
 
-    /** 1000 字节切 8 片：数量、连续性、覆盖率都正确。 */
+    /** 1024 字节切 32 片：数量、连续性、覆盖率都正确。 */
     @Test
     fun createChunks_evenSplit_coversWholeFile() {
-        val fileSize = 1000L
-        val chunks = manager.createChunks(fileSize, 8)
+        val fileSize = 1024L
+        val chunks = manager.createChunks(fileSize, 32)
 
-        assertEquals(8, chunks.size)
+        assertEquals(32, chunks.size)
         assertEquals(0L, chunks.first().start)
         assertEquals(fileSize - 1L, chunks.last().end)
 
@@ -51,27 +51,27 @@ class ChunkManagerTest {
     @Test
     fun createChunks_withRemainder_doesNotLoseBytes() {
         val fileSize = 1003L
-        val chunks = manager.createChunks(fileSize, 8)
+        val chunks = manager.createChunks(fileSize, 32)
 
-        assertEquals(8, chunks.size)
+        assertEquals(32, chunks.size)
         val sizes = chunks.map { chunk -> chunk.totalBytes }
-        assertEquals(3, sizes.count { size -> size == 126L })
-        assertEquals(5, sizes.count { size -> size == 125L })
+        assertEquals(11, sizes.count { size -> size == 32L })
+        assertEquals(21, sizes.count { size -> size == 31L })
         assertEquals(fileSize, sizes.sum())
     }
 
-    /** 分片数超过上限时应被收敛到 32。 */
+    /** 分片数超过上限时应被收敛到上限。 */
     @Test
-    fun createChunks_aboveMax_isClampedTo32() {
+    fun createChunks_aboveMax_isClampedToMax() {
         val chunks = manager.createChunks(1024L * 1024L, 999)
         assertEquals(DownloadTask.MAX_CHUNK_COUNT, chunks.size)
     }
 
-    /** 分片数为 0 或负数时应被收敛到 1。 */
+    /** 分片数为 0 或负数时应被收敛到下限。 */
     @Test
-    fun createChunks_belowMin_isClampedToOne() {
-        assertEquals(1, manager.createChunks(1024L, 0).size)
-        assertEquals(1, manager.createChunks(1024L, -5).size)
+    fun createChunks_belowMin_isClampedToMin() {
+        assertEquals(DownloadTask.MIN_CHUNK_COUNT, manager.createChunks(1024L, 0).size)
+        assertEquals(DownloadTask.MIN_CHUNK_COUNT, manager.createChunks(1024L, -5).size)
     }
 
     /** 文件字节数小于分片数时，分片数不应超过字节数。 */
@@ -106,7 +106,8 @@ class ChunkManagerTest {
     fun mergePartFiles_concatenatesInOrderAndCleansUp() {
         val directory = Files.createTempDirectory("chunkmanager-test").toFile()
         val target = File(directory, "merged.bin")
-        val chunks = manager.createChunks(9L, 3)
+        // 文件字节数小于下限时，分片数被压到文件字节数（3 字节 → 3 片），便于逐片写入验证合并。
+        val chunks = manager.createChunks(3L, 32)
         assertEquals(3, chunks.size)
 
         val contents = listOf("AAA", "BBB", "CCC")

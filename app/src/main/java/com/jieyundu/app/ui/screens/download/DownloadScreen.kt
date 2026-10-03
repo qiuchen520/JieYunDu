@@ -5,6 +5,11 @@
 
 package com.jieyundu.app.ui.screens.download
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
@@ -35,6 +42,8 @@ import com.jieyundu.app.ui.screens.download.components.DownloadFilterBar
 import com.jieyundu.app.ui.screens.download.components.DownloadItem
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
+import java.io.File
+import timber.log.Timber
 
 /**
  * 下载页。
@@ -50,6 +59,7 @@ fun DownloadScreen(modifier: Modifier = Modifier) {
     val viewModel: DownloadViewModel = hiltViewModel()
     val downloadItems by viewModel.items.collectAsState()
     val filter by viewModel.filter.collectAsState()
+    val context = LocalContext.current
     val isExpanded = rememberIsExpandedLayout()
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
 
@@ -95,6 +105,12 @@ fun DownloadScreen(modifier: Modifier = Modifier) {
                         item = item,
                         onClick = { viewModel.toggleTask(item) },
                         onDelete = { viewModel.deleteTask(item) },
+                        onShare = { shareDownload(context, item) },
+                        onInstall = if (isApkFile(item.fileName)) {
+                            { installDownload(context, item) }
+                        } else {
+                            null
+                        },
                         isExpanded = isExpanded,
                         index = index
                     )
@@ -173,3 +189,91 @@ private const val GLYPH_BASE_START_RATIO = 0.22f
 
 /** 底线终点横向占比。 */
 private const val GLYPH_BASE_END_RATIO = 0.78f
+
+/**
+ * 判断文件名是否为 APK（B2 功能③：仅 APK 条目展示安装按钮）。
+ *
+ * @param fileName 文件名；未知时为 null。
+ * @return true 表示是 APK 安装包。
+ */
+private fun isApkFile(fileName: String?): Boolean =
+    fileName?.endsWith(APK_EXTENSION, ignoreCase = true) == true
+
+/**
+ * 解析条目对应的可访问 Uri（分享 / 安装共用）。
+ *
+ * 说明（B2 功能①③）：已发布到公共下载目录的成品在 Android 10+ 上是 `content://`，可直接使用；
+ * 自定义目录与 `<29` 场景是真实路径，经 [FileProvider] 换取可授权 Uri。
+ *
+ * @param context 上下文。
+ * @param item 列表条目（含落盘位置）。
+ * @return 可访问 Uri；文件不存在或无法解析时返回 null。
+ */
+private fun resolveShareUri(context: Context, item: DownloadListItem): Uri? {
+    val location = item.savePath ?: return null
+    if (location.startsWith(CONTENT_SCHEME)) {
+        return Uri.parse(location)
+    }
+    val file = File(location)
+    if (!file.isFile) return null
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/**
+ * 通过系统分享面板分享一个已下载文件。
+ *
+ * @param context 上下文。
+ * @param item 列表条目。
+ */
+private fun shareDownload(context: Context, item: DownloadListItem) {
+    val uri = resolveShareUri(context, item)
+    if (uri == null) {
+        Toast.makeText(context, R.string.download_share_unavailable, Toast.LENGTH_SHORT).show()
+        return
+    }
+    val mimeType = context.contentResolver.getType(uri) ?: DEFAULT_MIME_TYPE
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = mimeType
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(
+        Intent.createChooser(sendIntent, context.getString(R.string.download_share_chooser))
+    )
+}
+
+/**
+ * 调用系统安装器安装已下载的 APK。
+ *
+ * @param context 上下文。
+ * @param item 列表条目。
+ */
+private fun installDownload(context: Context, item: DownloadListItem) {
+    val uri = resolveShareUri(context, item)
+    if (uri == null) {
+        Toast.makeText(context, R.string.download_install_unavailable, Toast.LENGTH_SHORT).show()
+        return
+    }
+    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, APK_MIME_TYPE)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(installIntent)
+    } catch (exception: ActivityNotFoundException) {
+        Timber.e(exception, "DownloadScreen: no installer activity for %s", item.fileName)
+        Toast.makeText(context, R.string.download_install_unavailable, Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** APK 文件后缀。 */
+private const val APK_EXTENSION = ".apk"
+
+/** APK MIME 类型。 */
+private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+
+/** 内容 Uri 协议前缀。 */
+private const val CONTENT_SCHEME = "content://"
+
+/** 兜底 MIME 类型。 */
+private const val DEFAULT_MIME_TYPE = "application/octet-stream"

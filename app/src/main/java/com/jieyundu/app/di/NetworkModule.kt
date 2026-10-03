@@ -10,6 +10,7 @@ import com.jieyundu.app.BuildConfig
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.data.remote.UserAgentProvider
 import com.jieyundu.app.domain.parser.quark.QuarkApi
+import com.jieyundu.app.domain.parser.uc.UcApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -17,6 +18,8 @@ import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -49,6 +52,9 @@ object NetworkModule {
     /** 夸克 PC 接口 BaseUrl。 */
     private const val BASE_URL_QUARK = "https://drive-pc.quark.cn/"
 
+    /** UC PC 接口 BaseUrl（《抓包事实.md》§2：业务基址 pc-api.uc.cn，**不是** drive-pc.quark.cn）。 */
+    private const val BASE_URL_UC = "https://pc-api.uc.cn/"
+
     /** 请求体 MIME 类型。 */
     private const val CONTENT_TYPE_JSON = "application/json"
 
@@ -64,11 +70,26 @@ object NetworkModule {
     /** 夸克 Cookie 域名后缀（同时覆盖 pan/drive-pc/drive.quark.cn 等）。 */
     private const val COOKIE_DOMAIN_QUARK = "quark.cn"
 
+    /** UC Cookie 域名后缀（同时覆盖 drive.uc.cn 与 pc-api.uc.cn）。 */
+    private const val COOKIE_DOMAIN_UC = "uc.cn"
+
     /** 多 Cookie 拼接分隔符（HTTP Cookie 头规范）。 */
     private const val COOKIE_SEPARATOR = "; "
 
     /** HTTP GET 方法名（用于把「写类调用」从诊断日志中区分出来）。 */
     private const val METHOD_GET = "GET"
+
+    /** 连接池最大空闲连接数（B2 功能②：配合 32–512 分片并发，避免频繁重建 TLS 连接）。 */
+    private const val MAX_IDLE_CONNECTIONS = 512
+
+    /** 空闲连接保活时长（分钟）。 */
+    private const val KEEP_ALIVE_MINUTES = 5L
+
+    /** OkHttp 分派器最大请求数（含异步；同步下载主要受线程数限制，此处一并抬高）。 */
+    private const val MAX_REQUESTS = 512
+
+    /** OkHttp 分派器单主机最大请求数（直链 CDN 同主机多分片需放宽）。 */
+    private const val MAX_REQUESTS_PER_HOST = 512
 
     /**
      * 提供全局 OkHttpClient。
@@ -88,15 +109,30 @@ object NetworkModule {
             .readTimeout(TIMEOUT_READ_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(TIMEOUT_WRITE_SECONDS, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
+            // B2 功能②：抬高连接池与分派器上限，支撑 32–512 分片的高并发直链下载。
+            .connectionPool(
+                ConnectionPool(MAX_IDLE_CONNECTIONS, KEEP_ALIVE_MINUTES, TimeUnit.MINUTES)
+            )
+            .dispatcher(
+                Dispatcher().apply {
+                    maxRequests = MAX_REQUESTS
+                    maxRequestsPerHost = MAX_REQUESTS_PER_HOST
+                }
+            )
             .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
-                    .apply {
-                        val agent = userAgentProvider.quarkUserAgent
-                        if (agent.isNotBlank()) {
-                            header(HEADER_USER_AGENT, agent)
-                        }
-                    }
-                    .build()
+                val original = chain.request()
+                // 按目标 host 选择对应网盘的 UA：UC 用 ucUserAgent，其余（夸克）用 quarkUserAgent。
+                // 依据：两家 UA 不得混用（《抓包事实.md》§2「三套 UA」与 §1「两套 UA」）。
+                val agent = if (isUcHost(original.url.host)) {
+                    userAgentProvider.ucUserAgent
+                } else {
+                    userAgentProvider.quarkUserAgent
+                }
+                val request = if (agent.isNotBlank()) {
+                    original.newBuilder().header(HEADER_USER_AGENT, agent).build()
+                } else {
+                    original
+                }
                 chain.proceed(request)
             }
             .addInterceptor(CookieInterceptor(cookieStore))
@@ -150,6 +186,35 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideQuarkApi(retrofit: Retrofit): QuarkApi = retrofit.create(QuarkApi::class.java)
+
+    /**
+     * 提供 UC 接口实现。
+     *
+     * 说明：UC 的业务基址是 `pc-api.uc.cn`（与夸克不同），无法复用夸克 Retrofit，
+     * 故在此**独立构建**一个 Retrofit（复用同一 OkHttpClient / Json 转换器）。
+     *
+     * @param okHttpClient 全局客户端（含按 host 选 UA、Cookie 注入/采集拦截器）。
+     * @param json JSON 解析器。
+     * @return UcApi 动态代理实例。
+     */
+    @Provides
+    @Singleton
+    fun provideUcApi(okHttpClient: OkHttpClient, json: Json): UcApi =
+        Retrofit.Builder()
+            .baseUrl(BASE_URL_UC)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(CONTENT_TYPE_JSON.toMediaType()))
+            .build()
+            .create(UcApi::class.java)
+
+    /**
+     * 判定目标 host 是否属于 UC 域名族。
+     *
+     * @param host 请求目标主机名（如 `pc-api.uc.cn`）。
+     * @return true 表示 UC。
+     */
+    private fun isUcHost(host: String): Boolean =
+        host == COOKIE_DOMAIN_UC || host.endsWith(".$COOKIE_DOMAIN_UC")
 
     /** 日志 TAG。 */
     private const val TAG_HTTP = "OkHttp"
@@ -238,14 +303,22 @@ object NetworkModule {
         override fun intercept(chain: Interceptor.Chain): Response {
             val response = chain.proceed(chain.request())
             val host = chain.request().url.host
-            if (host == COOKIE_DOMAIN_QUARK || host.endsWith(".$COOKIE_DOMAIN_QUARK")) {
+            // 按目标 host 判定域名族：夸克（quark.cn）或 UC（uc.cn）。两家分别登记到各自后缀。
+            val domainSuffix = when {
+                host == COOKIE_DOMAIN_QUARK || host.endsWith(".$COOKIE_DOMAIN_QUARK") ->
+                    COOKIE_DOMAIN_QUARK
+                host == COOKIE_DOMAIN_UC || host.endsWith(".$COOKIE_DOMAIN_UC") ->
+                    COOKIE_DOMAIN_UC
+                else -> null
+            }
+            if (domainSuffix != null) {
                 val cookie = response.headers.values(HEADER_SET_COOKIE)
                     .mapNotNull { raw ->
                         raw.substringBefore(';').takeIf { pair -> pair.contains('=') }
                     }
                     .joinToString(COOKIE_SEPARATOR)
                 if (cookie.isNotBlank()) {
-                    cookieStore.save(COOKIE_DOMAIN_QUARK, cookie)
+                    cookieStore.save(domainSuffix, cookie)
                 }
             }
             return response

@@ -5,16 +5,30 @@
 
 package com.jieyundu.app.ui.screens.settings
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,10 +36,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
@@ -56,6 +73,54 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val crashState by viewModel.crashState.collectAsState()
     val runtimeState by viewModel.runtimeState.collectAsState()
     val context = LocalContext.current
+    val chunkCount by viewModel.chunkCount.collectAsState()
+    val directoryState by viewModel.directoryState.collectAsState()
+    // B2 功能①：目录选择器返回 tree Uri → 解析为真实路径落库；A1 权限仅在用户「更改目录」时按需申请。
+    val treePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.data?.let { uri -> viewModel.applyCustomDirectory(uri) }
+    }
+    val allFilesAccess = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // 不强制校验授权结果：未授权时下载会回退私有目录并记日志，不中断用户操作。
+        treePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+    }
+    val storagePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        treePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+    }
+    val requestCustomDirectory: () -> Unit = {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                if (Environment.isExternalStorageManager()) {
+                    treePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+                } else {
+                    val manageIntent = Intent(
+                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+                    ).apply { data = Uri.parse("package:${context.packageName}") }
+                    allFilesAccess.launch(manageIntent)
+                }
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                treePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED ->
+                treePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+            else -> storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
+    LaunchedEffect(directoryState.applyFailed) {
+        if (directoryState.applyFailed) {
+            Toast.makeText(context, R.string.settings_download_dir_failed, Toast.LENGTH_SHORT)
+                .show()
+            viewModel.consumeDirectoryApplyFailure()
+        }
+    }
 
     // 崩溃日志操作反馈：有可分享文件 → 系统分享；无日志 / 失败 / 已清空 → Toast 提示。
     // 依赖 crashState 整体（data class）作为 key，任一字段变化都会重新评估（修复追加）。
@@ -141,13 +206,72 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         ) {
             Text(
                 text = stringResource(
-                    R.string.settings_default_chunk_value,
-                    viewModel.defaultChunkCount,
+                    R.string.settings_chunk_hint,
+                    viewModel.minChunkCount,
                     viewModel.maxChunkCount
                 ),
                 style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+            ) {
+                viewModel.chunkCountOptions.forEach { option ->
+                    ChunkOptionChip(
+                        count = option,
+                        selected = option == chunkCount,
+                        onClick = { viewModel.setChunkCount(option) }
+                    )
+                }
+            }
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_download_dir),
+            contentPadding = contentPadding
+        ) {
+            Text(
+                text = if (directoryState.isCustom) {
+                    directoryState.customPath
+                        ?: stringResource(R.string.settings_download_dir_default_value)
+                } else {
+                    stringResource(
+                        R.string.settings_download_dir_public_format,
+                        directoryState.publicFolderName
+                    )
+                },
+                style = MaterialTheme.typography.bodyMedium,
                 color = JieYunDuColors.TextPrimary
             )
+            Text(
+                text = if (directoryState.isCustom) {
+                    stringResource(R.string.settings_download_dir_custom_hint)
+                } else {
+                    stringResource(R.string.settings_download_dir_public_hint)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            GlassButton(
+                text = stringResource(R.string.settings_download_dir_change),
+                onClick = requestCustomDirectory,
+                height = Dimens.ButtonHeightCompact,
+                cornerRadius = Dimens.ButtonCornerCompact,
+                fillColor = JieYunDuColors.ButtonFill,
+                borderColor = JieYunDuColors.ButtonBorder,
+                contentColor = JieYunDuColors.OnPrimary
+            )
+            if (directoryState.isCustom) {
+                GlassButton(
+                    text = stringResource(R.string.settings_download_dir_reset),
+                    onClick = viewModel::resetDownloadDirectory,
+                    height = Dimens.ButtonHeightCompact,
+                    cornerRadius = Dimens.ButtonCornerCompact,
+                    fillColor = JieYunDuColors.GlassFillStrong,
+                    borderColor = JieYunDuColors.GlassBorder,
+                    contentColor = JieYunDuColors.TextPrimary
+                )
+            }
         }
         SettingsCard(
             title = stringResource(R.string.settings_temp_cleanup),
@@ -281,6 +405,41 @@ private fun SettingsCard(
             )
             content()
         }
+    }
+}
+
+/**
+ * 并发档位胶囊（B2 功能②：32 / 64 / 128 / 256 / 512）。
+ *
+ * 说明：视觉与下载页筛选胶囊一致（圆角 = [Dimens.FilterChipCorner]，选中主色底 + 白字）。
+ *
+ * @param count 档位数值。
+ * @param selected 是否选中。
+ * @param onClick 点击回调。
+ */
+@Composable
+private fun ChunkOptionChip(
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(Dimens.FilterChipCorner)
+    val background = if (selected) JieYunDuColors.Primary else JieYunDuColors.InputFieldFill
+    val contentColor = if (selected) JieYunDuColors.OnPrimary else JieYunDuColors.TextSecondary
+    Box(
+        modifier = Modifier
+            .height(Dimens.FilterChipHeight)
+            .clip(shape)
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = Dimens.SpaceMd),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = contentColor
+        )
     }
 }
 

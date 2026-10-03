@@ -6,9 +6,13 @@
 package com.jieyundu.app.ui.screens.settings
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.BuildConfig
+import com.jieyundu.app.data.settings.AppSettingsStore
+import com.jieyundu.app.data.settings.DownloadDirectoryMode
+import com.jieyundu.app.data.storage.DocumentTreePathResolver
 import com.jieyundu.app.domain.downloader.DownloadTask
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.parser.ParserRegistry
@@ -40,6 +44,7 @@ import timber.log.Timber
 class SettingsViewModel @Inject constructor(
     parserRegistry: ParserRegistry,
     private val tempFolderManager: TempFolderManager,
+    private val appSettingsStore: AppSettingsStore,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
@@ -49,11 +54,78 @@ class SettingsViewModel @Inject constructor(
     /** 应用版本名。 */
     val versionName: String = BuildConfig.VERSION_NAME
 
-    /** 默认并发分片数（4.2：默认 8）。 */
+    /** 默认并发分片数（B2 功能②：默认 64）。 */
     val defaultChunkCount: Int = DownloadTask.DEFAULT_CHUNK_COUNT
 
-    /** 并发分片上限（4.2：上限 32）。 */
+    /** 并发分片上限（B2 功能②：上限 512）。 */
     val maxChunkCount: Int = DownloadTask.MAX_CHUNK_COUNT
+
+    /** 并发分片下限（B2 功能②：下限 32）。 */
+    val minChunkCount: Int = DownloadTask.MIN_CHUNK_COUNT
+
+    /** 可选的并发档位（32 / 64 / 128 / 256 / 512）。 */
+    val chunkCountOptions: List<Int> = DownloadTask.CHUNK_COUNT_OPTIONS
+
+    /** 当前下载并发分片数（持久化设置）。 */
+    val chunkCount: StateFlow<Int> = appSettingsStore.chunkCount
+
+    private val _directoryState = MutableStateFlow(
+        DownloadDirectoryState(
+            isCustom = appSettingsStore.downloadDirectoryMode == DownloadDirectoryMode.CUSTOM,
+            customPath = appSettingsStore.customDirectoryPath,
+            publicFolderName = appSettingsStore.publicFolderName()
+        )
+    )
+
+    /** 下载目录设置状态流。 */
+    val directoryState: StateFlow<DownloadDirectoryState> = _directoryState.asStateFlow()
+
+    /**
+     * 设置下载并发分片数（B2 功能②）。
+     *
+     * @param count 目标档位（越界由存储层收敛到 32..512）。
+     */
+    fun setChunkCount(count: Int) {
+        appSettingsStore.setChunkCount(count)
+    }
+
+    /**
+     * 应用用户选定的自定义下载目录（B2 功能① / A1）。
+     *
+     * 说明：把 SAF 目录树 Uri 解析成真实路径后落库；解析失败时不改动设置，仅回写
+     * [DownloadDirectoryState.applyFailed] 供 UI 提示。
+     *
+     * @param treeUri 目录选择器返回的 tree Uri。
+     */
+    fun applyCustomDirectory(treeUri: Uri) {
+        val realPath = DocumentTreePathResolver.resolve(appContext, treeUri)
+        if (realPath == null) {
+            Timber.w("SettingsViewModel: unresolved tree uri %s", treeUri)
+            _directoryState.value = _directoryState.value.copy(applyFailed = true)
+            return
+        }
+        appSettingsStore.setCustomDirectory(realPath)
+        _directoryState.value = DownloadDirectoryState(
+            isCustom = true,
+            customPath = realPath,
+            publicFolderName = appSettingsStore.publicFolderName()
+        )
+    }
+
+    /** 恢复默认下载目录（公共 `Download/极云渡/`，A3，无需权限）。 */
+    fun resetDownloadDirectory() {
+        appSettingsStore.resetDownloadDirectory()
+        _directoryState.value = DownloadDirectoryState(
+            isCustom = false,
+            customPath = null,
+            publicFolderName = appSettingsStore.publicFolderName()
+        )
+    }
+
+    /** 消费「目录解析失败」提示（UI 已弹出 Toast 后调用）。 */
+    fun consumeDirectoryApplyFailure() {
+        _directoryState.value = _directoryState.value.copy(applyFailed = false)
+    }
 
     private val _cleanupState = MutableStateFlow(TempCleanupState())
 
@@ -241,4 +313,19 @@ data class TempCleanupState(
     val completed: Boolean = false,
     val deletedCount: Int = 0,
     val failed: Boolean = false
+)
+
+/**
+ * 下载目录设置的 UI 状态（B2 功能①）。
+ *
+ * @property isCustom 是否处于「自定义目录」模式（CUSTOM）。
+ * @property customPath 自定义目录的真实路径；默认模式下为 null。
+ * @property publicFolderName 默认公共目录的应用专属子目录名（如「极云渡」）。
+ * @property applyFailed 最近一次「更改目录」是否因无法解析而失败（UI 提示后消费）。
+ */
+data class DownloadDirectoryState(
+    val isCustom: Boolean,
+    val customPath: String?,
+    val publicFolderName: String,
+    val applyFailed: Boolean = false
 )

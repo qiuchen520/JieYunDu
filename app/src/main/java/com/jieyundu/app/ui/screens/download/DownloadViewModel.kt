@@ -5,6 +5,8 @@
 
 package com.jieyundu.app.ui.screens.download
 
+import android.content.Context
+import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,6 +16,7 @@ import com.jieyundu.app.domain.downloader.DownloadEngine
 import com.jieyundu.app.domain.downloader.DownloadProgressState
 import com.jieyundu.app.domain.downloader.DownloadState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -138,7 +141,8 @@ data class DownloadListItem(
 class DownloadViewModel @Inject constructor(
     private val downloadEngine: DownloadEngine,
     private val downloadRepository: DownloadRepository,
-    private val sessionRegistry: DownloadSessionRegistry
+    private val sessionRegistry: DownloadSessionRegistry,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private val _filter = MutableStateFlow(DownloadFilter.ALL)
@@ -216,13 +220,35 @@ class DownloadViewModel @Inject constructor(
         runEngineAction {
             downloadEngine.cancel(taskId)
             if (savePath != null) {
-                val file = File(savePath)
-                if (file.isFile && !file.delete()) {
-                    Timber.e("DownloadViewModel failed to delete local file: %s", savePath)
-                }
+                deleteLocalFile(savePath)
             }
             downloadRepository.deleteProgress(taskId)
             sessionRegistry.forget(taskId)
+        }
+    }
+
+    /**
+     * 删除一个本地文件（B2 功能①：兼容「已发布到公共下载目录」的两种位置）。
+     *
+     * 说明：默认（A3）模式发布的成品，在 Android 10+ 上是 MediaStore 的 `content://` 记录，
+     * 需经 `ContentResolver.delete` 删除；`<29` 与自定义目录则是真实文件路径，直接删文件。
+     *
+     * @param location 会话登记的落盘位置（`content://` Uri 或绝对路径）。
+     */
+    private fun deleteLocalFile(location: String) {
+        if (location.startsWith(CONTENT_SCHEME)) {
+            val uri = Uri.parse(location)
+            val deleted = runCatching {
+                appContext.contentResolver.delete(uri, null, null)
+            }.getOrDefault(0)
+            if (deleted <= 0) {
+                Timber.e("DownloadViewModel failed to delete published file: %s", location)
+            }
+            return
+        }
+        val file = File(location)
+        if (file.isFile && !file.delete()) {
+            Timber.e("DownloadViewModel failed to delete local file: %s", location)
         }
     }
 
@@ -249,5 +275,8 @@ class DownloadViewModel @Inject constructor(
     private companion object {
         /** 无订阅者后停止上游流的超时时间（毫秒）。 */
         const val STOP_TIMEOUT_MILLIS = 5_000L
+
+        /** 内容 Uri 协议前缀（已发布到 MediaStore 的成品位置）。 */
+        const val CONTENT_SCHEME = "content://"
     }
 }

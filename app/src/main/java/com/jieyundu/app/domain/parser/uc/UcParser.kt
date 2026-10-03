@@ -1,38 +1,62 @@
 // 文件：UcParser.kt
-// 职责：UC 网盘分享链接解析器（阶段 9 占位骨架，真实实现待用户抓包后补全）
-// 依赖：NetdiskParser、LinkExtractor、NetdiskType、ParseResult
+// 职责：UC 网盘分享链接解析器——解析分享根目录 / 按需展开子目录 / 个人网盘浏览（照夸克同构）
+// 依赖：UcApi、ShareBrowser、PersonalBrowser、NetdiskParser、LinkExtractor、CookieStore、OkHttpClient、Timber
 // 协议：AGPL-3.0
-
 package com.jieyundu.app.domain.parser.uc
 
+import com.jieyundu.app.data.remote.CookieStore
+import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.ParseResult
+import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskParser
+import com.jieyundu.app.domain.parser.PersonalBrowser
+import com.jieyundu.app.domain.parser.ShareBrowser
 import com.jieyundu.app.domain.util.LinkExtractor
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import timber.log.Timber
 
 /**
- * UC 网盘解析器（占位骨架）。
+ * UC 网盘解析器（浏览职责）。
  *
- * 说明（《要求.md》第十一部分 · 阶段 9）：
- * - 本阶段**仅交付接口骨架与占位**，不实现真实解析流程；
- * - 所有涉及真实接口、参数、字段名、风控规则的位置一律以 `TODO(用户抓包):` 标注，
- *   等待抓包数据填入（铁律 R3）；
- * - 解析统一走 [LinkExtractor.detectType] 判定域名，避免各处重复维护域名列表。
+ * 流程（照 [com.jieyundu.app.domain.parser.quark.QuarkParser] 同构，参数/域名对齐
+ * 《抓包事实.md》§2 / §6.1）：
+ * 1. best-effort 请求 `https://drive.uc.cn/` 首页取 `__pus` / `__puus`（合并登记）；
+ * 2. 从分享链接提取 pwd_id（[LinkExtractor.extractShareId]）；
+ * 3. 调 token 接口换 stoken（**携带 `share_for_transfer`，UC 与夸克字段不同，不可抄混**）；
+ * 4. 调 `sharepage/v2/detail` 取根目录文件列表（`data.detail_info.list`，兼容 `data.list`）；
+ * 5. 点文件夹时，以该文件夹 fid 为 `pdir_fid` 再调 v2/detail 取子目录（[listChildren]）。
  *
- * 备注：UC 网盘与夸克同源（均为 drive-pc 接口族），后续实现时 Cookie 通道可复用
- * [com.jieyundu.app.data.remote.CookieStore]。
+ * 转存 + 轮询 + 取直链不在解析阶段（由 [com.jieyundu.app.domain.transfer.UcShareTransfer] 在点下载时执行）。
  *
- * @see NetdiskParser
+ * 未闭合、需人工抓包的项（铁律 R3）：
+ * - **容量接口**：文档未给出 UC 的容量端点 → [fetchQuota] 返回 null 并标 `TODO(用户抓包)`；
+ * - 提取码「需要 / 错误」的真实业务码（占位值）。
+ *
+ * 线程约束：网络与 IO 全部运行在 [Dispatchers.IO]（编码风格 C9）。
+ *
+ * @param api UC 接口（BaseUrl 与固定 Header 见 di/NetworkModule）。
+ * @param okHttpClient 复用的 OkHttp 客户端，用于第 1 步 best-effort 取 Cookie（超时见 C4）。
+ * @param cookieStore 内存态 Cookie 仓库，用于登记 `__pus`/`__puus`。
  */
 @Singleton
-class UcParser @Inject constructor() : NetdiskParser {
-
+class UcParser @Inject constructor(
+    private val api: UcApi,
+    private val okHttpClient: OkHttpClient,
+    private val cookieStore: CookieStore
+) : NetdiskParser, ShareBrowser, PersonalBrowser {
     override val type: NetdiskType = NetdiskType.UC
 
     /**
-     * UC 网盘分享链接判定：交由统一的域名正则。
+     * UC 分享链接判定：交由统一的域名正则。
      *
      * @param url 分享链接。
      * @return 是否属于 UC 网盘。
@@ -41,21 +65,353 @@ class UcParser @Inject constructor() : NetdiskParser {
         LinkExtractor.detectType(url) == NetdiskType.UC
 
     /**
-     * 解析 UC 网盘分享链接。
-     *
-     * ⚠️ 阶段 9 仅交付占位骨架：真实流程（Cookie 握手 → token → 文件列表 → 直链，
-     * 以及提取码校验）待用户抓包后补全（铁律 R3）。
+     * 解析 UC 分享链接（仅根目录一层）。
      *
      * @param url 分享链接。
-     * @param pwd 提取码，可为 null。
-     * @return 固定返回 [ParseResult.Error]（[CODE_NOT_IMPLEMENTED]），由 UI 映射为中性文案。
+     * @param pwd 提取码；为 null / 空白时按「无提取码」直接尝试，仅当服务器明确要求时才返回
+     *   [ParseResult.NeedPassword]。
+     * @return 解析结果。
+     * @throws IOException 网络不可用或请求失败。
+     * @throws SerializationException 响应体结构与预期不符。
      */
-    override suspend fun parse(url: String, pwd: String?): ParseResult =
-        // TODO(用户抓包): 补全 UC 网盘解析流程（首页 Cookie → token → 文件列表 → 直链）
-        ParseResult.Error(type, CODE_NOT_IMPLEMENTED, CODE_NOT_IMPLEMENTED)
+    override suspend fun parse(url: String, pwd: String?): ParseResult {
+        val pwdId = LinkExtractor.extractShareId(url)
+        if (pwdId.isBlank()) {
+            return ParseResult.Error(type, CODE_INVALID_LINK, CODE_INVALID_LINK)
+        }
+        return withContext(Dispatchers.IO) {
+            try {
+                // 第 1 步：best-effort 取 __pus / __puus。失败仅告警、不中断流程。
+                registerHandshakeCookies()
+                // 第 2 步：换 stoken（UC 携带 share_for_transfer）。
+                val tokenResponse = api.getShareToken(buildTokenBody(pwdId, pwd))
+                when (tokenResponse.code) {
+                    NEED_PASSWORD_CODE ->
+                        return@withContext ParseResult.NeedPassword(type)
+                    WRONG_PASSWORD_CODE ->
+                        return@withContext ParseResult.Error(
+                            type,
+                            CODE_WRONG_PASSWORD,
+                            CODE_WRONG_PASSWORD
+                        )
+                    SUCCESS_CODE -> Unit
+                    else -> return@withContext ParseResult.Error(
+                        type,
+                        tokenResponse.code.toString(),
+                        CODE_TOKEN_FAILED
+                    )
+                }
+                val tokenData = tokenResponse.data
+                val stoken = tokenData?.stoken.orEmpty()
+                if (stoken.isBlank()) {
+                    Timber.w("UcParser token data missing, code=%d", tokenResponse.code)
+                    return@withContext ParseResult.Error(
+                        type,
+                        CODE_TOKEN_FAILED,
+                        CODE_TOKEN_FAILED
+                    )
+                }
+                // 第 3 步：取根目录文件列表（真实结构 data.detail_info.list，兼容 data.list）。
+                val entries = fetchEntries(pwdId, stoken, pwd.orEmpty(), ROOT_PDIR_FID)
+                    ?: return@withContext ParseResult.Error(
+                        type,
+                        CODE_DETAIL_FAILED,
+                        CODE_DETAIL_FAILED
+                    )
+                ParseResult.Success(
+                    netdiskType = type,
+                    shareTitle = tokenData?.title.orEmpty(),
+                    files = entries.map { entry -> entry.toFileInfo() },
+                    pwdId = pwdId,
+                    stoken = stoken
+                )
+            } catch (cancellation: CancellationException) {
+                // C3：协程取消必须原样抛出，不得吞掉
+                throw cancellation
+            } catch (io: IOException) {
+                Timber.e(io, "UcParser parse failed: network error")
+                ParseResult.Error(type, CODE_NETWORK, CODE_NETWORK)
+            } catch (serialization: SerializationException) {
+                Timber.e(serialization, "UcParser parse failed: unexpected response body")
+                ParseResult.Error(type, CODE_PROTOCOL, CODE_PROTOCOL)
+            }
+        }
+    }
+
+    /**
+     * 列出分享内指定目录的直接子项（点文件夹展开用）。
+     *
+     * 说明：浏览阶段拿不到 passcode（[ShareBrowser] 接口签名不含），UC v2/detail 允许
+     * passcode 为空串（《抓包事实.md》§6.1②），故传空串即可；带密码的分享在 token 阶段
+     * 已校验通过，后续 detail 无需再次带码。
+     *
+     * @param pwdId 分享 ID。
+     * @param stoken 分享临时令牌。
+     * @param pdirFid 目标目录 fid。
+     * @return 该目录下的条目列表；请求失败返回空列表。
+     */
+    override suspend fun listChildren(
+        pwdId: String,
+        stoken: String,
+        pdirFid: String
+    ): List<FileInfo> = withContext(Dispatchers.IO) {
+        fetchEntries(pwdId, stoken, EMPTY_PASSCODE, pdirFid)
+            ?.map { entry -> entry.toFileInfo() }
+            .orEmpty()
+    }
+
+    /**
+     * 拉取分享内某目录的条目。
+     *
+     * @param pwdId 分享 ID。
+     * @param stoken 分享临时令牌。
+     * @param passcode 提取码；无则空串。
+     * @param pdirFid 目标目录 fid。
+     * @return 条目列表；服务端返回非成功码时返回 null。
+     */
+    private suspend fun fetchEntries(
+        pwdId: String,
+        stoken: String,
+        passcode: String,
+        pdirFid: String
+    ): List<UcFile>? {
+        val detailResponse = api.getShareDetail(
+            UcShareDetailRequest(
+                pwd_id = pwdId,
+                passcode = passcode,
+                pdir_fid = pdirFid,
+                size = PAGE_SIZE
+            )
+        )
+        if (detailResponse.code != SUCCESS_CODE) {
+            Timber.w("UcParser detail code=%d pdir=%s", detailResponse.code, pdirFid)
+            return null
+        }
+        return detailResponse.data?.entries ?: emptyList()
+    }
+
+    /**
+     * 列出**个人网盘**指定目录的直接子项（流程 B：网盘管理）。
+     *
+     * 依据：《抓包事实.md》§2——UC 走 `1/clouddrive/file`。
+     *
+     * @param pdirFid 目标目录 fid；根目录为 `0`。
+     * @return 该目录下的条目列表；失败返回空列表。
+     */
+    override suspend fun listPersonalChildren(pdirFid: String): List<FileInfo> =
+        withContext(Dispatchers.IO) {
+            val response = api.listFiles(buildPersonalListParams(pdirFid))
+            if (response.code != SUCCESS_CODE) {
+                Timber.w("UcParser personal list code=%d pdir=%s", response.code, pdirFid)
+                return@withContext emptyList()
+            }
+            response.data?.list.orEmpty().map { entry -> entry.toFileInfo() }
+        }
+
+    /**
+     * 查询**个人网盘**容量（流程 B：网盘管理头部）。
+     *
+     * 依据：《抓包事实.md》§10.1——UC 与夸克同构，走 `1/clouddrive/member`。
+     *
+     * @return 容量信息；失败返回 null。
+     */
+    override suspend fun fetchQuota(): QuotaInfo? = withContext(Dispatchers.IO) {
+        val response = api.getMember(buildMemberParams())
+        if (response.code != SUCCESS_CODE) {
+            Timber.w("UcParser member code=%d", response.code)
+            return@withContext null
+        }
+        val member = response.data ?: return@withContext null
+        QuotaInfo(used = member.use_capacity, total = member.total_capacity)
+    }
+
+    /**
+     * 构造个人网盘列表查询参数（《抓包事实.md》§2）。
+     *
+     * 写法约定：`pr` / `fr` 由本方法提供，[UcApi.listFiles] 路径里不再写死——与
+     * `detail` / `save` 统一，「固定参数」只有一处来源。
+     *
+     * @param pdirFid 目标目录 fid。
+     * @return 查询参数键值对。
+     */
+    private fun buildPersonalListParams(pdirFid: String): Map<String, String> = mapOf(
+        KEY_PR to UC_PR,
+        KEY_FR to UC_FR,
+        KEY_PDIR_FID to pdirFid,
+        KEY_PAGE to FIRST_PAGE,
+        KEY_SIZE to PERSONAL_PAGE_SIZE,
+        KEY_FETCH_TOTAL to ONE_VALUE,
+        KEY_FETCH_SUB_DIRS to ZERO_VALUE,
+        KEY_SORT to PERSONAL_SORT
+    )
+
+    /**
+     * 构造容量查询参数（《抓包事实.md》§10.1）。
+     *
+     * @return 查询参数键值对。
+     */
+    private fun buildMemberParams(): Map<String, String> = mapOf(
+        KEY_PR to UC_PR,
+        KEY_FR to UC_FR,
+        KEY_FETCH_SUBSCRIBE to TRUE_VALUE,
+        KEY_CH to HOME_CHANNEL
+    )
+
+    /**
+     * 第 1 步（best-effort）：访问 UC 首页并合并取出 `__pus` 与 `__puus`。
+     *
+     * 实测：token 与 detail 接口无需任何 Cookie，故本步骤任何失败都不影响解析，
+     * 仅在取到时登记以提升后续（download / CDN）链路的成功率。
+     */
+    private fun registerHandshakeCookies() {
+        val request = Request.Builder()
+            .url(UC_HOME_URL)
+            .get()
+            .build()
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Timber.w(
+                        "UcParser home request failed with code %d (cookies optional)",
+                        response.code
+                    )
+                    return
+                }
+                val cookie = response.headers(HEADER_SET_COOKIE)
+                    .mapNotNull { raw -> raw.substringBefore(';').trim() }
+                    .filter { pair ->
+                        pair.startsWith("$PUS_COOKIE_NAME=") ||
+                            pair.startsWith("$PUUS_COOKIE_NAME=")
+                    }
+                    .joinToString(COOKIE_SEPARATOR)
+                if (cookie.isNotBlank()) {
+                    cookieStore.save(UC_COOKIE_HOST_SUFFIX, cookie)
+                }
+            }
+        } catch (io: IOException) {
+            Timber.w(io, "UcParser home request failed (cookies optional)")
+        }
+    }
+
+    /**
+     * 构造 token 接口请求体。
+     *
+     * 说明：
+     * - 无提取码时**不带** `passcode`，交由服务器判定；
+     * - 恒定携带 `share_for_transfer=true`（**UC 特有字段**，对应夸克的
+     *   `support_visit_limit_private_share`，不可互抄；《抓包事实.md》§6.1①）。
+     *
+     * @param pwdId 分享 ID。
+     * @param passcode 提取码；为 null / 空白表示链接未携带提取码。
+     * @return 请求体键值对。
+     */
+    private fun buildTokenBody(pwdId: String, passcode: String?): Map<String, String> {
+        val body = linkedMapOf(
+            KEY_PWD_ID to pwdId,
+            KEY_SHARE_FOR_TRANSFER to TRUE_VALUE
+        )
+        if (!passcode.isNullOrBlank()) {
+            body[KEY_PASSCODE] = passcode
+        }
+        return body
+    }
+
+    /**
+     * 把 UC 的文件条目映射为领域模型（浏览阶段无直链）。
+     *
+     * @return 领域层文件描述。
+     */
+    private fun UcFile.toFileInfo(): FileInfo = FileInfo(
+        fid = fid,
+        fileName = file_name,
+        fileSize = size,
+        isDirectory = dir,
+        downloadUrl = null,
+        shareFidToken = share_fid_token
+    )
 
     private companion object {
-        /** 占位错误码：该网盘解析尚未实现（UI 侧映射为「开发中」文案）。 */
-        const val CODE_NOT_IMPLEMENTED = "UC_NOT_IMPLEMENTED"
+        /** UC 首页，用于 best-effort 获取 __pus / __puus Cookie。 */
+        const val UC_HOME_URL = "https://drive.uc.cn/"
+
+        /** Cookie 名。 */
+        const val PUS_COOKIE_NAME = "__pus"
+        const val PUUS_COOKIE_NAME = "__puus"
+
+        /** 响应 Set-Cookie 头名与拼接分隔符。 */
+        const val HEADER_SET_COOKIE = "Set-Cookie"
+        const val COOKIE_SEPARATOR = "; "
+
+        /** Cookie 域名后缀：覆盖 drive.uc.cn（握手）与 pc-api.uc.cn（接口）。 */
+        const val UC_COOKIE_HOST_SUFFIX = "uc.cn"
+
+        /** 根目录的 pdir_fid 取值（实测根目录为 "0"）。 */
+        const val ROOT_PDIR_FID = "0"
+
+        /** 无提取码时传给 detail 的空串（《抓包事实.md》§6.1②）。 */
+        const val EMPTY_PASSCODE = ""
+
+        /** UC PC 平台固定查询参数。 */
+        const val UC_PR = "UCBrowser"
+        const val UC_FR = "pc"
+
+        /** 分页参数。 */
+        const val FIRST_PAGE = "1"
+        const val PAGE_SIZE = 50
+        const val PERSONAL_PAGE_SIZE = "100"
+
+        /** 排序表达式（folder 优先）。 */
+        const val PERSONAL_SORT = "file_type:asc,updated_at:desc"
+
+        /** 布尔 / 占位字面量。 */
+        const val TRUE_VALUE = "true"
+        const val ONE_VALUE = "1"
+        const val ZERO_VALUE = "0"
+
+        /** 请求参数名。 */
+        const val KEY_PWD_ID = "pwd_id"
+        const val KEY_PASSCODE = "passcode"
+        const val KEY_SHARE_FOR_TRANSFER = "share_for_transfer"
+        const val KEY_PDIR_FID = "pdir_fid"
+        const val KEY_PR = "pr"
+        const val KEY_FR = "fr"
+        const val KEY_PAGE = "_page"
+        const val KEY_SIZE = "_size"
+        const val KEY_SORT = "_sort"
+        const val KEY_FETCH_TOTAL = "_fetch_total"
+        const val KEY_FETCH_SUB_DIRS = "_fetch_sub_dirs"
+        const val KEY_FETCH_SUBSCRIBE = "fetch_subscribe"
+        const val KEY_CH = "_ch"
+
+        /** 容量查询的首页频道（《抓包事实.md》§10.1）。 */
+        const val HOME_CHANNEL = "home"
+
+        /** 成功状态码（实测为 0）。 */
+        const val SUCCESS_CODE = 0
+
+        /**
+         * 「需要提取码」状态码。
+         *
+         * TODO(用户抓包): 核对 UC 在分享需要提取码时 token 接口返回的业务码（当前为占位值）。
+         */
+        const val NEED_PASSWORD_CODE = 41011
+
+        /**
+         * 「提取码错误」状态码。
+         *
+         * TODO(用户抓包): 核对 UC 在提取码错误时 token 接口返回的业务码（当前为占位值）。
+         */
+        const val WRONG_PASSWORD_CODE = 41012
+
+        /**
+         * 错误码。为保持 domain 层不依赖 Android 资源系统，
+         * code 与 message 均使用机器可读标识，由 UI 层映射为 strings.xml 文案。
+         */
+        const val CODE_INVALID_LINK = "UC_INVALID_LINK"
+        const val CODE_TOKEN_FAILED = "UC_TOKEN_FAILED"
+        const val CODE_DETAIL_FAILED = "UC_DETAIL_FAILED"
+        const val CODE_WRONG_PASSWORD = "UC_WRONG_PASSWORD"
+        const val CODE_NETWORK = "UC_NETWORK_ERROR"
+        const val CODE_PROTOCOL = "UC_PROTOCOL_ERROR"
     }
 }

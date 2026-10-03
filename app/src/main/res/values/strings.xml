@@ -70,7 +70,7 @@
 
     <!-- 设置页（阶段 8）-->
     <string name="settings_supported_netdisks">已支持网盘</string>
-    <string name="settings_default_chunk">默认并发分片数</string>
+    <string name="settings_default_chunk">下载并发分片数</string>
     <string name="settings_default_chunk_value">%1$d（上限 %2$d）</string>
     <string name="settings_about">关于</string>
     <string name="settings_temp_cleanup">临时文件清理</string>
@@ -161,4 +161,21 @@
     <string name="download_filter_downloading">下载中</string>
     <string name="download_filter_completed">已完成</string>
     <string name="cd_delete_download">删除本地文件</string>
+    <!-- B2 功能①：下载目录（公共子目录名 + 设置项文案）-->
+    <string name="download_public_folder_name">极云渡</string>
+    <string name="settings_chunk_hint">分片并发数（%1$d–%2$d），越大越快但可能被网盘限速</string>
+    <string name="settings_download_dir">下载目录</string>
+    <string name="settings_download_dir_public_format">公共目录 Download/%1$s/（默认，无需权限）</string>
+    <string name="settings_download_dir_default_value">公共下载目录</string>
+    <string name="settings_download_dir_public_hint">文件下载完成后保存到系统「下载」目录，任意文件管理器可见。</string>
+    <string name="settings_download_dir_custom_hint">已启用自定义目录；下载将直接写入该路径（需要「所有文件访问」权限）。</string>
+    <string name="settings_download_dir_change">更改目录</string>
+    <string name="settings_download_dir_reset">恢复默认</string>
+    <string name="settings_download_dir_failed">该目录无法解析为真实路径，请换一个目录</string>
+    <!-- B2 功能③：分享 / 安装 -->
+    <string name="cd_share_download">分享文件</string>
+    <string name="cd_install_download">安装应用</string>
+    <string name="download_share_chooser">分享文件</string>
+    <string name="download_share_unavailable">文件不存在或无法分享</string>
+    <string name="download_install_unavailable">无法启动安装程序</string>
 </resources>

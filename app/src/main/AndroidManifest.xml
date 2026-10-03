@@ -14,7 +14,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
+    <!-- 下载目录（B2 功能①）：默认走公共目录（A3，无需权限）；仅用户主动「更改目录」时按需申请「所有文件访问」（A1） -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- Android 8/9 写入公共下载目录所需（10+ 走 MediaStore，不再需要） -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <!-- 分享/安装（B2 功能③）：下载完成的 APK 一键安装 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:name=".JieYunDuApp"
         android:allowBackup="true"

@@ -9,6 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -37,7 +39,7 @@ import timber.log.Timber
  * 分片并发下载引擎。
  *
  * 能力（《要求.md》4.2）：
- * - HTTP Range 分片并发，分片数即并发数，收敛到 1..32；
+ * - HTTP Range 分片并发，分片数即并发数，收敛到 32..512（B2 功能②）；
  * - 断点续传：每个分片落盘为独立 `.part` 文件，重启后按已落盘长度续传；
  * - 暂停 / 继续 / 取消；
  * - 通过 [observe] 暴露离散状态，通过 [observeProgress] 暴露进度与速度。
@@ -60,7 +62,17 @@ class DownloadEngine @Inject constructor(
 
     /** 引擎自有作用域，随进程存活；不使用 GlobalScope。 */
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
+    /**
+     * 分片下载专用调度器（B2 功能②）。
+     *
+     * 背景：分片下载走阻塞式 [okhttp3.Call.execute]，真实并发度受「同时阻塞的线程数」限制，
+     * 而 [Dispatchers.IO] 的并行度上限为 64，无法支撑 32–512 档位。故改用按需创建、空闲回收的
+     * 缓存线程池：分片数即并发数，配合 [ChunkManager] 切分出多少个分片就同时跑多少条阻塞请求。
+     * 空闲线程在回收期内自动销毁，不会长期占用资源。
+     */
+    private val downloadDispatcher = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, DOWNLOAD_THREAD_NAME)
+    }.asCoroutineDispatcher()
     /** 分片计算与文件合并工具。 */
     private val chunkManager: ChunkManager = ChunkManager()
 
@@ -224,7 +236,8 @@ class DownloadEngine @Inject constructor(
         try {
             coroutineScope {
                 chunks.map { chunk ->
-                    async {
+                    // 在专用调度器上并发执行：每个分片一条阻塞请求，分片数即并发数（B2 功能②）。
+                    async(downloadDispatcher) {
                         downloadChunk(runtime, chunk, chunkManager.partFile(targetFile, chunk.index))
                     }
                 }.awaitAll()
@@ -448,6 +461,9 @@ class DownloadEngine @Inject constructor(
     }
 
     private companion object {
+        /** 分片下载线程名前缀（便于抓日志 / 排查）。 */
+        const val DOWNLOAD_THREAD_NAME = "jyd-download"
+
         /** Range 请求头名。 */
         const val HEADER_RANGE = "Range"
 

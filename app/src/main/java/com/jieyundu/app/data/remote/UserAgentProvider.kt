@@ -47,11 +47,38 @@ class UserAgentProvider @Inject constructor() {
     /** 百度 Referer。 */
     val baiduReferer: String = "https://pan.baidu.com/"
 
-    // TODO(用户抓包): 填入 UC 网盘客户端 User-Agent 原文
-    /** UC 网盘 User-Agent。 */
-    val ucUserAgent: String = ""
+    /**
+     * UC 网盘客户端 User-Agent（登录态 API / 取链链路使用）。
+     *
+     * 来源：《抓包事实.md》第 2 节「三套 UA」之②「云盘客户端（登录态取链）」。
+     * 说明：App 的转存 / 取链均需登录态（Cookie），故 API 请求统一使用该客户端 UA。
+     */
+    val ucUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) uc-cloud-drive/1.6.1 Chrome/100.0.4896.160 " +
+            "Electron/18.3.5.16-b62cf9c50d Safari/537.36 Channel/ucpan_other_ch"
 
-    /** UC Referer。 */
+    /**
+     * UC 网盘游客（未登录）链路 User-Agent（取链与下载字节使用）。
+     *
+     * 来源：《抓包事实.md》第 2 节「三套 UA」之③。当前登录态链路用 [ucUserAgent]；
+     * 该游客 UA 备用于无登录态的直链下载场景（配套 Sec-Ch-Ua 见文档）。
+     */
+    val ucGuestUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) uc-cloud-drive/2.5.20 Chrome/100.0.4896.160 " +
+            "Electron/18.3.5.4-b478491100 Safari/537.36 Channel/pckk_other_ch"
+
+    /**
+     * UC 网页 / 登录态 User-Agent（内嵌 WebView 登录页使用）。
+     *
+     * 来源：《抓包事实.md》第 2 节「三套 UA」之①「登录态网页」。
+     */
+    val ucWebUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    /** UC Referer（缺它直链会被限速到约 100KB/s；《抓包事实.md》§2）。 */
     val ucReferer: String = "https://drive.uc.cn/"
 
     // TODO(用户抓包): 填入迅雷云盘客户端 User-Agent 原文
