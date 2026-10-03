@@ -1,0 +1,66 @@
+// 文件：Color.kt
+// 职责：集中定义全部颜色常量（C6：禁止硬编码十六进制）
+// 依赖：Compose UI graphics
+// 协议：AGPL-3.0
+
+package com.jieyundu.app.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+/**
+ * 颜色常量表（对应编码风格 C6）。
+ *
+ * 说明：所有颜色必须引用此处常量，不得在 Composable 中硬编码十六进制。
+ */
+object JieYunDuColors {
+    /** 背板深色底色（9.1：近黑）。 */
+    val Background: Color = Color(0xFF0A0A0F)
+
+    /** 背景色块：紫。 */
+    val BackdropPurple: Color = Color(0xFF6C4CE0)
+
+    /** 背景色块：蓝。 */
+    val BackdropBlue: Color = Color(0xFF2F6BFF)
+
+    /** 背景色块：青。 */
+    val BackdropCyan: Color = Color(0xFF36D6E0)
+
+    /** 玻璃面板底色（白色 8%）。 */
+    val GlassFill: Color = Color(0x14FFFFFF)
+
+    /** 玻璃面板底色（白色 12%，按钮等强调元件）。 */
+    val GlassFillStrong: Color = Color(0x1FFFFFFF)
+
+    /** 玻璃面板边框（白色 15%）。 */
+    val GlassBorder: Color = Color(0x26FFFFFF)
+
+    /** 边缘高光起始（白色 60%）。 */
+    val GlassHighlightTop: Color = Color(0x99FFFFFF)
+
+    /** 高光 / 描边渐变的透明端。 */
+    val GlassHighlightClear: Color = Color(0x00FFFFFF)
+
+    /** 分隔线主色（白色 20%）。 */
+    val GlassDivider: Color = Color(0x33FFFFFF)
+
+    /** 内侧阴影（黑色 8%）。 */
+    val InnerShadow: Color = Color(0x14000000)
+
+    /** 全局噪声（白色 1.5%）。 */
+    val Noise: Color = Color(0x04FFFFFF)
+
+    /** 主文字（白色 95%）。 */
+    val TextPrimary: Color = Color(0xF2FFFFFF)
+
+    /** 次级文字（白色 60%）。 */
+    val TextSecondary: Color = Color(0x99FFFFFF)
+
+    /** 三级文字（白色 55%）。 */
+    val TextTertiary: Color = Color(0x8CFFFFFF)
+
+    /** 进度条底色（白色 10%）。 */
+    val ProgressTrack: Color = Color(0x1AFFFFFF)
+
+    /** 进度条填充（白色 70%）。 */
+    val ProgressFill: Color = Color(0xB3FFFFFF)
+}
