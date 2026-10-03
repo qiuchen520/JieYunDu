@@ -241,7 +241,9 @@
      `DownloadSessionRegistry` 提供（Room 进度表不含文件名），应用重启后历史任务名回退为「未命名任务」。
   5. 解析结果里的 `downloadUrl` 目前由 `QuarkParser` 返回 `null`（直链接口待抓包），
      故 `HomeViewModel.download` 在无直链时**记录日志并跳过**，不产生脏任务。
-- 状态：**待 CI 验证 → 待 Owner 装机验收**。
+- 推送：sha **`f7e99ae`**（18 个文件单次提交：11 新 + 6 改 + 本 CHANGELOG）；
+  CI run `37100802996`（Build APK）**全绿**，artifact `jieyundu-debug-apk` 10,302,138 B。
+- 状态：**CI 已绿 → 待 Owner 装机验收**。
 
 ## 待办 / 已知项
 - 【阶段 7 装机反馈】已按上述「阶段 7 修订」处理（本轮推送）；装机实测结论待 Owner 反馈。
