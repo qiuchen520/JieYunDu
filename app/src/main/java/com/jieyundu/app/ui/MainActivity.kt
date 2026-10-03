@@ -1,5 +1,5 @@
 // 文件：MainActivity.kt
-// 职责：应用入口 Activity（阶段 7 接线：深色背板 + Q 弹玻璃导航条）
+// 职责：应用入口 Activity（阶段 7 接线：浅色背板 + Q 弹玻璃导航条）
 // 依赖：JieYunDuTheme、GlassBackground、JieYunDuNavHost、Hilt
 // 协议：AGPL-3.0
 
@@ -16,7 +16,7 @@ import dagger.hilt.android.AndroidEntryPoint
 /**
  * 应用唯一 Activity。
  *
- * 说明：装载深色背板与导航宿主。平板显示左侧竖直玻璃条，手机显示顶部横向玻璃条；
+ * 说明：装载浅色背板与导航宿主。平板显示左侧竖直玻璃条，手机显示顶部横向玻璃条；
  * 三个页签的真实内容（首页 / 下载 / 设置）由 [JieYunDuNavHost] 在阶段 8 接入。
  */
 @AndroidEntryPoint
