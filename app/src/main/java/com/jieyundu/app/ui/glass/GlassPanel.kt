@@ -1,5 +1,5 @@
 // 文件：GlassPanel.kt
-// 职责：液态玻璃面板——半透明白底 + 折射渐变 + 边缘高光 + 内阴影
+// 职责：液态玻璃面板——半透明白底 + 边缘高光 + 内阴影
 // 依赖：Compose foundation / ui、JieYunDuColors、Dimens
 // 协议：AGPL-3.0
 
@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
@@ -29,9 +30,11 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
 private const val INNER_SHADOW_BAND_FACTOR = 3f
 
 /**
- * 液态玻璃面板。
+ * 液态玻璃面板（浅色 Area 风）。
  *
- * 说明（9.2 + 阶段 8 整改）：白色 8% 底 + 折射渐变 + 白色 15% 边框 + 左上高光 + 底部内阴影。
+ * 说明（2026-10-03 浅色基准）：白色 95% 底 + 浅灰 1dp 边框 + 极淡外阴影；
+ * 保留左上极淡高光与底部极淡内阴影作为「玻璃」质感。原深色紫蓝折射渐变已在
+ * 浅色主题下停用（`GlassRefraction*` 置为透明），`drawRefraction` 调用保留但不再着色。
  *
  * 注意：本实现为 §9.8 降级固化方案（用 Compose 原生绘制近似玻璃观感，
  * 不依赖 Cloudy 的背景模糊 API），详见阶段 6 交付说明。
@@ -51,6 +54,12 @@ fun GlassPanel(
     val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier
+            .shadow(
+                elevation = Dimens.CardElevation,
+                shape = shape,
+                ambientColor = JieYunDuColors.Shadow,
+                spotColor = JieYunDuColors.Shadow
+            )
             .clip(shape)
             .background(color = JieYunDuColors.GlassFill, shape = shape)
             .drawWithContent {
