@@ -1,52 +1,36 @@
 // 文件：HomeScreen.kt
-// 职责：首页——链接输入、解析结果展示；平板档位右侧内嵌下载列表（9.4 两栏）
-// 依赖：HomeViewModel、LinkInputCard、ParseResultCard、DownloadScreen、WindowSizeHelper
+// 职责：首页——链接输入（含选填提取码）、解析、结果选择与下载
+// 依赖：HomeViewModel、LinkInputCard、ParseResultCard、PasswordDialog、WindowSizeHelper、Dimens
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
-import com.jieyundu.app.ui.screens.download.DownloadScreen
 import com.jieyundu.app.ui.screens.home.components.LinkInputCard
 import com.jieyundu.app.ui.screens.home.components.ParseResultCard
 import com.jieyundu.app.ui.screens.home.components.PasswordDialog
 import com.jieyundu.app.ui.theme.Dimens
 
-/** 平板左栏宽度占比（9.4：左 40%）。 */
-private const val START_COLUMN_WEIGHT = 0.4f
-
-/** 平板右栏宽度占比（9.4：右 60%，下载列表）。 */
-private const val END_COLUMN_WEIGHT = 0.6f
-
-/** 左栏内输入卡片占左栏宽度比例（Owner 裁决：输入卡宽约左栏 60%）。 */
-private const val INPUT_CARD_WIDTH_RATIO = 0.6f
-
 /**
- * 首页。
+ * 首页（布局修订：单栏「输入 → 解析 → 选文件 → 下载」）。
  *
- * 说明（9.4 / 9.5 + Owner 裁决）：
- * - 平板（expanded）：左右两栏，左栏 40%（输入卡 + 解析结果，输入卡占左栏宽约 60% 且居中），
- *   右栏 60% 复用 [DownloadScreen]（无任务时居中显示空态）；
- * - 手机（compact）：单栏纵向滚动，仅展示输入区与解析结果；
- * - 当服务器要求提取码时（[HomeUiState.passwordPrompt]），弹出液态玻璃 [PasswordDialog]，
- *   不中断流程、不引导用户改链接。
+ * 说明：
+ * - 顶部输入卡：链接输入框 + 选填提取码 + 解析按钮；
+ * - 下方结果卡占据剩余空间，用于展示解析出的文件列表并勾选下载；
+ * - 任务列表由「下载」页呈现（布局修订：首页不再内嵌下载列表）；
+ * - 需要提取码时弹出液态玻璃 [PasswordDialog]（不中断流程）。
  *
  * @param modifier 外部修饰符。
  */
@@ -55,68 +39,33 @@ fun HomeScreen(modifier: Modifier = Modifier) {
     val viewModel: HomeViewModel = hiltViewModel()
     val state by viewModel.uiState.collectAsState()
     val isExpanded = rememberIsExpandedLayout()
+    val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
 
-    if (isExpanded) {
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = Dimens.SpaceXl)
-                .padding(top = Dimens.ContentTopPadding, bottom = Dimens.SpaceXl),
-            horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceXl)
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(START_COLUMN_WEIGHT)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXl)
-            ) {
-                LinkInputCard(
-                    input = state.inputLink,
-                    onInputChange = viewModel::onInputChange,
-                    onParse = viewModel::parse,
-                    isParsing = state.isParsing,
-                    modifier = Modifier
-                        .fillMaxWidth(INPUT_CARD_WIDTH_RATIO)
-                        .align(Alignment.CenterHorizontally),
-                    isExpanded = true
-                )
-                ParseResultCard(
-                    result = state.result,
-                    errorRes = state.errorRes,
-                    isParsing = state.isParsing,
-                    onDownload = viewModel::download,
-                    isExpanded = true
-                )
-            }
-            DownloadScreen(
-                modifier = Modifier
-                    .weight(END_COLUMN_WEIGHT)
-                    .fillMaxHeight()
-            )
-        }
-    } else {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(Dimens.SpaceMd),
-            verticalArrangement = Arrangement.spacedBy(Dimens.SpaceMd)
-        ) {
-            LinkInputCard(
-                input = state.inputLink,
-                onInputChange = viewModel::onInputChange,
-                onParse = viewModel::parse,
-                isParsing = state.isParsing,
-                isExpanded = false
-            )
-            ParseResultCard(
-                result = state.result,
-                errorRes = state.errorRes,
-                isParsing = state.isParsing,
-                onDownload = viewModel::download,
-                isExpanded = false
-            )
-        }
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(spacing),
+        verticalArrangement = Arrangement.spacedBy(spacing)
+    ) {
+        LinkInputCard(
+            input = state.inputLink,
+            onInputChange = viewModel::onInputChange,
+            code = state.inputCode,
+            onCodeChange = viewModel::onCodeChange,
+            onParse = viewModel::parse,
+            isParsing = state.isParsing,
+            isExpanded = isExpanded
+        )
+        ParseResultCard(
+            result = state.result,
+            errorRes = state.errorRes,
+            isParsing = state.isParsing,
+            onDownload = viewModel::download,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            isExpanded = isExpanded
+        )
     }
 
     val passwordErrorRes = state.passwordErrorRes
