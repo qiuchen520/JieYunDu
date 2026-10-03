@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -27,18 +29,21 @@ import com.jieyundu.app.ui.screens.home.components.ParseResultCard
 import com.jieyundu.app.ui.screens.home.components.PasswordDialog
 import com.jieyundu.app.ui.theme.Dimens
 
-/** 平板左栏宽度占比（阶段 8 整改：输入区约 60%）。 */
-private const val START_COLUMN_WEIGHT = 0.6f
+/** 平板左栏宽度占比（9.4：左 40%）。 */
+private const val START_COLUMN_WEIGHT = 0.4f
 
-/** 平板右栏宽度占比（阶段 8 整改：空态区约 40%）。 */
-private const val END_COLUMN_WEIGHT = 0.4f
+/** 平板右栏宽度占比（9.4：右 60%，下载列表）。 */
+private const val END_COLUMN_WEIGHT = 0.6f
+
+/** 左栏内输入卡片占左栏宽度比例（Owner 裁决：输入卡宽约左栏 60%）。 */
+private const val INPUT_CARD_WIDTH_RATIO = 0.6f
 
 /**
  * 首页。
  *
- * 说明（9.4 / 9.5 + 阶段 8 整改）：
- * - 平板（expanded）：左右两栏，左栏约 60% 为输入区 + 解析结果，右栏约 40% 复用
- *   [DownloadScreen]（无任务时居中显示空态）；
+ * 说明（9.4 / 9.5 + Owner 裁决）：
+ * - 平板（expanded）：左右两栏，左栏 40%（输入卡 + 解析结果，输入卡占左栏宽约 60% 且居中），
+ *   右栏 60% 复用 [DownloadScreen]（无任务时居中显示空态）；
  * - 手机（compact）：单栏纵向滚动，仅展示输入区与解析结果；
  * - 当服务器要求提取码时（[HomeUiState.passwordPrompt]），弹出液态玻璃 [PasswordDialog]，
  *   不中断流程、不引导用户改链接。
@@ -70,6 +75,9 @@ fun HomeScreen(modifier: Modifier = Modifier) {
                     onInputChange = viewModel::onInputChange,
                     onParse = viewModel::parse,
                     isParsing = state.isParsing,
+                    modifier = Modifier
+                        .fillMaxWidth(INPUT_CARD_WIDTH_RATIO)
+                        .align(Alignment.CenterHorizontally),
                     isExpanded = true
                 )
                 ParseResultCard(
