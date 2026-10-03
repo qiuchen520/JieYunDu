@@ -94,13 +94,15 @@ interface UcApi {
     ): UcResponse<UcTask>
 
     /**
-     * 取下载直链。
+     * 取下载直链（**分享直连取链，无需先转存**）。
      *
      * 请求：`POST https://pc-api.uc.cn/1/clouddrive/file/download?entry=ft&fr=pc&pr=UCBrowser`
-     * 请求体：`{"fids":["<自己网盘的 fid>"]}`。
+     * 请求体见 [UcDownloadRequest]（`fids` + `pwd_id` + `stoken` + `fids_token`）。
      * 响应：`data[]`（含 `fid` 与 `download_url`）。
      *
-     * 依据：《抓包事实.md》§2——**`entry=ft` 是 UC 特有参数，不能丢**；§6.1⑤。
+     * 依据：评审方《UC下载链路修正要点_交开发方.txt》/《评审清单.md》§13——UC 分享文件
+     * **不需要先转存**，直接把分享 fid 与分享令牌传给本接口即可取链（此前照搬夸克转存链路，
+     * save 恒返回 403 / code 41020）。**`entry=ft` 是 UC 特有参数，不能丢**（§2）。
      *
      * @param body 请求体。
      * @return 统一响应包装体。
@@ -355,13 +357,24 @@ data class UcSaveRequest(
 )
 
 /**
- * 取直链请求体。
+ * 取直链请求体（**分享直连取链**）。
  *
- * @property fids 本账号文件 ID 列表（字段名为 `fids`）。
+ * 依据：评审方《UC下载链路修正要点_交开发方.txt》/《评审清单.md》§13——UC 分享文件
+ * **不需要先转存**，直接把分享 fid 与分享令牌传给 `file/download` 即可取链。字段名严格为
+ * `fids` / `pwd_id` / `stoken` / `fids_token`（注意是 `fids_token`，**不是**转存 save 用的
+ * `fid_token_list`）。
+ *
+ * @property fids 分享文件 ID 列表（字段名为 `fids`）。
+ * @property pwd_id 分享 ID。
+ * @property stoken 分享临时令牌（`token` 接口返回）。
+ * @property fids_token 与 [fids] 一一对应的分享文件令牌 `share_fid_token`。
  */
 @Serializable
 data class UcDownloadRequest(
-    val fids: List<String>
+    val fids: List<String>,
+    val pwd_id: String,
+    val stoken: String,
+    val fids_token: List<String>
 )
 
 /**

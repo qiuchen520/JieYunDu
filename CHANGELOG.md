@@ -1090,3 +1090,26 @@ Owner 指令（2026-10-03）：按截图条目扩充设置页；**明确允许�
 · res/values/strings.xml
     - 新增 C1 相关文案（无硬编码中文，符合 C5）。
 约束遵守：未改动玻璃质感 / 圆角 / Q 弹手感 / 浅色配色；未新增第三方依赖（D8 不触碰）。
+
+================================================================================
+【实现记录 JYD-UC-FIX-2026-10-03 · UC 下载链路修正（P0）】
+本批落地的代码改动（待 CI 编译验证）：
+· domain/parser/uc/UcApi.kt
+    - UcDownloadRequest 增加 pwd_id / stoken / fids_token 三字段（严格对齐评审方 §13）；
+    - getDownloadUrl KDoc 订正为「分享直连取链，无需转存」。
+· domain/transfer/UcShareTransfer.kt（重写）
+    - prepare() 去掉 saveShare / awaitSavedFids，改为直连取链：
+      api.getDownloadUrl(UcDownloadRequest(fids=listOf(file.fid), pwd_id, stoken,
+      fids_token=listOf(file.shareFidToken)))；
+    - 删除 saveAndCollectFids 与 FileInfo.toUcFile；
+    - cleanupAfterDownload 改为空操作（无转存副本）；
+    - 构造函数仅保留 UcApi（移除 UcTaskPoller / UcTempFolderManager 注入）。
+· 废弃（降级保留备用，待 Owner 拍板）：
+    - domain/transfer/UcTaskPoller.kt、UcTempFolderManager.kt 不再被引用，类文件保留。
+· 文档同步：
+    - 要求.md §8.4 UC 流程第 5 步订正为「直接取直链（无需转存）」；新增本规格变更记录；
+    - 评审清单.md §13.5 开发项勾选。
+背景：运行日志实证 UC save 恒返回 403 / code 41020「转存文件 token 校验异常」，
+      重登 UC 后依旧 → 判定问题不在登录态 / pdir_fid 语义，而在「UC 无需转存」这一前提。
+约束遵守：只改 UC，未动夸克 ShareTransfer；未改玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
+================================================================================
