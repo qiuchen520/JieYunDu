@@ -5,6 +5,8 @@
 
 package com.jieyundu.app.di
 
+import com.jieyundu.app.data.settings.AppSettingsStore
+import com.jieyundu.app.domain.downloader.DownloadSettingsPort
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.NetdiskServiceRouter
 import com.jieyundu.app.domain.parser.ParserRegistry
@@ -164,4 +166,17 @@ object AppModule {
         preparers: Set<@JvmSuppressWildcards ShareDownloadPreparer>
     ): NetdiskServiceRouter =
         NetdiskServiceRouter(shareBrowsers, personalBrowsers, preparers)
+
+    /**
+     * 把 [AppSettingsStore] 绑定为下载设置端口（C1）。
+     *
+     * 说明：[AppSettingsStore] 已是 `@Singleton` 且以构造注入创建，此处仅把其接口身份
+     * 暴露给 domain 层的 [DownloadSettingsPort]，供下载引擎读取并发/重试/限速设置。
+     *
+     * @param store 应用设置存储实例。
+     * @return 下载设置端口实现。
+     */
+    @Provides
+    @Singleton
+    fun provideDownloadSettingsPort(store: AppSettingsStore): DownloadSettingsPort = store
 }

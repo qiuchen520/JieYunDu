@@ -1031,3 +1031,62 @@
 约束：**未改动**项目自身协议（AGPL-3.0 / LICENSE 原样保留）；CLA 仅为贡献门槛。
 现有贡献者（目前仅 Owner 一人）不强制补签。
 ================================================================================
+【规格变更 JYD-SETTINGS-2026-10-03】阶段 C · 设置页功能扩充（分四批交付）
+--------------------------------------------------------------------------------
+Owner 指令（2026-10-03）：按截图条目扩充设置页；**明确允许新增深色模式**。
+交付纪律：逐批交付（C1→C2→C3→C4），每批完成后停下等装机验收，不自动推进。
+
+【C1 · 下载增强】（本批实现）
+1. 最大同时下载任务数
+   · 默认 1；档位 {1, 2, 3, 5}；范围收敛 1..5。
+   · 作用域：全局（跨任务）。达到上限时新任务进入 PENDING 排队，
+     前序任务进入终态（完成 / 失败 / 暂停 / 取消）后自动补位。
+2. 下载速度限制
+   · 默认「不限速」；档位 {不限速, 1, 2, 5, 10} MB/s。
+   · 作用域：全局（所有任务与其全部分片共享同一令牌桶，按字节匀出带宽）。
+3. 失败自动重试
+   · 默认 3 次；档位 {0, 1, 3, 5}；范围收敛 0..5。
+   · 作用域：任务级——整任务失败后按已落盘 `.part` 断点续传重试，重试耗尽才置 FAILED。
+   · 既有「分片级内部重试」不变（两者叠加：分片先内部重试，仍失败则整任务重试）。
+   · 重试期间不得向观察者发布 FAILED（避免前台服务提前停止）。
+4. 约束：不改动玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
+
+【C2 · 后台保活与通知】（待做，届时细化）
+1. 锁屏后保持下载：开关（默认开）；下载期间持有 PARTIAL_WAKE_LOCK，
+   并给出「加入忽略电池优化白名单」入口。
+2. 通知栏下载进度：开关（默认开）；关闭时不发布进度通知（前台服务仍运行）。
+
+【C3 · 检查更新】（待做，届时细化）
+1. 设置页「检查更新」：查询 GitHub Releases，比较版本号，有新版本可跳转。
+
+【C4 · 主题与外观】（待做，届时细化；Owner 已解禁深色模式）
+1. 主题模式：跟随系统 / 浅色 / 深色（默认跟随系统）。
+2. 深色配色须保持既有「玻璃质感 / 圆角」规范；浅色方案不变。
+
+--------------------------------------------------------------------------------
+【实现记录 JYD-SETTINGS-2026-10-03 · C1】
+本批落地的代码改动（待 CI 编译验证）：
+· domain/downloader/DownloadTask.kt
+    - 新增同时任务数常量（默认 1 / 范围 1..5 / 档位 {1,2,3,5}）；
+    - 新增失败重试常量（默认 3 / 范围 0..5 / 档位 {0,1,3,5}）；
+    - 新增限速常量（默认 0=不限速 / 档位 {0,1,2,5,10} MB/s）。
+· domain/downloader/DownloadEngine.kt
+    - 新增全局调度闸门：scheduleMutex + pendingQueue + runningTaskCount，
+      start() 经 schedule() 决定「立即执行 / 排队」，任务进入终态后 releaseSlotAndDispatchNext()
+      从队首补位；ACTIVE_STATES = {PENDING, DOWNLOADING}（不含 PAUSED，保证 resume 可用）。
+    - 新增任务级失败重试：runTask() 外层循环按 currentMaxTaskRetries() 重试，
+      重试期间保持 DOWNLOADING、不发布 FAILED，已落盘 .part 作为断点。
+    - 新增全局 SpeedLimiter（令牌桶 / 时间预约模型），在所有分片的写盘循环中按
+      currentSpeedLimitBytesPerSecond() 申请配额，实现 App 总出口限速。
+    - 新增 DownloadSettingsPort 端口接口（同文件定义，data 层实现）。
+· data/settings/AppSettingsStore.kt
+    - 实现 DownloadSettingsPort；新增 maxConcurrentTasks / maxTaskRetries /
+      speedLimitBytesPerSecond 三个 StateFlow、setter 与持久化键。
+· di/AppModule.kt
+    - 新增 provideDownloadSettingsPort，把 AppSettingsStore 绑定为 DownloadSettingsPort。
+· ui/screens/settings/SettingsViewModel.kt / SettingsScreen.kt
+    - 暴露三组档位与当前值；设置页新增三张卡片（同时任务数 / 下载限速 / 失败重试），
+      复用统一 OptionChip（视觉与既有筛选胶囊一致）。
+· res/values/strings.xml
+    - 新增 C1 相关文案（无硬编码中文，符合 C5）。
+约束遵守：未改动玻璃质感 / 圆角 / Q 弹手感 / 浅色配色；未新增第三方依赖（D8 不触碰）。

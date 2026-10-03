@@ -17,6 +17,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
@@ -30,6 +31,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -57,7 +60,8 @@ import timber.log.Timber
 @Singleton
 class DownloadEngine @Inject constructor(
     private val okHttpClient: OkHttpClient,
-    private val downloadDao: DownloadProgressPort
+    private val downloadDao: DownloadProgressPort,
+    private val settings: DownloadSettingsPort
 ) {
 
     /** 引擎自有作用域，随进程存活；不使用 GlobalScope。 */
@@ -79,6 +83,18 @@ class DownloadEngine @Inject constructor(
     /** 运行中的任务表。 */
     private val runtimes: MutableMap<String, TaskRuntime> = ConcurrentHashMap()
 
+    /** 任务调度锁（C1：并发闸门；保护 [runningTaskCount] 与 [pendingQueue]）。 */
+    private val scheduleMutex = Mutex()
+
+    /** 等待执行的任务 ID 队列（FIFO，C1）。 */
+    private val pendingQueue: ArrayDeque<String> = ArrayDeque()
+
+    /** 当前正在执行的任务数（C1，受 [scheduleMutex] 保护）。 */
+    private var runningTaskCount: Int = 0
+
+    /** 全局下载限速器（C1：所有任务与其分片共享一个令牌桶）。 */
+    private val speedLimiter = SpeedLimiter()
+
     /**
      * 启动一个下载任务。
      *
@@ -88,8 +104,8 @@ class DownloadEngine @Inject constructor(
      */
     suspend fun start(task: DownloadTask) {
         val existing = runtimes[task.taskId]
-        if (existing != null && existing.state.value == DownloadState.DOWNLOADING) {
-            Timber.i("DownloadEngine start ignored: task %s is already running", task.taskId)
+        if (existing != null && existing.state.value in ACTIVE_STATES) {
+            Timber.i("DownloadEngine start ignored: task %s is already active", task.taskId)
             return
         }
 
@@ -123,11 +139,88 @@ class DownloadEngine @Inject constructor(
         // 【修订 JYD-SAVEPATH-2026-10-03】启动即落库：既让新任务立即出现在下载列表，
         // 也把落盘路径写入持久层，供进程重启后「删除本地文件」定位目标。
         downloadDao.upsert(runtime.progress.value)
-        runtime.job = scope.launch { runTask(runtime) }
+        // C1：不直接启动，交给调度器按「最大同时下载任务数」排队 / 放行。
+        schedule(runtime)
+    }
+
+    /**
+     * 任务调度闸门（C1）：按「最大同时下载任务数」决定立即执行还是排队。
+     *
+     * 若当前运行任务数未达上限则占用一个槽位并立即启动；否则入 [pendingQueue] 等待，
+     * 状态置为 [DownloadState.PENDING]。任一任务结束时释放槽位并从队列头部补位。
+     *
+     * @param runtime 运行态任务。
+     */
+    private suspend fun schedule(runtime: TaskRuntime) {
+        val maxConcurrent = settings.currentMaxConcurrentTasks()
+            .coerceIn(DownloadTask.MIN_MAX_CONCURRENT_TASKS, DownloadTask.MAX_MAX_CONCURRENT_TASKS)
+        val admitted = scheduleMutex.withLock {
+            if (runningTaskCount < maxConcurrent) {
+                runningTaskCount++
+                true
+            } else {
+                pendingQueue.addLast(runtime.task.taskId)
+                false
+            }
+        }
+        if (admitted) {
+            runtime.state.value = DownloadState.DOWNLOADING
+            launchTask(runtime)
+        } else {
+            runtime.state.value = DownloadState.PENDING
+            Timber.i("DownloadEngine queued task %s (max=%d)", runtime.task.taskId, maxConcurrent)
+        }
+    }
+
+    /**
+     * 在引擎作用域内启动任务协程，并在结束时释放调度槽位（C1）。
+     *
+     * 说明：`finally` 中的槽位释放包在 [NonCancellable] 里，确保任务即使被取消也能补位下一任务。
+     *
+     * @param runtime 运行态任务。
+     */
+    private fun launchTask(runtime: TaskRuntime) {
+        runtime.job = scope.launch {
+            try {
+                runTask(runtime)
+            } finally {
+                withContext(NonCancellable) {
+                    releaseSlotAndDispatchNext()
+                }
+            }
+        }
+    }
+
+    /**
+     * 释放一个运行槽位，并从等待队列中补位下一个任务（C1）。
+     *
+     * 队列中的任务可能已被取消或暂停，因此逐个出队并校验状态，
+     * 仅对仍处于 [DownloadState.PENDING] 的任务补位。
+     */
+    private suspend fun releaseSlotAndDispatchNext() {
+        val nextId = scheduleMutex.withLock {
+            runningTaskCount = (runningTaskCount - 1).coerceAtLeast(0)
+            var candidate: String? = null
+            while (candidate == null && pendingQueue.isNotEmpty()) {
+                val id = pendingQueue.removeFirst()
+                val queued = runtimes[id]
+                if (queued != null && queued.state.value == DownloadState.PENDING) {
+                    runningTaskCount++
+                    candidate = id
+                }
+            }
+            candidate
+        }
+        val nextRuntime = nextId?.let { runtimes[it] }
+        if (nextRuntime != null) {
+            nextRuntime.state.value = DownloadState.DOWNLOADING
+            launchTask(nextRuntime)
+        }
     }
 
     /**
      * 暂停任务。
+
      *
      * 已落盘的分片不会被删除，下一步 [resume] 可续传。
      *
@@ -233,50 +326,67 @@ class DownloadEngine @Inject constructor(
     private suspend fun runTask(runtime: TaskRuntime) {
         val targetFile = File(runtime.task.savePath)
         val chunks = runtime.chunks
-        try {
-            coroutineScope {
-                chunks.map { chunk ->
-                    // 在专用调度器上并发执行：每个分片一条阻塞请求，分片数即并发数（B2 功能②）。
-                    async(downloadDispatcher) {
-                        downloadChunk(runtime, chunk, chunkManager.partFile(targetFile, chunk.index))
-                    }
-                }.awaitAll()
-            }
+        val maxRetries = settings.currentMaxTaskRetries().coerceAtLeast(0)
+        var attempt = 0
+        while (true) {
+            try {
+                coroutineScope {
+                    chunks.map { chunk ->
+                        // 在专用调度器上并发执行：每个分片一条阻塞请求，分片数即并发数（B2 功能②）。
+                        async(downloadDispatcher) {
+                            downloadChunk(runtime, chunk, chunkManager.partFile(targetFile, chunk.index))
+                        }
+                    }.awaitAll()
+                }
 
-            withContext(Dispatchers.IO) {
-                chunkManager.mergePartFiles(targetFile, chunks)
-            }
+                withContext(Dispatchers.IO) {
+                    chunkManager.mergePartFiles(targetFile, chunks)
+                }
 
-            runtime.state.value = DownloadState.COMPLETED
-            runtime.progress.value = runtime.progress.value.copy(
-                state = DownloadState.COMPLETED,
-                downloadedBytes = if (runtime.task.hasKnownSize) {
-                    runtime.task.fileSize
-                } else {
-                    runtime.progress.value.downloadedBytes
-                },
-                speedBytesPerSecond = 0L,
-                completedChunks = chunks.size
-            )
-            downloadDao.upsert(runtime.progress.value)
-            Timber.i("DownloadEngine completed task %s", runtime.task.taskId)
-        } catch (cancellation: CancellationException) {
-            // C3：取消必须原样抛出，不能转成 FAILED
-            throw cancellation
-        } catch (io: IOException) {
-            Timber.e(io, "DownloadEngine task %s failed with IO error", runtime.task.taskId)
-            runtime.state.value = DownloadState.FAILED
-            runtime.progress.value = runtime.progress.value.copy(
-                state = DownloadState.FAILED,
-                speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
-            )
-        } catch (exception: Exception) {
-            Timber.e(exception, "DownloadEngine task %s failed", runtime.task.taskId)
-            runtime.state.value = DownloadState.FAILED
-            runtime.progress.value = runtime.progress.value.copy(
-                state = DownloadState.FAILED,
-                speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
-            )
+                runtime.state.value = DownloadState.COMPLETED
+                runtime.progress.value = runtime.progress.value.copy(
+                    state = DownloadState.COMPLETED,
+                    downloadedBytes = if (runtime.task.hasKnownSize) {
+                        runtime.task.fileSize
+                    } else {
+                        runtime.progress.value.downloadedBytes
+                    },
+                    speedBytesPerSecond = 0L,
+                    completedChunks = chunks.size
+                )
+                downloadDao.upsert(runtime.progress.value)
+                Timber.i("DownloadEngine completed task %s", runtime.task.taskId)
+                return
+            } catch (cancellation: CancellationException) {
+                // C3：取消必须原样抛出，不能转成 FAILED
+                throw cancellation
+            } catch (exception: Exception) {
+                attempt++
+                if (attempt > maxRetries) {
+                    Timber.e(
+                        exception,
+                        "DownloadEngine task %s failed after %d attempt(s)",
+                        runtime.task.taskId,
+                        attempt
+                    )
+                    runtime.state.value = DownloadState.FAILED
+                    runtime.progress.value = runtime.progress.value.copy(
+                        state = DownloadState.FAILED,
+                        speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
+                    )
+                    return
+                }
+                Timber.e(
+                    exception,
+                    "DownloadEngine task %s retry %d/%d",
+                    runtime.task.taskId,
+                    attempt,
+                    maxRetries
+                )
+                // 重试期间维持下载态，不对外发布 FAILED；已落盘分片作为断点续传起点。
+                runtime.state.value = DownloadState.DOWNLOADING
+                delay(TASK_RETRY_DELAY_MILLIS)
+            }
         }
     }
 
@@ -372,6 +482,8 @@ class DownloadEngine @Inject constructor(
                             break
                         }
                         output.write(buffer, 0, read)
+                        // C1：按全局限速申请配额；不限速时立即返回。
+                        speedLimiter.acquire(read, settings.currentSpeedLimitBytesPerSecond())
                         val sessionTotal = runtime.sessionBytes.addAndGet(read.toLong())
                         publishProgress(runtime, sessionTotal)
                     }
@@ -478,6 +590,16 @@ class DownloadEngine @Inject constructor(
 
         /** 进度发射节流间隔。 */
         const val PROGRESS_INTERVAL_MILLIS = 200L
+
+        /** 任务级失败重试的等待时长（C1）。 */
+        const val TASK_RETRY_DELAY_MILLIS = 2000L
+
+        /**
+         * 「活动态」集合（C1）：处于这些状态的任务视为已在进行，重复 start 会被忽略。
+         *
+         * 注意：不含 [DownloadState.PAUSED]，否则 [resume] 内部调用 [start] 会被误判为重复启动。
+         */
+        val ACTIVE_STATES = setOf(DownloadState.PENDING, DownloadState.DOWNLOADING)
     }
 }
 
@@ -510,4 +632,84 @@ interface DownloadProgressPort {
      * @param taskId 任务 ID。
      */
     suspend fun delete(taskId: String)
+}
+
+/**
+ * 下载设置端口（C1）。
+ *
+ * 端口定义置于本文件内（不新增文件），由 data 层的 `AppSettingsStore` 实现，
+ * 使 domain 层无需反向依赖 data 层即可读取「运行时下载设置」。
+ *
+ * 与进度端口一致，采用「读方法」而非直接传 StateFlow，避免 domain 层持有 data 层持久化细节。
+ */
+interface DownloadSettingsPort {
+
+    /**
+     * 当前最大同时下载任务数（C1）。
+     *
+     * @return 取值 1..5。
+     */
+    fun currentMaxConcurrentTasks(): Int
+
+    /**
+     * 当前下载限速（C1）。
+     *
+     * @return 单位字节/秒；0 表示不限速。
+     */
+    fun currentSpeedLimitBytesPerSecond(): Long
+
+    /**
+     * 当前任务级失败自动重试次数（C1）。
+     *
+     * @return 取值 0..5。
+     */
+    fun currentMaxTaskRetries(): Int
+}
+
+/**
+ * 全局下载限速器（C1：令牌桶 / 时间预约模型）。
+ *
+ * 所有任务的所有分片共享同一实例，从而保证「限速」作用于整个 App 的总出口，
+ * 而非逐分片限速。策略：每申请 [acquire] 的字节数，按当前限速换算为应占用的时长，
+ * 预约到 [nextFreeNanos] 之后；若预约时间在未来则挂起等待，实现平滑限速。
+ *
+ * 线程安全：由 [mutex] 串行化预约计算，临界区极短；等待在锁外进行，不阻塞其他分片。
+ */
+private class SpeedLimiter {
+
+    /** 预约计算锁。 */
+    private val mutex = Mutex()
+
+    /** 下一个可用时间点（单调时钟，纳秒）。 */
+    private var nextFreeNanos: Long = 0L
+
+    /**
+     * 申请发送 [bytes] 字节的配额；超过限速时挂起到允许发送为止。
+     *
+     * @param bytes 本轮实际写入的字节数。
+     * @param limitBytesPerSecond 当前限速，单位字节/秒；非正数表示不限速。
+     */
+    suspend fun acquire(bytes: Int, limitBytesPerSecond: Long) {
+        if (limitBytesPerSecond <= 0L || bytes <= 0) {
+            return
+        }
+        val waitNanos = mutex.withLock {
+            val now = System.nanoTime()
+            val grantedAt = if (nextFreeNanos < now) now else nextFreeNanos
+            val costNanos = bytes.toLong() * NANOS_PER_SECOND / limitBytesPerSecond
+            nextFreeNanos = grantedAt + costNanos
+            grantedAt - now
+        }
+        if (waitNanos > 0L) {
+            delay(waitNanos / NANOS_PER_MILLI)
+        }
+    }
+
+    private companion object {
+        /** 每秒纳秒数。 */
+        const val NANOS_PER_SECOND = 1_000_000_000L
+
+        /** 每毫秒纳秒数。 */
+        const val NANOS_PER_MILLI = 1_000_000L
+    }
 }

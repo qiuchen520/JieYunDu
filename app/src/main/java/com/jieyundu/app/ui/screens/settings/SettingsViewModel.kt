@@ -69,6 +69,25 @@ class SettingsViewModel @Inject constructor(
     /** 当前下载并发分片数（持久化设置）。 */
     val chunkCount: StateFlow<Int> = appSettingsStore.chunkCount
 
+    /** 可选的「最大同时下载任务数」档位（C1：1 / 2 / 3 / 5）。 */
+    val maxConcurrentTaskOptions: List<Int> = DownloadTask.MAX_CONCURRENT_TASK_OPTIONS
+
+    /** 可选的「失败自动重试」档位（C1：0 / 1 / 3 / 5）。 */
+    val maxTaskRetryOptions: List<Int> = DownloadTask.MAX_TASK_RETRY_OPTIONS
+
+    /** 可选的「下载限速」档位，单位字节/秒（C1；0 = 不限速）。 */
+    val speedLimitOptionsBytesPerSecond: List<Long> =
+        DownloadTask.SPEED_LIMIT_OPTIONS_BYTES_PER_SECOND
+
+    /** 当前最大同时下载任务数（C1）。 */
+    val maxConcurrentTasks: StateFlow<Int> = appSettingsStore.maxConcurrentTasks
+
+    /** 当前失败自动重试次数（C1）。 */
+    val maxTaskRetries: StateFlow<Int> = appSettingsStore.maxTaskRetries
+
+    /** 当前下载限速，单位字节/秒（C1；0 = 不限速）。 */
+    val speedLimitBytesPerSecond: StateFlow<Long> = appSettingsStore.speedLimitBytesPerSecond
+
     private val _directoryState = MutableStateFlow(
         DownloadDirectoryState(
             isCustom = appSettingsStore.downloadDirectoryMode == DownloadDirectoryMode.CUSTOM,
@@ -87,6 +106,33 @@ class SettingsViewModel @Inject constructor(
      */
     fun setChunkCount(count: Int) {
         appSettingsStore.setChunkCount(count)
+    }
+
+    /**
+     * 设置最大同时下载任务数（C1）。
+     *
+     * @param count 目标档位（越界由存储层收敛到 1..5）。
+     */
+    fun setMaxConcurrentTasks(count: Int) {
+        appSettingsStore.setMaxConcurrentTasks(count)
+    }
+
+    /**
+     * 设置失败自动重试次数（C1）。
+     *
+     * @param count 目标档位（越界由存储层收敛到 0..5）。
+     */
+    fun setMaxTaskRetries(count: Int) {
+        appSettingsStore.setMaxTaskRetries(count)
+    }
+
+    /**
+     * 设置下载限速（C1）。
+     *
+     * @param bytesPerSecond 目标限速，单位字节/秒；0 表示不限速。
+     */
+    fun setSpeedLimitBytesPerSecond(bytesPerSecond: Long) {
+        appSettingsStore.setSpeedLimitBytesPerSecond(bytesPerSecond)
     }
 
     /**

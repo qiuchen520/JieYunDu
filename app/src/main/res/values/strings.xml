@@ -178,4 +178,15 @@
     <string name="download_share_chooser">分享文件</string>
     <string name="download_share_unavailable">文件不存在或无法分享</string>
     <string name="download_install_unavailable">无法启动安装程序</string>
+    <!-- C1：下载增强（同时任务数 / 限速 / 失败重试）-->
+    <string name="settings_download_concurrent_title">同时下载任务数</string>
+    <string name="settings_download_concurrent_hint">同时进行的下载任务上限，超出的任务会自动排队等待。</string>
+    <string name="settings_download_speed_title">下载速度限制</string>
+    <string name="settings_download_speed_hint">限制整体下载速度，避免影响其他网络使用。</string>
+    <string name="settings_download_retry_title">失败自动重试</string>
+    <string name="settings_download_retry_hint">下载因网络等原因失败时自动重试的次数。</string>
+    <string name="settings_speed_unlimited">不限速</string>
+    <string name="settings_speed_option_mbps">%1$d MB/s</string>
+    <string name="settings_retry_off">关闭</string>
+    <string name="settings_retry_option_times">%1$d 次</string>
 </resources>

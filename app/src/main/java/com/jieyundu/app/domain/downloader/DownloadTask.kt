@@ -44,5 +44,36 @@ data class DownloadTask(
         const val MAX_CHUNK_COUNT = 512
         /** 可选的并发档位（设置页展示用；均为 [MIN_CHUNK_COUNT]..[MAX_CHUNK_COUNT] 内的 2 的幂）。 */
         val CHUNK_COUNT_OPTIONS: List<Int> = listOf(32, 64, 128, 256, 512)
+
+        /** 最大同时下载任务数：默认值（C1，默认 1 个）。 */
+        const val DEFAULT_MAX_CONCURRENT_TASKS = 1
+
+        /** 最大同时下载任务数：下限。 */
+        const val MIN_MAX_CONCURRENT_TASKS = 1
+
+        /** 最大同时下载任务数：上限。 */
+        const val MAX_MAX_CONCURRENT_TASKS = 5
+
+        /** 可选的最大同时下载任务数档位（设置页展示用）。 */
+        val MAX_CONCURRENT_TASK_OPTIONS: List<Int> = listOf(1, 2, 3, 5)
+
+        /** 失败自动重试：默认次数（C1，默认 3 次）。 */
+        const val DEFAULT_MAX_TASK_RETRIES = 3
+
+        /** 失败自动重试：下限。 */
+        const val MIN_MAX_TASK_RETRIES = 0
+
+        /** 失败自动重试：上限。 */
+        const val MAX_MAX_TASK_RETRIES = 5
+
+        /** 可选的失败自动重试档位（设置页展示用）。 */
+        val MAX_TASK_RETRY_OPTIONS: List<Int> = listOf(0, 1, 3, 5)
+
+        /** 下载限速：默认不限速（0 表示不限制）。 */
+        const val DEFAULT_SPEED_LIMIT_BYTES_PER_SECOND = 0L
+
+        /** 可选的限速档位，单位字节/秒（设置页展示用；0 = 不限速）。 */
+        val SPEED_LIMIT_OPTIONS_BYTES_PER_SECOND: List<Long> =
+            listOf(0L, 1_048_576L, 2_097_152L, 5_242_880L, 10_485_760L)
     }
 }

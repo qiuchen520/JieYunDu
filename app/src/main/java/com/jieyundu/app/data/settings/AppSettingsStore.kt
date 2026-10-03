@@ -8,6 +8,7 @@ package com.jieyundu.app.data.settings
 import android.content.Context
 import androidx.annotation.StringRes
 import com.jieyundu.app.R
+import com.jieyundu.app.domain.downloader.DownloadSettingsPort
 import com.jieyundu.app.domain.downloader.DownloadTask
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -57,7 +58,7 @@ enum class DownloadDirectoryMode {
 @Singleton
 class AppSettingsStore @Inject constructor(
     @ApplicationContext context: Context
-) {
+) : DownloadSettingsPort {
 
     private val appContext: Context = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -81,6 +82,84 @@ class AppSettingsStore @Inject constructor(
         prefs.edit().putInt(KEY_CHUNK_COUNT, clamped).apply()
         _chunkCount.value = clamped
     }
+
+    private val _maxConcurrentTasks = MutableStateFlow(
+        prefs.getInt(KEY_MAX_CONCURRENT_TASKS, DownloadTask.DEFAULT_MAX_CONCURRENT_TASKS)
+            .coerceIn(
+                DownloadTask.MIN_MAX_CONCURRENT_TASKS,
+                DownloadTask.MAX_MAX_CONCURRENT_TASKS
+            )
+    )
+
+    /** 最大同时下载任务数（C1：1..5，默认 1）。 */
+    val maxConcurrentTasks: StateFlow<Int> = _maxConcurrentTasks.asStateFlow()
+
+    /**
+     * 设置最大同时下载任务数（C1，越界自动收敛到 1..5）。
+     *
+     * @param count 期望的同时任务数。
+     */
+    fun setMaxConcurrentTasks(count: Int) {
+        val clamped = count.coerceIn(
+            DownloadTask.MIN_MAX_CONCURRENT_TASKS,
+            DownloadTask.MAX_MAX_CONCURRENT_TASKS
+        )
+        if (clamped == _maxConcurrentTasks.value) return
+        prefs.edit().putInt(KEY_MAX_CONCURRENT_TASKS, clamped).apply()
+        _maxConcurrentTasks.value = clamped
+    }
+
+    private val _maxTaskRetries = MutableStateFlow(
+        prefs.getInt(KEY_MAX_TASK_RETRIES, DownloadTask.DEFAULT_MAX_TASK_RETRIES)
+            .coerceIn(DownloadTask.MIN_MAX_TASK_RETRIES, DownloadTask.MAX_MAX_TASK_RETRIES)
+    )
+
+    /** 失败自动重试次数（C1：0..5，默认 3）。 */
+    val maxTaskRetries: StateFlow<Int> = _maxTaskRetries.asStateFlow()
+
+    /**
+     * 设置失败自动重试次数（C1，越界自动收敛到 0..5）。
+     *
+     * @param count 期望的重试次数。
+     */
+    fun setMaxTaskRetries(count: Int) {
+        val clamped = count.coerceIn(
+            DownloadTask.MIN_MAX_TASK_RETRIES,
+            DownloadTask.MAX_MAX_TASK_RETRIES
+        )
+        if (clamped == _maxTaskRetries.value) return
+        prefs.edit().putInt(KEY_MAX_TASK_RETRIES, clamped).apply()
+        _maxTaskRetries.value = clamped
+    }
+
+    private val _speedLimitBytesPerSecond = MutableStateFlow(
+        prefs.getLong(KEY_SPEED_LIMIT, DownloadTask.DEFAULT_SPEED_LIMIT_BYTES_PER_SECOND)
+            .coerceAtLeast(0L)
+    )
+
+    /** 下载限速（C1：字节/秒；0 表示不限速）。 */
+    val speedLimitBytesPerSecond: StateFlow<Long> = _speedLimitBytesPerSecond.asStateFlow()
+
+    /**
+     * 设置下载限速（C1）。
+     *
+     * @param bytesPerSecond 期望限速，单位字节/秒；0 或负数表示不限速。
+     */
+    fun setSpeedLimitBytesPerSecond(bytesPerSecond: Long) {
+        val clamped = bytesPerSecond.coerceAtLeast(0L)
+        if (clamped == _speedLimitBytesPerSecond.value) return
+        prefs.edit().putLong(KEY_SPEED_LIMIT, clamped).apply()
+        _speedLimitBytesPerSecond.value = clamped
+    }
+
+    /** [DownloadSettingsPort]：当前最大同时下载任务数。 */
+    override fun currentMaxConcurrentTasks(): Int = _maxConcurrentTasks.value
+
+    /** [DownloadSettingsPort]：当前限速（字节/秒，0 = 不限速）。 */
+    override fun currentSpeedLimitBytesPerSecond(): Long = _speedLimitBytesPerSecond.value
+
+    /** [DownloadSettingsPort]：当前失败自动重试次数。 */
+    override fun currentMaxTaskRetries(): Int = _maxTaskRetries.value
 
     /** 当前下载目录模式（默认 [DownloadDirectoryMode.PUBLIC_DOWNLOADS]）。 */
     val downloadDirectoryMode: DownloadDirectoryMode
@@ -135,5 +214,14 @@ class AppSettingsStore @Inject constructor(
 
         /** 自定义目录路径键。 */
         const val KEY_DIR_PATH = "download_dir_path"
+
+        /** 最大同时下载任务数键（C1）。 */
+        const val KEY_MAX_CONCURRENT_TASKS = "max_concurrent_tasks"
+
+        /** 失败自动重试次数键（C1）。 */
+        const val KEY_MAX_TASK_RETRIES = "max_task_retries"
+
+        /** 下载限速键（C1，字节/秒）。 */
+        const val KEY_SPEED_LIMIT = "speed_limit_bytes_per_second"
     }
 }

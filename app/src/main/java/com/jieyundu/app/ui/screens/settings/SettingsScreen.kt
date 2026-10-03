@@ -74,6 +74,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val runtimeState by viewModel.runtimeState.collectAsState()
     val context = LocalContext.current
     val chunkCount by viewModel.chunkCount.collectAsState()
+    val maxConcurrentTasks by viewModel.maxConcurrentTasks.collectAsState()
+    val maxTaskRetries by viewModel.maxTaskRetries.collectAsState()
+    val speedLimitBytesPerSecond by viewModel.speedLimitBytesPerSecond.collectAsState()
     val directoryState by viewModel.directoryState.collectAsState()
     // B2 功能①：目录选择器返回 tree Uri → 解析为真实路径落库；A1 权限仅在用户「更改目录」时按需申请。
     val treePicker = rememberLauncherForActivityResult(
@@ -222,6 +225,83 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         count = option,
                         selected = option == chunkCount,
                         onClick = { viewModel.setChunkCount(option) }
+                    )
+                }
+            }
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_download_concurrent_title),
+            contentPadding = contentPadding
+        ) {
+            Text(
+                text = stringResource(R.string.settings_download_concurrent_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+            ) {
+                viewModel.maxConcurrentTaskOptions.forEach { option ->
+                    OptionChip(
+                        label = option.toString(),
+                        selected = option == maxConcurrentTasks,
+                        onClick = { viewModel.setMaxConcurrentTasks(option) }
+                    )
+                }
+            }
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_download_speed_title),
+            contentPadding = contentPadding
+        ) {
+            Text(
+                text = stringResource(R.string.settings_download_speed_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+            ) {
+                viewModel.speedLimitOptionsBytesPerSecond.forEach { option ->
+                    OptionChip(
+                        label = if (option <= 0L) {
+                            stringResource(R.string.settings_speed_unlimited)
+                        } else {
+                            stringResource(
+                                R.string.settings_speed_option_mbps,
+                                (option / BYTES_PER_MB).toInt()
+                            )
+                        },
+                        selected = option == speedLimitBytesPerSecond,
+                        onClick = { viewModel.setSpeedLimitBytesPerSecond(option) }
+                    )
+                }
+            }
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_download_retry_title),
+            contentPadding = contentPadding
+        ) {
+            Text(
+                text = stringResource(R.string.settings_download_retry_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = JieYunDuColors.TextSecondary
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+            ) {
+                viewModel.maxTaskRetryOptions.forEach { option ->
+                    OptionChip(
+                        label = if (option <= 0) {
+                            stringResource(R.string.settings_retry_off)
+                        } else {
+                            stringResource(R.string.settings_retry_option_times, option)
+                        },
+                        selected = option == maxTaskRetries,
+                        onClick = { viewModel.setMaxTaskRetries(option) }
                     )
                 }
             }
@@ -423,6 +503,24 @@ private fun ChunkOptionChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    OptionChip(label = count.toString(), selected = selected, onClick = onClick)
+}
+
+/**
+ * 通用档位胶囊（C1：同时任务数 / 限速 / 重试共用）。
+ *
+ * 说明：视觉与下载页筛选胶囊一致（圆角 = [Dimens.FilterChipCorner]，选中主色底 + 白字）。
+ *
+ * @param label 档位显示文案。
+ * @param selected 是否选中。
+ * @param onClick 点击回调。
+ */
+@Composable
+private fun OptionChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
     val shape = RoundedCornerShape(Dimens.FilterChipCorner)
     val background = if (selected) JieYunDuColors.Primary else JieYunDuColors.InputFieldFill
     val contentColor = if (selected) JieYunDuColors.OnPrimary else JieYunDuColors.TextSecondary
@@ -436,7 +534,7 @@ private fun ChunkOptionChip(
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = count.toString(),
+            text = label,
             style = MaterialTheme.typography.labelMedium,
             color = contentColor
         )
@@ -470,3 +568,6 @@ private fun shareLogFile(context: Context, file: File, @StringRes titleRes: Int)
 
 /** 日志分享 MIME 类型（纯文本）。 */
 private const val LOG_MIME_TYPE = "text/plain"
+
+/** 每 MB 字节数（C1：限速档位展示换算用）。 */
+private const val BYTES_PER_MB = 1_048_576L
