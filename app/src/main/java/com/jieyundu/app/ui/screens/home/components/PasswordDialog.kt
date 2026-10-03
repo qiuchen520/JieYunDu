@@ -87,7 +87,7 @@ fun PasswordDialog(
                         .fillMaxWidth()
                         .height(Dimens.InputHeightCompact)
                         .clip(RoundedCornerShape(Dimens.InputCornerCompact))
-                        .background(JieYunDuColors.GlassFill)
+                        .background(JieYunDuColors.InputFieldFill)
                         .padding(horizontal = Dimens.SpaceLg),
                     contentAlignment = Alignment.CenterStart
                 ) {
@@ -138,7 +138,8 @@ fun PasswordDialog(
                         height = Dimens.ButtonHeightCompact,
                         cornerRadius = Dimens.ButtonCornerCompact,
                         fillColor = JieYunDuColors.ButtonFill,
-                        borderColor = JieYunDuColors.ButtonBorder
+                        borderColor = JieYunDuColors.ButtonBorder,
+                        contentColor = JieYunDuColors.OnPrimary
                     )
                 }
             }
