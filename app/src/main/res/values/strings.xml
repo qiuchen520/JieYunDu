@@ -74,4 +74,25 @@
     <string name="settings_about">关于</string>
     <string name="settings_version_format">版本 %1$s</string>
     <string name="settings_license">开源协议：AGPL-3.0</string>
+
+    <!-- 网盘页（阶段 11 入口，本轮先搭 UI）-->
+    <string name="tab_netdisk">网盘</string>
+    <string name="netdisk_picker_title">选择网盘</string>
+    <string name="netdisk_picker_subtitle">登录对应网盘后，即可解析与下载</string>
+    <string name="netdisk_login_action">登录</string>
+    <string name="netdisk_login_hint">登录功能将在下一轮接入</string>
+
+    <!-- 输入区（阶段 8 布局修订）-->
+    <string name="link_code_hint">提取码（选填）</string>
+
+    <!-- 解析结果（阶段 8 布局修订）-->
+    <string name="parse_result_idle">粘贴分享链接并点击解析，文件会显示在这里</string>
+    <string name="parse_result_select_hint">勾选要下载的文件</string>
+    <string name="action_download">下载选中</string>
+
+    <!-- 下载页筛选与删除（阶段 8 布局修订）-->
+    <string name="download_filter_all">全部</string>
+    <string name="download_filter_downloading">下载中</string>
+    <string name="download_filter_completed">已完成</string>
+    <string name="cd_delete_download">删除本地文件</string>
 </resources>
