@@ -14,6 +14,7 @@ import com.jieyundu.app.domain.model.ParseResult
  * 首页 UI 状态。
  *
  * @property inputLink 输入框中的原始文本（可包含提取码）。
+ * @property inputCode 单独填写的提取码（选填，布局修订）。
  * @property isParsing 是否正在解析。
  * @property result 解析结果（domain 层模型）；尚未解析或已清空时为 null。
  * @property errorRes 本地校验类错误（未识别链接 / 不支持网盘）的文案资源；无错误时为 null。
@@ -22,6 +23,7 @@ import com.jieyundu.app.domain.model.ParseResult
  */
 data class HomeUiState(
     val inputLink: String = "",
+    val inputCode: String = "",
     val isParsing: Boolean = false,
     val result: ParseResult? = null,
     @StringRes val errorRes: Int? = null,
