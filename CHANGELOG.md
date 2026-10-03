@@ -150,7 +150,33 @@
 - 已移除的 `cloudy` 若后续需重新引入，须先解决其对新版 androidx / Kotlin 2.4 的依赖，
   与本项目 compileSdk34 / AGP8.2.2 / Kotlin1.9.22 档位兼容，详见上方 run#3。
 
+## 阶段 7：Q 弹导航栏（双方向玻璃条）
+- 交付（sha `c9bc597`，5 新 + 4 改）：
+  - 新增 `ui/adaptive/WindowSizeHelper.kt`（`LocalConfiguration.screenWidthDp ≥ 600` 判平板；
+    因第五部分技术栈未列 `material3-adaptive`，按 D8 弃用 `currentWindowAdaptiveInfo()`）。
+  - 新增 `ui/navigation/TopGlassNavBar.kt`（双方向核心：spring 驱动指示器 offset/scale，
+    拖拽跟手 + 松手吸附最近页签，仅 spring 无 tween）。
+  - 新增 `ui/navigation/NavigationRail.kt`（平板 wrapper，竖直）、`NavigationBar.kt`（手机 wrapper，横向）、
+    `JieYunDuNavHost.kt`（手写状态导航，未引入 `androidx.navigation`——D8；内容 `Crossfade`
+    与指示器弹簧分离——D6）。
+  - 修改 `Color.kt`（+NavIndicatorFill / NavIndicatorHighlight）、`Dimens.kt`（+5 导航常量）、
+    `strings.xml`（+3 页签；占位文案改中性版「阶段 6 占位 · 界面开发中」）、`MainActivity.kt`（接线 NavHost）。
+- 追加架构要求（sha `4000e4d`）：弹簧参数提取为 `data class NavSpringPreset` + `val JellyPreset`，
+  删除 4 个硬编码 spring；`preset` 一路透传（NavHost → Rail/Bar → TopGlassNavBar），
+  为阶段 11「预设切换」预留扩展点。行为与写死完全一致；未新增文件 / 设置 UI / 持久化。
+- 规格取舍说明（《要求.md》两处自相矛盾，已在交付说明中声明取舍）：
+  1. 9.4「平板用左 Rail」vs 10.7「平板用横向条」→ 取 9.4，即平板竖直 + 手机横向（Owner 裁决）。
+  2. 9.6.1 标题栏 72dp vs 10.2 导航条 72dp。
+- 状态：**待 Owner 装机实测双方向手感**（平板竖直 / 手机横向）。
+
 ## 待办 / 已知项
+- 【阶段 7 装机反馈 · 随阶段 8 一并修复】滑动指示器（`TopGlassNavBar` indicator）三点：
+  1. 「不需要这么远」——位移 / 过冲距离偏大，需收敛（具体所指待 Owner 明确：过冲量 or 行程）。
+  2. 「可以带点方形」——指示器形状由 10.2 的胶囊（圆角 = 指示器高度 / 2）改为更方；
+     **与 10.2 明文冲突 → 需 Owner 出规格修订**（开发方按铁律不改规格文件）。
+  3. 「不是很 Q弹」——弹簧手感偏钝，需调参；触及 10.3 明文 → **需 Owner 出规格修订**。
+  - 注：修复将改动已交付的阶段 7 文件（`TopGlassNavBar.kt` / `JellyPreset`）；该「回改」由 Owner
+    明示授权（「跟着第 8 阶段一起修复」），特此留痕。
 - 评审清单 §1、§2 同步（评审方执行）。
 - 评审清单 §8 P0「构建日志」：**已具备**（run#6 全绿 + artifact `jieyundu-debug-apk` 可下载）。
 - 《要求.md》§5 仍将 `skydoves/Cloudy 1.0.0-alpha01` 列为指定依赖，与当前实现（方案 A 移除）
