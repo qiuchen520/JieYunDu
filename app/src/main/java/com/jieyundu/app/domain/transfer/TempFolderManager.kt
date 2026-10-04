@@ -69,6 +69,8 @@ class TempFolderManager @Inject constructor(
             return null
         }
         cachedTempFid = fid
+        // 【JYD-DELSAFE-2026-10-04】登记临时目录自身，供删除守卫做目录 fid 比对。
+        TempFolderGuard.register(fid)
         Timber.i("TempFolderManager created temp folder fid=%s", fid)
         return fid
     }
@@ -94,6 +96,8 @@ class TempFolderManager @Inject constructor(
         val fid = folder?.fid
         if (!fid.isNullOrBlank()) {
             cachedTempFid = fid
+            // 【JYD-DELSAFE-2026-10-04】命中已存在的临时目录时同样登记，供删除守卫比对。
+            TempFolderGuard.register(fid)
         }
         return fid
     }
@@ -106,6 +110,9 @@ class TempFolderManager @Inject constructor(
     fun recordPendingCleanup(fids: List<String>) {
         fids.filter { fid -> fid.isNotBlank() }.forEach { fid ->
             if (pendingCleanup.add(fid)) {
+                // 【JYD-DELSAFE-2026-10-04】同步登记到删除守卫：转存副本是唯一可信的
+                // 「可删」来源，守卫据此放行；未登记的 fid 一律拒绝删除。
+                TempFolderGuard.register(fid)
                 Timber.i("TempFolderManager pending cleanup fid=%s", fid)
             }
         }
@@ -130,15 +137,23 @@ class TempFolderManager @Inject constructor(
     /**
      * 删除临时目录中的某个转存文件，并在目录变空时删除该目录本身。
      *
+     * 【JYD-DELSAFE-2026-10-04】P0 数据安全：删除前**必须**过 [TempFolderGuard]，
+     * 未登记且不在临时目录内的 fid 一律拒绝，绝不触碰用户自己的文件。
+     *
      * @param fid 转存文件在本账号中的 fid。
      * @return true 表示删除请求已被接受（或文件此前已不存在）。
      */
     suspend fun deleteFromTemp(fid: String): Boolean {
         if (fid.isBlank()) return false
+        val tempFid = cachedTempFid ?: findTempFolderFid()
+        if (!TempFolderGuard.mayDeleteFromTemp(fid = fid, tempFolderFid = tempFid)) {
+            Timber.w("TempFolderManager delete refused by guard: fid=%s", fid)
+            return false
+        }
         val deleted = deleteFids(listOf(fid))
         if (!deleted) return false
         pendingCleanup.remove(fid)
-        val tempFid = cachedTempFid ?: findTempFolderFid()
+        TempFolderGuard.unregister(fid)
         if (!tempFid.isNullOrBlank()) {
             deleteTempFolderIfEmpty(tempFid)
         }
@@ -148,12 +163,23 @@ class TempFolderManager @Inject constructor(
     /**
      * 手动清理：删除当前登记的全部待清理文件，并删除空的临时目录。
      *
-     * 说明：本方法**不会创建**临时目录（避免"清理"反而新建）。
+     * 说明：
+     * - 本方法**不会创建**临时目录（避免"清理"反而新建）；
+     * - 【JYD-DELSAFE-2026-10-04】逐条过 [TempFolderGuard]：即便集合里混入非转存 fid，
+     *   也只会被拒绝而不会误删用户文件。
      *
      * @return 成功删除的文件数量。
      */
     suspend fun cleanupAll(): Int {
-        val fids = pendingCleanupFids()
+        val allFids = pendingCleanupFids()
+        val tempFid = cachedTempFid ?: findTempFolderFid()
+        val fids = allFids.filter { fid ->
+            val allowed = TempFolderGuard.mayDeleteFromTemp(fid = fid, tempFolderFid = tempFid)
+            if (!allowed) {
+                Timber.w("TempFolderManager cleanupAll skipped fid=%s (guard refused)", fid)
+            }
+            allowed
+        }
         val accepted = if (fids.isEmpty()) {
             true
         } else {
@@ -161,8 +187,8 @@ class TempFolderManager @Inject constructor(
         }
         if (accepted) {
             remove(fids)
+            fids.forEach { fid -> TempFolderGuard.unregister(fid) }
         }
-        val tempFid = cachedTempFid ?: findTempFolderFid()
         if (!tempFid.isNullOrBlank()) {
             deleteTempFolderIfEmpty(tempFid)
         }
@@ -184,8 +210,21 @@ class TempFolderManager @Inject constructor(
         if (listed.code != SUCCESS_CODE || listed.data?.list.orEmpty().isNotEmpty()) {
             return
         }
+        // 【JYD-DELSAFE-2026-10-04】临时目录自身也过守卫：只有「确认空目录」才允许删除。
+        val allowed = TempFolderGuard.mayDeleteFromTemp(
+            fid = tempFid,
+            name = TEMP_FOLDER_NAME,
+            tempFolderFid = tempFid,
+            isDirectory = true,
+            isEmptyFolder = true
+        )
+        if (!allowed) {
+            Timber.w("TempFolderManager delete temp folder refused by guard: fid=%s", tempFid)
+            return
+        }
         if (deleteFids(listOf(tempFid))) {
             cachedTempFid = null
+            TempFolderGuard.unregister(tempFid)
             Timber.i("TempFolderManager removed empty temp folder fid=%s", tempFid)
         }
     }

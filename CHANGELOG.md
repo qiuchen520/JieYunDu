@@ -1354,3 +1354,44 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 耗时与 IO 仍在其既有作用域内（C9）；取消异常一律原样抛出（C3）。
 待办：装机复验（见《要求.md》同标识条目的验收清单）。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DELSAFE-2026-10-04 · P0 删除安全边界（数据安全 · 单独出包）】
+来源：Owner《Bug 修复指令（4 项）》【P0】删除安全边界——删除操作可能误删用户网盘里已保存的文件。
+审计结论（先查证，再动手）：
+· 全项目「网盘侧删除」调用点只有两处：TempFolderManager.deleteFromTemp（夸克）与
+  UcTempFolderManager.deleteFromTemp/cleanupAll；二者均只由「转存副本清理」链路触发
+  （ShareTransfer.cleanupAfterDownload → 传入的 newFid 来自 save 返回并已 recordPendingCleanup）；
+· 个人网盘（自己的文件）下载链路根本不经过 ShareDownloadPreparer，因此**没有正在生效的误删路径**；
+· 但该保护是**隐式**的——安全性依赖「每个调用点都记得先登记 fid」。一旦将来新增调用点忘记登记，
+  就可能删到用户文件。本批把该性质固化为**单点硬边界**。
+本批落地的改动：
+· domain/transfer/TempFolderGuard.kt（新增，纯逻辑 + 一个并发集合）
+    - `isInTempFolder(name, pdirFid, tempFolderFid)`：路径含临时目录标识，或父目录 fid 命中临时目录 fid；
+    - `mayDeleteFromTemp(...)`：网盘侧删除的**唯一放行判定**，满足任一即放行——
+      ① 转存流程登记过的 fid；② 路径在临时目录内；③ 目录 fid 比对命中；
+      ④ 临时目录自身且**确认目录为空**；
+    - **默认拒绝**：fid 为空、父目录未知且未登记、路径不含标识，一律返回 false；
+    - `register/registerAll/unregister/isRegistered`：维护「转存副本」可信集合。
+· domain/transfer/TempFolderManager.kt（夸克）
+    - `deleteFromTemp`：删除前过守卫，拒绝时记 `Timber.w` 并返回 false（不再发删除请求）；
+    - `cleanupAll`：逐条过守卫，未通过者跳过并记日志（即便集合混入非转存 fid 也不会误删）；
+    - `deleteTempFolderIfEmpty`：临时目录自身也过守卫（仅空目录放行）；
+    - `recordPendingCleanup` / `ensureTempFolderFid` / `findTempFolderFid`：同步登记到守卫；
+      删除成功后 `unregister`。
+· domain/transfer/UcTempFolderManager.kt（UC）：同上五处对等改动。
+· app/src/test/java/com/jieyundu/app/domain/transfer/TempFolderGuardTest.kt（新增，11 个用例）
+    - 覆盖指令要求的三类：临时目录内 → 允许；用户自己网盘的文件 → 禁止；路径相似但不匹配 → 禁止；
+    - 另覆盖：空 fid 默认拒绝、相似父目录 fid 拒绝、临时目录自身仅空目录可删。
+修复过程中的一处自纠：守卫首版 `matchesTempPath` 只识别 `/.极云渡临时/` 与结尾形态，
+漏了**相对路径** `.极云渡临时/xxx`（该形态在单测里会被判为「禁止」而误拒）；
+已补 `startsWith(标识 + "/")` 分支，使实现与 KDoc / 单测一致。
+指令第 3 条（个人网盘下载后**只删本地文件、网盘源文件一个都不碰**）：
+· 个人网盘下载不经过 ShareDownloadPreparer（无转存、无 newFid），`cleanupAfterDownload` 从未被调用；
+· UC 侧 `cleanupAfterDownload` 本就为空操作（直连取链不产生转存副本）；
+· 本批新增的守卫进一步保证：即便将来误调用，未登记的 fid 也一律拒绝。
+约束遵守：未改 UI 视觉（玻璃 / 圆角 / 配色未动）；未改引擎下载核心逻辑；未改请求头 / 参数（R3）；
+日志走 Timber（C8）；中文入 strings.xml 之外的安全边界说明写在 KDoc（无 UI 文案新增）。
+待办：**单独出包验收**——① 从自己网盘下载文件，完成后网盘里该文件仍在；
+② 从分享链接转存下载，完成后临时目录里该文件已删。
+================================================================================
