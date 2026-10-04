@@ -209,7 +209,14 @@
 - 合规自检：R3（未改任何请求头 / 参数）、C3（取消异常原样抛出，未改动）、C5（新增文案入 strings.xml）、
   C8（新增日志走 Timber）、C9（新增 Flow 仅在既有 IO 作用域内刷新，未新增线程）；
   未动玻璃质感 / 圆角 / Q 弹手感 / 浅色配色；未新增 material-icons（D8）；下载引擎核心下载逻辑未改。
-- 状态：**代码已落盘并推送待 CI**；B1 待 Owner 装机验收（验收标准见 §4.2）。
+- 状态：**已完成并出包**——首版 `8cedf1d6`（CI 失败：`ACTIVE_STATES` 位于 private 伴生对象，外部不可见）
+  → 中断会话补推 `cabc0e53` → 修正版 `7453ce11`；CI `37189131142` **success**
+  （Set up / Build Debug APK / Upload APK / Run unit tests 全绿）；
+  产物 `/sdcard/Download/极云渡_下载速度修复_debug.apk`（11,904,323 B，CI 固定签名）；
+  **B1 待 Owner 装机验收**（验收标准见 §4.2）。
+- 编译复盘（供后续会话复用）：`DownloadEngine` 原为 `private companion object`，其成员对外不可见；
+  本轮把伴生对象改为 public、内部常量逐个标 `private`，仅公开 `ACTIVE_STATES`。
+  首次 CI 即因此失败（`Cannot access 'Companion': it is private in 'DownloadEngine'`），修正后通过。
 - 环境备注（供后续 DSH 会话参考）：**本机没有可用沙箱后端**，`workspace-write` 模式下任何 shell 命令都会被拒；
   文件工具新建文件会以**断链符号链接**形式落地（需修复或直接用 shell 写入）。
   因此本轮以「一次性提权命令」执行 shell / 脚本，属环境限制，非代码问题。
