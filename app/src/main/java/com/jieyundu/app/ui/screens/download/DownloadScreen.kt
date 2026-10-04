@@ -12,7 +12,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +37,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
+import com.jieyundu.app.ui.glass.GlassPanel
 import com.jieyundu.app.ui.screens.download.components.DownloadFilterBar
 import com.jieyundu.app.ui.screens.download.components.DownloadItem
 import com.jieyundu.app.ui.theme.Dimens
@@ -73,14 +73,21 @@ fun DownloadScreen(modifier: Modifier = Modifier) {
                 .padding(start = spacing, end = spacing, top = spacing)
         )
         if (downloadItems.isEmpty()) {
-            Box(
+            // B2 整页玻璃化：空态同样落在一块玻璃面板上，与列表卡片同材质。
+            GlassPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(Dimens.SpaceXl),
-                contentAlignment = Alignment.Center
+                    .padding(spacing),
+                cornerRadius = Dimens.CardCorner,
+                contentPadding = Dimens.PanelPadding,
+                fillColor = JieYunDuColors.GlassFill,
+                borderColor = JieYunDuColors.GlassBorder
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     EmptyStateGlyph(modifier = Modifier.size(Dimens.EmptyIconSize))
                     Spacer(modifier = Modifier.height(Dimens.SpaceLg))
                     Text(

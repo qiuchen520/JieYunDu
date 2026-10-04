@@ -7,6 +7,8 @@ package com.jieyundu.app.ui.screens.settings
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.BuildConfig
@@ -87,6 +89,59 @@ class SettingsViewModel @Inject constructor(
 
     /** 当前下载限速，单位字节/秒（C1；0 = 不限速）。 */
     val speedLimitBytesPerSecond: StateFlow<Long> = appSettingsStore.speedLimitBytesPerSecond
+
+    /** 锁屏后是否保持下载（C2 第 1 条，默认开）。 */
+    val keepDownloadingOnLock: StateFlow<Boolean> = appSettingsStore.keepDownloadingOnLock
+
+    /** 是否发布通知栏下载进度（C2 第 2 条，默认开）。 */
+    val downloadNotificationEnabled: StateFlow<Boolean> =
+        appSettingsStore.downloadNotificationEnabled
+
+    private val _batteryOptimizationExempt = MutableStateFlow(isBatteryOptimizationExempt())
+
+    /** 当前是否已在「忽略电池优化」白名单内（C2 第 1 条的入口状态）。 */
+    val batteryOptimizationExempt: StateFlow<Boolean> = _batteryOptimizationExempt.asStateFlow()
+
+    /**
+     * 设置「锁屏后保持下载」（C2 第 1 条）。
+     *
+     * @param enabled 是否开启。
+     */
+    fun setKeepDownloadingOnLock(enabled: Boolean) {
+        appSettingsStore.setKeepDownloadingOnLock(enabled)
+    }
+
+    /**
+     * 设置「通知栏下载进度」（C2 第 2 条）。
+     *
+     * @param enabled 是否开启。
+     */
+    fun setDownloadNotificationEnabled(enabled: Boolean) {
+        appSettingsStore.setDownloadNotificationEnabled(enabled)
+    }
+
+    /**
+     * 刷新「忽略电池优化」白名单状态（C2 第 1 条）。
+     *
+     * 说明：系统设置页返回后调用（用户在系统页里改完，App 需要重新读取真实状态）。
+     */
+    fun refreshBatteryOptimizationStatus() {
+        _batteryOptimizationExempt.value = isBatteryOptimizationExempt()
+    }
+
+    /**
+     * 查询当前 App 是否已被排除在电池优化之外。
+     *
+     * 说明：API 23 以下没有电池优化概念，直接视为「已豁免」，避免设置页出现无意义入口。
+     *
+     * @return true 表示已豁免（或系统版本无需处理）。
+     */
+    private fun isBatteryOptimizationExempt(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            ?: return true
+        return powerManager.isIgnoringBatteryOptimizations(appContext.packageName)
+    }
 
     private val _directoryState = MutableStateFlow(
         DownloadDirectoryState(

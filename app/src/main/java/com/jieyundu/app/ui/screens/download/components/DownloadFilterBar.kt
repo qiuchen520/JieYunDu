@@ -1,35 +1,27 @@
 // 文件：DownloadFilterBar.kt
-// 职责：下载页顶部筛选条（全部 / 下载中 / 已完成）
-// 依赖：JieYunDuColors、Dimens、DownloadFilter、Compose foundation
+// 职责：下载页顶部筛选条（全部 / 下载中 / 已完成），整条为玻璃面板
+// 依赖：GlassPanel、GlassChip、Dimens、DownloadFilter
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.download.components
 
-import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
+import com.jieyundu.app.ui.components.GlassChip
+import com.jieyundu.app.ui.glass.GlassPanel
 import com.jieyundu.app.ui.screens.download.DownloadFilter
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
 
 /**
- * 下载页筛选条（布局修订）。
+ * 下载页筛选条（布局修订 + B2 整页玻璃化）。
  *
- * 说明：一排圆角胶囊；选中态为主色底 + 白字，未选中为浅灰底 + 次级文字色（浅色 Area 风）。
- * 胶囊圆角取 [Dimens.FilterChipCorner]（≈ 高度 × 0.33，**非全圆胶囊**，符合 9.2）。
+ * 说明：整条筛选条本身是一块**玻璃面板**（半透明白底 + 边缘高光 + 极淡内阴影），
+ * 内部三枚档位胶囊同为玻璃质感（见 [GlassChip]）；选中态仍是主色底 + 白字，未选中为
+ * 玻璃底 + 次级文字色——配色与圆角全部沿用既有常量（不改视觉基准）。
  *
  * @param selected 当前选中的筛选档。
  * @param onSelect 点击某档的回调。
@@ -41,51 +33,24 @@ fun DownloadFilterBar(
     onSelect: (DownloadFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.height(Dimens.FilterBarHeight),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+    GlassPanel(
+        modifier = modifier,
+        cornerRadius = Dimens.CardCorner,
+        contentPadding = Dimens.SpaceSm,
+        fillColor = JieYunDuColors.GlassFillStrong,
+        borderColor = JieYunDuColors.GlassBorder
     ) {
-        DownloadFilter.entries.forEach { entry ->
-            FilterChip(
-                labelRes = entry.labelRes,
-                selected = entry == selected,
-                onClick = { onSelect(entry) }
-            )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
+        ) {
+            DownloadFilter.entries.forEach { entry ->
+                GlassChip(
+                    labelRes = entry.labelRes,
+                    selected = entry == selected,
+                    onClick = { onSelect(entry) }
+                )
+            }
         }
-    }
-}
-
-/**
- * 单个筛选胶囊。
- *
- * @param labelRes 文案资源 id。
- * @param selected 是否选中。
- * @param onClick 点击回调。
- */
-@Composable
-private fun FilterChip(
-    @StringRes labelRes: Int,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(Dimens.FilterChipCorner)
-    val background = if (selected) JieYunDuColors.Primary else JieYunDuColors.InputFieldFill
-    val contentColor = if (selected) JieYunDuColors.OnPrimary else JieYunDuColors.TextSecondary
-
-    Box(
-        modifier = Modifier
-            .height(Dimens.FilterChipHeight)
-            .clip(shape)
-            .background(background)
-            .clickable(onClick = onClick)
-            .padding(horizontal = Dimens.SpaceLg),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(labelRes),
-            style = MaterialTheme.typography.labelMedium,
-            color = contentColor
-        )
     }
 }

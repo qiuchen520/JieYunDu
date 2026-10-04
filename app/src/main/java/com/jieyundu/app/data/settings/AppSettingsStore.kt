@@ -152,6 +152,54 @@ class AppSettingsStore @Inject constructor(
         _speedLimitBytesPerSecond.value = clamped
     }
 
+    /**
+     * 后台保活：锁屏后是否保持下载（C2 第 1 条）。
+     *
+     * 说明：默认开启。开启时下载任务运行期间持有 `PARTIAL_WAKE_LOCK`
+     * （见 `DownloadWakeLockManager`）。
+     */
+    private val _keepDownloadingOnLock = MutableStateFlow(
+        prefs.getBoolean(KEY_KEEP_DOWNLOADING_ON_LOCK, DEFAULT_KEEP_DOWNLOADING_ON_LOCK)
+    )
+
+    /** 「锁屏后保持下载」开关的只读流。 */
+    val keepDownloadingOnLock: StateFlow<Boolean> = _keepDownloadingOnLock.asStateFlow()
+
+    /**
+     * 设置「锁屏后保持下载」（C2 第 1 条）。
+     *
+     * @param enabled 是否开启。
+     */
+    fun setKeepDownloadingOnLock(enabled: Boolean) {
+        if (enabled == _keepDownloadingOnLock.value) return
+        prefs.edit().putBoolean(KEY_KEEP_DOWNLOADING_ON_LOCK, enabled).apply()
+        _keepDownloadingOnLock.value = enabled
+    }
+
+    /**
+     * 通知栏下载进度开关（C2 第 2 条）。
+     *
+     * 说明：默认开启。关闭时不发布进度通知，但**前台服务仍然运行**（保活不受影响），
+     * 完成通知也一并静默，避免用户明确关闭后仍被打扰。
+     */
+    private val _downloadNotificationEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_DOWNLOAD_NOTIFICATION_ENABLED, DEFAULT_DOWNLOAD_NOTIFICATION_ENABLED)
+    )
+
+    /** 「通知栏下载进度」开关的只读流。 */
+    val downloadNotificationEnabled: StateFlow<Boolean> = _downloadNotificationEnabled.asStateFlow()
+
+    /**
+     * 设置「通知栏下载进度」（C2 第 2 条）。
+     *
+     * @param enabled 是否开启。
+     */
+    fun setDownloadNotificationEnabled(enabled: Boolean) {
+        if (enabled == _downloadNotificationEnabled.value) return
+        prefs.edit().putBoolean(KEY_DOWNLOAD_NOTIFICATION_ENABLED, enabled).apply()
+        _downloadNotificationEnabled.value = enabled
+    }
+
     /** [DownloadSettingsPort]：当前最大同时下载任务数。 */
     override fun currentMaxConcurrentTasks(): Int = _maxConcurrentTasks.value
 
@@ -223,5 +271,17 @@ class AppSettingsStore @Inject constructor(
 
         /** 下载限速键（C1，字节/秒）。 */
         const val KEY_SPEED_LIMIT = "speed_limit_bytes_per_second"
+
+        /** 锁屏保持下载键（C2 第 1 条）。 */
+        const val KEY_KEEP_DOWNLOADING_ON_LOCK = "keep_downloading_on_lock"
+
+        /** 通知栏下载进度键（C2 第 2 条）。 */
+        const val KEY_DOWNLOAD_NOTIFICATION_ENABLED = "download_notification_enabled"
+
+        /** 锁屏保持下载默认值（C2：默认开）。 */
+        const val DEFAULT_KEEP_DOWNLOADING_ON_LOCK = true
+
+        /** 通知栏下载进度默认值（C2：默认开）。 */
+        const val DEFAULT_DOWNLOAD_NOTIFICATION_ENABLED = true
     }
 }

@@ -6,29 +6,25 @@
 package com.jieyundu.app.ui.screens.settings
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,9 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -47,12 +41,15 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
+import com.jieyundu.app.ui.components.GlassChip
+import com.jieyundu.app.ui.components.SettingToggleRow
 import com.jieyundu.app.ui.glass.GlassButton
 import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.home.uiLabelRes
 import com.jieyundu.app.ui.theme.Dimens
 import com.jieyundu.app.ui.theme.JieYunDuColors
 import java.io.File
+import timber.log.Timber
 
 /**
  * 设置页。
@@ -78,6 +75,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val maxTaskRetries by viewModel.maxTaskRetries.collectAsState()
     val speedLimitBytesPerSecond by viewModel.speedLimitBytesPerSecond.collectAsState()
     val directoryState by viewModel.directoryState.collectAsState()
+    // C2：后台保活与通知
+    val keepDownloadingOnLock by viewModel.keepDownloadingOnLock.collectAsState()
+    val downloadNotificationEnabled by viewModel.downloadNotificationEnabled.collectAsState()
+    val batteryOptimizationExempt by viewModel.batteryOptimizationExempt.collectAsState()
     // B2 功能①：目录选择器返回 tree Uri → 解析为真实路径落库；A1 权限仅在用户「更改目录」时按需申请。
     val treePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -221,8 +222,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
             ) {
                 viewModel.chunkCountOptions.forEach { option ->
-                    ChunkOptionChip(
-                        count = option,
+                    GlassChip(
+                        label = option.toString(),
                         selected = option == chunkCount,
                         onClick = { viewModel.setChunkCount(option) }
                     )
@@ -243,7 +244,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
             ) {
                 viewModel.maxConcurrentTaskOptions.forEach { option ->
-                    OptionChip(
+                    GlassChip(
                         label = option.toString(),
                         selected = option == maxConcurrentTasks,
                         onClick = { viewModel.setMaxConcurrentTasks(option) }
@@ -265,7 +266,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
             ) {
                 viewModel.speedLimitOptionsBytesPerSecond.forEach { option ->
-                    OptionChip(
+                    GlassChip(
                         label = if (option <= 0L) {
                             stringResource(R.string.settings_speed_unlimited)
                         } else {
@@ -294,7 +295,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
             ) {
                 viewModel.maxTaskRetryOptions.forEach { option ->
-                    OptionChip(
+                    GlassChip(
                         label = if (option <= 0) {
                             stringResource(R.string.settings_retry_off)
                         } else {
@@ -350,6 +351,47 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     fillColor = JieYunDuColors.GlassFillStrong,
                     borderColor = JieYunDuColors.GlassBorder,
                     contentColor = JieYunDuColors.TextPrimary
+                )
+            }
+        }
+        SettingsCard(
+            title = stringResource(R.string.settings_background_title),
+            contentPadding = contentPadding
+        ) {
+            SettingToggleRow(
+                title = stringResource(R.string.settings_keep_downloading_title),
+                description = stringResource(R.string.settings_keep_downloading_hint),
+                checked = keepDownloadingOnLock,
+                onCheckedChange = viewModel::setKeepDownloadingOnLock,
+                contentPadding = Dimens.SpaceLg
+            )
+            SettingToggleRow(
+                title = stringResource(R.string.settings_download_notification_title),
+                description = stringResource(R.string.settings_download_notification_hint),
+                checked = downloadNotificationEnabled,
+                onCheckedChange = viewModel::setDownloadNotificationEnabled,
+                contentPadding = Dimens.SpaceLg
+            )
+            if (!batteryOptimizationExempt) {
+                Text(
+                    text = stringResource(R.string.settings_battery_optimization_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextSecondary
+                )
+                GlassButton(
+                    text = stringResource(R.string.settings_battery_optimization_action),
+                    onClick = { openBatteryOptimizationSettings(context) },
+                    height = Dimens.ButtonHeightCompact,
+                    cornerRadius = Dimens.ButtonCornerCompact,
+                    fillColor = JieYunDuColors.GlassFillStrong,
+                    borderColor = JieYunDuColors.GlassBorder,
+                    contentColor = JieYunDuColors.TextPrimary
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.settings_battery_optimization_done),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = JieYunDuColors.TextSecondary
                 )
             }
         }
@@ -489,55 +531,31 @@ private fun SettingsCard(
 }
 
 /**
- * 并发档位胶囊（B2 功能②：32 / 64 / 128 / 256 / 512）。
+ * 打开「忽略电池优化」系统设置页（C2 第 1 条）。
  *
- * 说明：视觉与下载页筛选胶囊一致（圆角 = [Dimens.FilterChipCorner]，选中主色底 + 白字）。
+ * 说明：优先直达本 App 的电池优化授权弹窗（[PowerManager.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS]，
+ * 需 manifest 声明 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限）；厂商 ROM 上该 Intent 可能不存在，
+ * 此时回退到电池优化设置列表页（[Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS]）。
+ * 两者都不可用时只记日志，不抛异常、不打断用户操作（D15）。
  *
- * @param count 档位数值。
- * @param selected 是否选中。
- * @param onClick 点击回调。
+ * @param context 上下文。
  */
-@Composable
-private fun ChunkOptionChip(
-    count: Int,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    OptionChip(label = count.toString(), selected = selected, onClick = onClick)
-}
-
-/**
- * 通用档位胶囊（C1：同时任务数 / 限速 / 重试共用）。
- *
- * 说明：视觉与下载页筛选胶囊一致（圆角 = [Dimens.FilterChipCorner]，选中主色底 + 白字）。
- *
- * @param label 档位显示文案。
- * @param selected 是否选中。
- * @param onClick 点击回调。
- */
-@Composable
-private fun OptionChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(Dimens.FilterChipCorner)
-    val background = if (selected) JieYunDuColors.Primary else JieYunDuColors.InputFieldFill
-    val contentColor = if (selected) JieYunDuColors.OnPrimary else JieYunDuColors.TextSecondary
-    Box(
-        modifier = Modifier
-            .height(Dimens.FilterChipHeight)
-            .clip(shape)
-            .background(background)
-            .clickable(onClick = onClick)
-            .padding(horizontal = Dimens.SpaceMd),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = contentColor
-        )
+private fun openBatteryOptimizationSettings(context: Context) {
+    val directIntent = Intent(
+        PowerManager.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+    ).apply { data = Uri.parse("package:${context.packageName}") }
+    try {
+        context.startActivity(directIntent)
+        return
+    } catch (exception: ActivityNotFoundException) {
+        Timber.w(exception, "SettingsScreen: no direct battery optimization activity, fallback")
+    } catch (exception: SecurityException) {
+        Timber.w(exception, "SettingsScreen: battery optimization direct intent denied, fallback")
+    }
+    try {
+        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+    } catch (exception: ActivityNotFoundException) {
+        Timber.w(exception, "SettingsScreen: no battery optimization settings activity")
     }
 }
 

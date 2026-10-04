@@ -1295,3 +1295,62 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 （仅加一个活动态前置判断）；仅新增 UI 元素 + 接线；中文入 strings.xml（C5）；日志走 Timber（C8）。
 待办：装机复验四条（进度条 + 已下载/总量 + 速度 + 剩余时间；暂停速度归零；继续断点续传；完成满格显示已完成）。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-B2GLASS-C2-2026-10-04 · B2 整页玻璃化 + C2 后台保活与通知】
+来源：Owner 指令「B1 验收通过，开 B2 + C2；两批同推，一次出包」；
+      B2 范围经 Owner 当面确认 = **整页玻璃化**（下载页 + 设置页），配色 / 圆角 / 视觉基准不动。
+一、B2 · 整页玻璃化（下载页 + 设置页）
+· 新增 ui/components/GlassChip.kt
+    - 玻璃质感档位胶囊（两个重载：直接文案 / 字符串资源）；
+    - 未选中 = 玻璃面板（半透明白底 + 边缘高光 + 极淡内阴影）+ 次级文字色；
+    - 选中 = 仍为主色蓝底 + 白字（**不改配色**），但改用 GlassPanel，保留玻璃边缘高光 / 内阴影；
+    - 圆角沿用 Dimens.FilterChipCorner（非全圆，符合 9.2 / 9.6.4）。
+· ui/glass/GlassPanel.kt
+    - 新增可选 fillColor / borderColor 参数（默认值与原硬编码色一致），使胶囊等元素可复用玻璃
+      材质而无需引入新颜色；既有调用点行为不变。
+· ui/screens/download/components/DownloadFilterBar.kt
+    - 整条筛选条改为一块玻璃面板（contentPadding = SpaceSm），内部三枚档位胶囊改用 GlassChip；
+    - 删除原「纯色扁平」FilterChip 实现。
+· ui/screens/download/DownloadScreen.kt
+    - 空态由裸 Box 改为玻璃面板，空态图标 / 文案居中，与列表卡片同材质。
+· ui/screens/settings/SettingsScreen.kt
+    - 删除私有 OptionChip / ChunkOptionChip（纯色扁平），全部档位改用 GlassChip（含限速 / 重试 /
+      同时任务数 / 并发分片数四处）；
+    - 新增「后台与通知」玻璃卡片（C2 设置项，见下）；
+    - 清理随之不再使用的导入。
+二、C2 · 后台保活与通知（《要求.md》C2 第 1、2 条）
+· 新增 service/DownloadWakeLockManager.kt
+    - 下载期间持有 PARTIAL_WAKE_LOCK：懒持有（仅在任务运行时）、可重入（计数）、可失败
+      （系统拒绝只记日志）；带 10 分钟超时兜底，避免异常路径锁泄漏。
+· data/settings/AppSettingsStore.kt
+    - 新增 keepDownloadingOnLock（默认开）与 downloadNotificationEnabled（默认开）两个开关，
+      沿用既有 SharedPreferences + StateFlow 模式。
+· service/DownloadService.kt（原为「挂空未接线」，本批接线）
+    - 进度来源改为引擎实时快照 liveProgress（与下载页同源，避免 observeProgress 在任务未注册时
+      返回静态 PENDING 导致通知不动）；60 秒无该任务更新则结束前台观察，防止通知常驻；
+    - 按 keepDownloadingOnLock 申请 / 释放唤醒锁（finally + onDestroy 双保险，幂等）；
+    - 按 downloadNotificationEnabled 决定通知详略：关闭时不刷进度、不发完成通知，但仍以静默
+      常驻通知维持前台服务（系统硬性要求「前台服务必须有通知」，无法真正零通知）；
+    - startForeground 全程 try/catch（Android 12+ 后台启动限制 / 机型差异），失败只降级不崩溃；
+    - 新增 DownloadService.start(context, task) 静态入口，内部 catch 启动异常。
+· service/NotificationHelper.kt
+    - 新增 buildSilentForegroundNotification()（关闭进度通知时的静默常驻通知）；
+    - notify(...) 新增 enabled 重载（关闭时直接跳过）。
+· ui/screens/home/HomeViewModel.kt
+    - 投递引擎后调用 DownloadService.start(appContext, task) —— C2 接线点。
+· ui/screens/settings/SettingsViewModel.kt + SettingsScreen.kt
+    - 两个开关接入设置页；新增「加入忽略电池优化白名单」入口（优先直达授权弹窗，厂商 ROM 回退
+      电池优化设置列表；均不可用只记日志），并提供 batteryOptimizationExempt 状态显示。
+· AndroidManifest.xml
+    - 新增 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 权限（仅用于拉起系统授权弹窗）；
+      WAKE_LOCK / FOREGROUND_SERVICE / FOREGROUND_SERVICE_DATA_SYNC / POST_NOTIFICATIONS 早已声明。
+· res/values/strings.xml
+    - 新增 settings_background_title / settings_keep_downloading_title+hint /
+      settings_download_notification_title+hint / settings_battery_optimization_hint+action+done /
+      notification_download_silent_text。
+约束遵守：未改玻璃质感基准 / 圆角规格 / 配色常量（未新增任何颜色）；未动引擎下载核心逻辑
+（分片、续传、限速、重试一行未改）；中文入 strings.xml（C5）；日志走 Timber（C8）；
+耗时与 IO 仍在其既有作用域内（C9）；取消异常一律原样抛出（C3）。
+待办：装机复验（见《要求.md》同标识条目的验收清单）。
+================================================================================

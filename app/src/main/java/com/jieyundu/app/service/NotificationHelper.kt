@@ -88,6 +88,37 @@ class NotificationHelper @Inject constructor(
             .build()
 
     /**
+     * 构建前台服务的常驻通知（C2 第 2 条：用户关闭进度通知时使用）。
+     *
+     * 说明：Android 要求前台服务必须有可见通知，无法真正「零通知」；因此在用户关闭进度通知后，
+     * 退化为一条**静默、无进度**的通知（只说明正在后台下载），不再随进度刷新，也不发完成通知。
+     *
+     * @return 静默常驻通知。
+     */
+    fun buildSilentForegroundNotification(): Notification =
+        baseBuilder(
+            title = context.getString(R.string.notification_download_title),
+            text = context.getString(R.string.notification_download_silent_text)
+        )
+            .setProgress(0, 0, true)
+            .setOngoing(true)
+            .build()
+
+    /**
+     * 发送通知（缺少通知权限时静默失败，不抛异常）。
+     *
+     * @param notificationId 通知 ID。
+     * @param notification 通知对象。
+     * @param enabled 是否允许发布；false 时直接跳过（C2：通知栏进度开关关闭）。
+     */
+    fun notify(notificationId: Int, notification: Notification, enabled: Boolean) {
+        if (!enabled) {
+            return
+        }
+        notify(notificationId, notification)
+    }
+
+    /**
      * 发送通知（缺少通知权限时静默失败，不抛异常）。
      *
      * @param notificationId 通知 ID。

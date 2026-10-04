@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -42,6 +43,9 @@ private const val INNER_SHADOW_BAND_FACTOR = 3f
  * @param modifier 外部修饰符。
  * @param cornerRadius 圆角半径。
  * @param contentPadding 内边距。
+ * @param fillColor 面板底色；默认 [JieYunDuColors.GlassFill]。B2 整页玻璃化时档位胶囊等
+ *   元素需要换底色，仍沿用既有色常量，**不引入新颜色**。
+ * @param borderColor 面板描边色；默认 [JieYunDuColors.GlassBorder]。
  * @param content 面板内容。
  */
 @Composable
@@ -49,6 +53,8 @@ fun GlassPanel(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = Dimens.CardCorner,
     contentPadding: Dp = Dimens.PanelPadding,
+    fillColor: Color = JieYunDuColors.GlassFill,
+    borderColor: Color = JieYunDuColors.GlassBorder,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(cornerRadius)
@@ -61,14 +67,14 @@ fun GlassPanel(
                 spotColor = JieYunDuColors.Shadow
             )
             .clip(shape)
-            .background(color = JieYunDuColors.GlassFill, shape = shape)
+            .background(color = fillColor, shape = shape)
             .drawWithContent {
                 drawRefraction(shape)
                 drawContent()
                 drawEdgeHighlight(shape)
                 drawInnerShadow(shape)
             }
-            .border(width = Dimens.HighlightStroke, color = JieYunDuColors.GlassBorder, shape = shape)
+            .border(width = Dimens.HighlightStroke, color = borderColor, shape = shape)
             .padding(contentPadding),
         content = content
     )

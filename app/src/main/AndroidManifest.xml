@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- C2 第 1 条：设置页「加入忽略电池优化白名单」入口需声明本权限（仅用于拉起系统授权弹窗） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 下载目录（B2 功能①）：默认走公共目录（A3，无需权限）；仅用户主动「更改目录」时按需申请「所有文件访问」（A1） -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- Android 8/9 写入公共下载目录所需（10+ 走 MediaStore，不再需要） -->

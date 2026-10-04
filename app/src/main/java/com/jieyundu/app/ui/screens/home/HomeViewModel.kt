@@ -28,6 +28,7 @@ import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.NetdiskServiceRouter
 import com.jieyundu.app.domain.parser.ParserRegistry
 import com.jieyundu.app.domain.util.LinkExtractor
+import com.jieyundu.app.service.DownloadService
 import com.jieyundu.app.ui.screens.download.DownloadSessionRegistry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -414,6 +415,8 @@ class HomeViewModel @Inject constructor(
         )
         downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
         downloadEngine.start(task)
+        // C2：接线前台服务（保活 + 通知）；服务只承担保活/通知，失败不影响下载本身。
+        DownloadService.start(appContext, task)
         // 任务已投递引擎：退出「准备」阶段，后续进度由下载页展示，避免首页长期显示准备提示
         // （Owner 反馈：一直显示「转存中」，实为准备文案覆盖了整个下载过程）。
         _uiState.value = _uiState.value.copy(isPreparingDownload = false)

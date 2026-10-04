@@ -196,4 +196,15 @@
     <string name="settings_speed_option_mbps">%1$d MB/s</string>
     <string name="settings_retry_off">关闭</string>
     <string name="settings_retry_option_times">%1$d 次</string>
+
+    <!-- C2：后台保活与通知（JYD-C2-2026-10-04）-->
+    <string name="settings_background_title">后台与通知</string>
+    <string name="settings_keep_downloading_title">锁屏后保持下载</string>
+    <string name="settings_keep_downloading_hint">下载期间保持 CPU 运行，锁屏后仍继续下载；关闭后可能被系统暂停。</string>
+    <string name="settings_download_notification_title">通知栏下载进度</string>
+    <string name="settings_download_notification_hint">在通知栏显示下载进度；关闭后不再显示进度通知（后台下载仍然继续）。</string>
+    <string name="settings_battery_optimization_hint">若下载在锁屏后仍被系统中断，可把本应用加入「忽略电池优化」白名单。</string>
+    <string name="settings_battery_optimization_action">加入白名单</string>
+    <string name="settings_battery_optimization_done">已加入「忽略电池优化」白名单。</string>
+    <string name="notification_download_silent_text">正在后台下载</string>
 </resources>
