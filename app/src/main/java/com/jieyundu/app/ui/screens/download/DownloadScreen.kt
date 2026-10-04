@@ -48,8 +48,9 @@ import timber.log.Timber
 /**
  * 下载页。
  *
- * 说明：数据来自 [DownloadViewModel.items]（Room 进度 × 会话文件名/路径，按筛选档过滤）；
- * 无任务或筛选后为空时展示空态。列表项点击切换暂停 / 继续，行尾删除按钮删除任务与本地文件。
+ * 说明：数据来自 [DownloadViewModel.items]（引擎实时快照 × Room 进度 × 会话文件名/路径，按筛选档过滤）；
+ * 无任务或筛选后为空时展示空态。列表项点击切换暂停 / 继续，行尾另有显式「暂停 / 继续」按钮
+ * （【JYD-DLSPEED2-2026-10-04】Owner 反馈：暂停入口需一眼可见），末位删除按钮删除任务与本地文件。
  * 平板与手机使用不同的卡片间距（9.4 / 9.5）。
  *
  * @param modifier 外部修饰符。
@@ -104,6 +105,7 @@ fun DownloadScreen(modifier: Modifier = Modifier) {
                     DownloadItem(
                         item = item,
                         onClick = { viewModel.toggleTask(item) },
+                        onToggle = { viewModel.toggleTask(item) },
                         onDelete = { viewModel.deleteTask(item) },
                         onShare = { shareDownload(context, item) },
                         onInstall = if (isApkFile(item.fileName)) {

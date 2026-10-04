@@ -562,6 +562,12 @@ class DownloadEngine @Inject constructor(
      * @param sessionBytes 本次运行累计写入的字节数。
      */
     private fun publishProgress(runtime: TaskRuntime, sessionBytes: Long) {
+        // 【JYD-DLSPEED2-2026-10-04】仅活动态才刷新：pause() 取消协程到真正停下的短暂窗口内，
+        // 在途分片可能仍调用本方法；若此时发布 DOWNLOADING 快照，会把刚写入的「已暂停」
+        // 覆盖回去，表现为「点了暂停又跳回下载中」。
+        if (runtime.state.value !in ACTIVE_STATES) {
+            return
+        }
         val now = System.currentTimeMillis()
         if (now - runtime.lastEmitAt < PROGRESS_INTERVAL_MILLIS) {
             return

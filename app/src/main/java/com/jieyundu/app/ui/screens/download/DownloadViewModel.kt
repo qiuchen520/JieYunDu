@@ -218,9 +218,14 @@ class DownloadViewModel @Inject constructor(
     }
 
     /**
-     * 点击列表项时切换任务状态：下载中 → 暂停；已暂停 / 等待中 → 继续；终态不做处理。
+     * 切换任务状态：下载中 → 暂停；已暂停 / 等待中 → 继续；终态不做处理。
      *
-     * @param item 被点击的列表条目。
+     * 说明：整卡点击与行尾「暂停 / 继续」按钮共用本方法（【JYD-DLSPEED2-2026-10-04】）。
+     * 真正的停止 / 续传由引擎负责：[DownloadEngine.pause] 会取消该任务的协程（分片请求随即停止），
+     * 已落盘的 `.part` 分片保留；[DownloadEngine.resume] 内部重新走 `start()`，
+     * 由 `ChunkManager.readPartProgress` 读取已落盘长度并从断点续传。
+     *
+     * @param item 被操作（点击或按按钮）的列表条目。
      */
     fun toggleTask(item: DownloadListItem) {
         when (item.progress.state) {

@@ -1245,3 +1245,53 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 中文入 strings.xml（C5）；日志走 Timber（C8）。
 待办：装机复验——下载一个文件，速度列**实时变化**、不再一直 `--`；暂停后显示最终态。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DLSPEED2-2026-10-04 · 整体进度 + 显式暂停/继续（B1 二轮 · 装机反馈）】
+来源：Owner 装机反馈（B1 一轮）两条：
+      ①「整体进度缺失」——看得到均速/剩余时间，但看不到「已下载多少 / 总共多少」；
+      ②「没有暂停功能」——下载项里必须有暂停/继续按钮。
+排查结论（关键）：
+· ① 的真因是**布局被裁**，不是数据缺失：下载项高度固定 88dp（平板）/ 76dp（手机），
+  扣掉 24dp（平板，PanelPadding）或 16dp（手机）内边距后仅剩 40dp / 44dp，
+  而内容需要 4 行（文件名 / 进度条 / 详情 / 状态）≈ 60dp+；一轮新增的
+  `download_size_remaining_format` 详情行落在卡片下缘之外被裁掉 → 用户看不到「已下载 / 总量」。
+· ② 引擎方法早已齐备且接线正确（DownloadViewModel.toggleTask → pause/resume），
+  但入口只有「点击整张卡片」这一个隐式手势，没有可见按钮 → 用户认为没有暂停功能。
+本批落地的代码改动：
+· ui/theme/Dimens.kt
+    - DownloadItemHeight 88dp → **124dp**（平板）；DownloadItemHeightCompact 76dp → **104dp**（手机），
+      为三行信息留足高度；
+    - 新增 ToggleButtonHeight = 36dp（暂停 / 继续文字按钮高度）。
+· ui/screens/download/components/DownloadItem.kt（重写列表项布局，按 Owner 给的骨架）
+    - 三行结构：① 文件名 + 状态文案；② 进度条（6dp / 圆角 3dp，继续自绘）+ 百分比；
+      ③ 详情行「已下载 / 总量 · 速度 · 剩余时间」；
+    - 行距按档位取 SpaceSm（平板）/ SpaceXs（手机），手机档位更紧凑；
+    - 新增 `ToggleButton`：暂停 / 继续**文字按钮**（浅主色底 + 主色字，沿用既有配色），
+      仅 PENDING / DOWNLOADING / PAUSED 展示；下载中显示「暂停」，否则显示「继续」；
+    - 新增 `onToggle` 参数；分享 / 安装 / 删除按钮与错开淡入动画保持不变。
+· ui/screens/download/DownloadScreen.kt
+    - 传入 `onToggle = { viewModel.toggleTask(item) }`（与整卡点击同源，避免两套逻辑漂移）。
+· ui/screens/download/DownloadViewModel.kt
+    - `toggleTask` KDoc 补全「引擎真正停止 / 断点续传」的接线说明（方法体未变）。
+· domain/downloader/DownloadEngine.kt
+    - `publishProgress()` 增加活动态前置判断：pause() 取消协程到真正停下的窗口内，
+      在途分片仍可能回调本方法；若不拦截，会把刚发布的「已暂停」覆盖回 DOWNLOADING，
+      表现为「点了暂停又跳回下载中」。
+· res/values/strings.xml
+    - 新增 download_detail_format = "%1$s / %2$s · %3$s · 剩余 %4$s"（取代 download_size_remaining_format）；
+    - 新增 download_action_pause = "暂停"、download_action_resume = "继续"。
+关于「进度条」组件的说明：Owner 建议用 LinearProgressIndicator；本实现继续使用 9.6.4 既有的
+      自绘进度条（高 6dp、圆角 3dp、底色 ProgressTrack、填充 ProgressFill），视觉规格与建议一致，
+      同时满足《要求.md》9.9「不要用 Material 默认组件直接堆叠」的既有约定；未新增任何颜色。
+暂停语义确认（引擎既有逻辑，本批未改核心下载逻辑）：
+· pause() → runtime.job.cancel()，分片协程在 `currentCoroutineContext().ensureActive()` 处抛出
+  CancellationException（C3 原样抛出，不转 FAILED），请求线程随即结束 → **引擎真正停止请求**；
+  已落盘的 `.part` 分片保留，进度落库；
+· resume() → start() → `ChunkManager.readPartProgress` 读回各分片已落盘长度作为 `resumeFrom`，
+  Range 头从断点写起 → **不重下已有部分**；
+· cancel() 会删除 `.part` 分片与目标文件（删除任务语义，未改）。
+约束遵守：未改玻璃质感 / 圆角 / 配色（进度条与按钮均复用既有色常量）；未动引擎下载核心逻辑
+（仅加一个活动态前置判断）；仅新增 UI 元素 + 接线；中文入 strings.xml（C5）；日志走 Timber（C8）。
+待办：装机复验四条（进度条 + 已下载/总量 + 速度 + 剩余时间；暂停速度归零；继续断点续传；完成满格显示已完成）。
+================================================================================

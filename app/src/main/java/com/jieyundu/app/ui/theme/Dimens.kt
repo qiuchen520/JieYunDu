@@ -135,17 +135,30 @@ object Dimens {
     /** 解析结果卡片右侧圆形下载按钮直径（9.6.3：56dp）。 */
     val DownloadButtonSize: Dp = 56.dp
 
-    /** 下载列表项高度（平板，9.6.4：88dp）。 */
-    val DownloadItemHeight: Dp = 88.dp
+    /**
+     * 下载列表项高度（平板）。
+     *
+     * 说明：【JYD-DLSPEED2-2026-10-04】由 88dp 提升到 124dp——Owner 要求下载项展示
+     * 「文件名 + 进度条 + 已下载/总量 · 速度 · 剩余时间」三行信息，88dp 扣掉 24dp 内边距后
+     * 仅剩 40dp，第三行会被裁掉（这正是此前「看不到已下载 / 总量」的原因）。
+     */
+    val DownloadItemHeight: Dp = 124.dp
 
-    /** 下载列表项高度（手机，9.6.4：76dp）。 */
-    val DownloadItemHeightCompact: Dp = 76.dp
+    /**
+     * 下载列表项高度（手机）。
+     *
+     * 说明：同样为承载三行信息，由 76dp 提升到 104dp（扣掉 16dp 内边距后 72dp，行距压到 4dp）。
+     */
+    val DownloadItemHeightCompact: Dp = 104.dp
 
     /** 进度条高度（9.6.4：6dp）。 */
     val ProgressBarHeight: Dp = 6.dp
 
     /** 进度条圆角（9.6.4：3dp；组件明文规格，优先于 9.2 的 16dp 下限）。 */
     val ProgressBarCorner: Dp = 3.dp
+
+    /** 下载项「暂停 / 继续」文字按钮高度（手机按钮高度 48dp 的紧凑档）。 */
+    val ToggleButtonHeight: Dp = 36.dp
 
     // --- 阶段 8 整改（UI 重构）---
 
