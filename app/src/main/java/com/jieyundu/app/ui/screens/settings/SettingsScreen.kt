@@ -13,7 +13,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -533,7 +533,7 @@ private fun SettingsCard(
 /**
  * 打开「忽略电池优化」系统设置页（C2 第 1 条）。
  *
- * 说明：优先直达本 App 的电池优化授权弹窗（[PowerManager.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS]，
+ * 说明：优先直达本 App 的电池优化授权弹窗（[Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS]，
  * 需 manifest 声明 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限）；厂商 ROM 上该 Intent 可能不存在，
  * 此时回退到电池优化设置列表页（[Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS]）。
  * 两者都不可用时只记日志，不抛异常、不打断用户操作（D15）。
@@ -542,7 +542,7 @@ private fun SettingsCard(
  */
 private fun openBatteryOptimizationSettings(context: Context) {
     val directIntent = Intent(
-        PowerManager.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
     ).apply { data = Uri.parse("package:${context.packageName}") }
     try {
         context.startActivity(directIntent)

@@ -19,6 +19,7 @@ import com.jieyundu.app.domain.downloader.DownloadTask
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -114,7 +115,7 @@ class DownloadService : Service() {
             engine.liveProgress
                 .map { live -> live[task.taskId] }
                 .filterNotNull()
-                .timeout(LIVE_PROGRESS_TIMEOUT_MILLIS)
+                .timeout(LIVE_PROGRESS_TIMEOUT_MILLIS.milliseconds)
                 .collect { progress ->
                     when (progress.state) {
                         DownloadState.COMPLETED -> {
