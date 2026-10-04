@@ -146,7 +146,7 @@ class NetdiskBrowserViewModel @Inject constructor(
      * @param file 目标条目。
      */
     fun confirmDelete(file: FileInfo) {
-        val type = _state.value.netdiskType ?: return
+        val type = _uiState.value.netdiskType ?: return
         val browser = netdiskRouter.personalBrowserFor(type) ?: return
         _state.value = _state.value.copy(pendingDelete = null)
         viewModelScope.launch(Dispatchers.IO) {
@@ -186,7 +186,7 @@ class NetdiskBrowserViewModel @Inject constructor(
             _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_folder)
             return
         }
-        val type = _state.value.netdiskType ?: return
+        val type = _uiState.value.netdiskType ?: return
         val browser = netdiskRouter.personalBrowserFor(type) ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -237,13 +237,13 @@ class NetdiskBrowserViewModel @Inject constructor(
      * 说明：只刷新栈顶层级，路径栈本身不变。
      */
     private suspend fun reloadCurrentLevel() {
-        val state = _state.value
-        val type = state.netdiskType ?: return
-        val level = state.currentLevel ?: return
+        val browsing = _uiState.value
+        val type = browsing.netdiskType ?: return
+        val level = browsing.currentLevel ?: return
         val browser = netdiskRouter.personalBrowserFor(type) ?: return
         val children = browser.listPersonalChildren(level.pdirFid)
-        val stack = state.stack.dropLast(1) + level.copy(files = children)
-        _state.value = _state.value.copy(stack = stack)
+        val stack = browsing.stack.dropLast(1) + level.copy(files = children)
+        _uiState.value = browsing.copy(stack = stack)
     }
 
     /**
