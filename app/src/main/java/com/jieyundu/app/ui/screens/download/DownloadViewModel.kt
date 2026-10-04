@@ -129,11 +129,15 @@ data class DownloadListItem(
 /**
  * 下载页 ViewModel。
  *
- * 说明：列表来源为 [DownloadRepository.observeProgress]（Room 持久化进度），
- * 与 [DownloadSessionRegistry.tasks] 合并后按当前筛选档过滤得到可展示条目；
- * 操作转发到 [DownloadEngine]。
+ * 说明：列表数据源为「[DownloadEngine.liveProgress]（引擎实时内存快照）覆盖
+ * [DownloadRepository.observeProgress]（Room 持久化进度）」后的结果，再与
+ * [DownloadSessionRegistry.tasks] 合并、按当前筛选档过滤得到可展示条目；操作转发到 [DownloadEngine]。
  *
- * @param downloadEngine 分片下载引擎（暂停 / 继续 / 取消）。
+ * 为何要合并（【JYD-DLSPEED-2026-10-04】）：Room 只在「开始 / 暂停 / 完成」三刻写入且**不保存速度**，
+ * 单靠它会令进度条长期停在启动值、速度恒为 `--`；引擎的实时快照（每 200ms 节流刷新）恰好补上
+ * 下载中任务的实时速度与进度，且**不落库**（Owner 要求③）。
+ *
+ * @param downloadEngine 分片下载引擎（暂停 / 继续 / 取消 / 实时进度）。
  * @param downloadRepository 下载进度仓库。
  * @param sessionRegistry 会话内任务登记表。
  */
@@ -153,18 +157,19 @@ class DownloadViewModel @Inject constructor(
     /** 下载列表状态流（按更新时间倒序，与 DAO 查询顺序一致；按当前筛选档过滤）。 */
     val items: StateFlow<List<DownloadListItem>> = combine(
         downloadRepository.observeProgress(),
+        downloadEngine.liveProgress,
         sessionRegistry.tasks,
         _filter
-    ) { progressList, tasks, currentFilter ->
+    ) { progressList, liveProgress, tasks, currentFilter ->
         progressList
-            .map { progress ->
-                val remembered = tasks[progress.taskId]
+            .map { persisted ->
+                val remembered = tasks[persisted.taskId]
                 DownloadListItem(
-                    progress = progress,
+                    progress = mergeLiveProgress(persisted, liveProgress[persisted.taskId]),
                     fileName = remembered?.fileName,
                     // 会话内登记优先（含文件名场景），否则回退到持久化的 savePath，
                     // 使进程重启后仍能定位并删除本地文件（【修订 JYD-SAVEPATH-2026-10-03】）。
-                    savePath = remembered?.savePath ?: progress.savePath
+                    savePath = remembered?.savePath ?: persisted.savePath
                 )
             }
             .filter { item -> currentFilter.matches(item.progress.state) }
@@ -173,6 +178,35 @@ class DownloadViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
         initialValue = emptyList()
     )
+
+    /**
+     * 用引擎的实时快照覆盖 Room 持久化进度（【JYD-DLSPEED-2026-10-04】）。
+     *
+     * 规则：
+     * 1. 引擎在内存中且仍处活动态（等待 / 下载中）→ 用实时快照（含速度、实时字节数）；
+     * 2. 实时快照已落到终态（完成 / 失败）→ 同样采用，使「速度归零、状态更新」即时可见；
+     * 3. 其余情况（进程重启后引擎已无该任务、或任务已取消并移出实时表）→ 原样保留 Room 数据。
+     *
+     * 注意：`savePath` 一律以 Room 记录为准（实时快照也带同一字段，但持久化值更可靠）。
+     *
+     * @param persisted Room 持久化的进度快照。
+     * @param live 引擎内存实时快照；无对应任务时为 null。
+     * @return 用于界面展示的进度快照。
+     */
+    private fun mergeLiveProgress(
+        persisted: DownloadProgressState,
+        live: DownloadProgressState?
+    ): DownloadProgressState = when {
+        live == null -> persisted
+        live.state in DownloadEngine.ACTIVE_STATES ->
+            live.copy(savePath = persisted.savePath ?: live.savePath)
+
+        live.state == DownloadState.COMPLETED ||
+            live.state == DownloadState.FAILED ->
+            live.copy(savePath = persisted.savePath ?: live.savePath)
+
+        else -> persisted
+    }
 
     /**
      * 切换筛选档。

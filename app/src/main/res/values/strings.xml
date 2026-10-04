@@ -65,7 +65,9 @@
     <string name="download_state_failed">下载失败</string>
     <string name="download_state_canceled">已取消</string>
     <string name="download_progress_format">%1$d%%</string>
-    <string name="download_size_format">%1$s / %2$s</string>
+    <!-- JYD-DLSPEED-2026-10-04：原 download_size_format 升级为「已下载 / 总量 · 剩余 X」，
+         依据 Owner 要求①（下载中实时显示剩余时间）；剩余时间未知时第 3 个参数为两个连字符。 -->
+    <string name="download_size_remaining_format">%1$s / %2$s · 剩余 %3$s</string>
     <string name="download_speed_pair_format">%1$s ·均速 %2$s</string>
     <string name="download_task_untitled">未命名任务</string>
 

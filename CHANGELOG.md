@@ -1199,3 +1199,49 @@ Owner 指令（2026-10-03）：按截图条目扩充设置页；**明确允许�
 约束遵守：只改 UC，未动夸克 ShareTransfer；未动 UI；中文入 strings.xml（C5）；日志走 Timber（C8）。
 待办：装机复验【粘贴 UC 分享链接 → 解析 → 展开 → 勾选 → 下载 → 成功】。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DLSPEED-2026-10-04 · 下载页速度恒「--」修复（P0 · B1 批）】
+来源：Owner 反馈——下载页速度列恒为 `--`，进度条只停在启动 / 续传时的静态值。
+排查结论（根因）：
+· 下载页列表数据源为 Room（DownloadRepository.observeProgress），而 Room 只在引擎的
+  「start / pause / complete」三处 downloadDao.upsert 写入；
+· 引擎的实时进度 publishProgress()（每 200ms 节流）**只发内存 MutableStateFlow**，
+  既不落库、下载页也没订阅；
+· DownloadEntity.toProgress() 的速度字段固定为 DownloadProgressState.UNKNOWN_SIZE
+  （Room 不保存速度字段）→ 界面速度恒 `--`。
+方案（Owner 已批准）：引擎暴露实时进度快照 Flow，UI 订阅并与 Room 持久化数据合并显示。
+本批落地的代码改动：
+· domain/downloader/DownloadEngine.kt
+    - 新增私有内存实时表 liveProgressFlow + 只读 liveProgress: StateFlow<Map<String,
+      DownloadProgressState>>（与按任务订阅的 observeProgress 并存，互不影响）；
+    - 新增 publishLive(progress)：以「读当前值 → 生成新 Map → CAS 回写」写入
+      （多分片协程并发调用时不丢更新），**只改内存、不写库**；
+    - publishProgress()（200ms 节流处）末尾接入 publishLive → 实时速度的来源；
+    - start() 落库后接入（新任务立即出现在列表且带实时值）；
+    - pause() 接入（暂停即发布最终态：速度归零）；runTask() 完成 / 失败分支接入
+      （终态即时可见）；cancel() 接入 removeLive()（实时表移除条目，避免残留脏数据）。
+· ui/screens/download/DownloadViewModel.kt
+    - items 由三路 combine 改为四路：Room 进度 × **引擎实时快照** × 会话登记 × 筛选档；
+    - 新增 mergeLiveProgress()：活动态（PENDING / DOWNLOADING）与终态（COMPLETED / FAILED）
+      一律用实时快照覆盖 Room 画面，其余（进程重启后无运行态、已取消）保留 Room 数据；
+      savePath 仍以 Room 记录为准。
+· domain/util/DownloadTimeFormatter.kt（新增）
+    - Owner 要求①「剩余时间」：remainingSeconds(剩余字节, 瞬时速度) = 剩余字节 ÷ 速度
+      （速度非正 / 剩余未知 → -1）；formatRemaining(秒) 输出 `3 min 20 s` / `2 h 30 min` /
+      `1 d 1 h`，未知输出 `--`；纯 ASCII、不涉中文（C5）。
+· ui/screens/download/components/DownloadItem.kt
+    - 详情行改走 download_size_remaining_format，展示「已下载 / 总量 · 剩余 X」；
+      新增私有 remainingBytes(item) 计算剩余字节（总量未知 → -1 → `--`）；
+      余下尾部状态文案位置与样式不变（不动 UI 视觉基准）。
+· res/values/strings.xml
+    - 新增 download_size_remaining_format = "%1$s / %2$s · 剩余 %3$s"（替代 download_size_format）。
+· app/src/test/java/com/jieyundu/app/domain/util/DownloadTimeFormatterTest.kt（新增）
+    - 覆盖 formatRemaining / remainingSeconds 的正常与边界分支（不触网，随 CI 单测执行）。
+性能（Owner 要求③）：实时刷新只写内存 MutableStateFlow，落库仍只发生在 start / pause /
+complete 三刻，未新增任何下载过程中的 Room 写入。
+约束遵守：未改 UI 视觉基准（仅详情行文案内容变化）；未动下载引擎核心下载逻辑（分片 / 续传 /
+限速 / 重试）；只新增一个实时进度通道 + UI 订阅；未新增 material-icons（D8）；
+中文入 strings.xml（C5）；日志走 Timber（C8）。
+待办：装机复验——下载一个文件，速度列**实时变化**、不再一直 `--`；暂停后显示最终态。
+================================================================================

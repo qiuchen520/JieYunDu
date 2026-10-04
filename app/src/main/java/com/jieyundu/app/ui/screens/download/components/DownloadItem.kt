@@ -39,7 +39,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import com.jieyundu.app.R
+import com.jieyundu.app.domain.downloader.DownloadProgressState
 import com.jieyundu.app.domain.downloader.DownloadState
+import com.jieyundu.app.domain.util.DownloadTimeFormatter
 import com.jieyundu.app.domain.util.FileSizeFormatter
 import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.download.DownloadListItem
@@ -151,12 +153,20 @@ fun DownloadItem(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = stringResource(
-                            R.string.download_size_format,
+                            R.string.download_size_remaining_format,
                             FileSizeFormatter.format(item.progress.downloadedBytes),
-                            FileSizeFormatter.format(item.progress.totalBytes)
+                            FileSizeFormatter.format(item.progress.totalBytes),
+                            DownloadTimeFormatter.formatRemaining(
+                                DownloadTimeFormatter.remainingSeconds(
+                                    remainingBytes = remainingBytes(item),
+                                    speedBytesPerSecond = item.progress.speedBytesPerSecond
+                                )
+                            )
                         ),
                         style = MaterialTheme.typography.labelSmall,
-                        color = JieYunDuColors.TextFaint
+                        color = JieYunDuColors.TextFaint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
@@ -387,6 +397,22 @@ private fun ProgressTrack(fraction: Float) {
         )
     }
 }
+
+/**
+ * 计算剩余字节数（总量 − 已下载）。
+ *
+ * 说明：总量未知（[DownloadProgressState.UNKNOWN_SIZE]）时返回 -1，
+ * 由 [DownloadTimeFormatter] 统一渲染为 `--`（【JYD-DLSPEED-2026-10-04】）。
+ *
+ * @param item 列表条目。
+ * @return 剩余字节数；总量未知时返回 -1。
+ */
+private fun remainingBytes(item: DownloadListItem): Long =
+    if (item.progress.totalBytes <= 0L) {
+        DownloadProgressState.UNKNOWN_SIZE
+    } else {
+        (item.progress.totalBytes - item.progress.downloadedBytes).coerceAtLeast(0L)
+    }
 
 /**
  * 下载状态 → 文案资源 id。
