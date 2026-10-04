@@ -124,6 +124,7 @@ class DownloadEngine @Inject constructor(
         runtime.initialBytes = chunks.sumOf { chunk -> chunk.downloadedBytes }
         runtime.lastSpeedSampleAt = System.currentTimeMillis()
         runtime.lastSpeedSampleBytes = runtime.initialBytes
+        runtime.sessionStartAt = System.currentTimeMillis()
         runtime.lastEmitAt = 0L
         runtime.state.value = DownloadState.DOWNLOADING
         runtime.progress.value = DownloadProgressState(
@@ -132,6 +133,7 @@ class DownloadEngine @Inject constructor(
             downloadedBytes = runtime.initialBytes,
             totalBytes = task.fileSize,
             speedBytesPerSecond = 0L,
+            averageSpeedBytesPerSecond = 0L,
             chunkCount = chunks.size,
             completedChunks = chunks.count { chunk -> chunk.isCompleted },
             savePath = task.savePath
@@ -237,7 +239,8 @@ class DownloadEngine @Inject constructor(
         runtime.state.value = DownloadState.PAUSED
         runtime.progress.value = runtime.progress.value.copy(
             state = DownloadState.PAUSED,
-            speedBytesPerSecond = 0L
+            speedBytesPerSecond = 0L,
+            averageSpeedBytesPerSecond = 0L
         )
         downloadDao.upsert(runtime.progress.value)
         Timber.i("DownloadEngine paused task %s", taskId)
@@ -291,7 +294,8 @@ class DownloadEngine @Inject constructor(
         runtime.progress.value = runtime.progress.value.copy(
             state = DownloadState.CANCELED,
             downloadedBytes = 0L,
-            speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
+            speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE,
+            averageSpeedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
         )
         Timber.i("DownloadEngine canceled task %s", taskId)
     }
@@ -352,6 +356,7 @@ class DownloadEngine @Inject constructor(
                         runtime.progress.value.downloadedBytes
                     },
                     speedBytesPerSecond = 0L,
+                    averageSpeedBytesPerSecond = 0L,
                     completedChunks = chunks.size
                 )
                 downloadDao.upsert(runtime.progress.value)
@@ -516,6 +521,14 @@ class DownloadEngine @Inject constructor(
         runtime.lastSpeedSampleAt = now
         runtime.lastSpeedSampleBytes = downloaded
 
+        // 平均速度（Owner 反馈）：本运行累计写入字节 ÷ 本运行已进行的时长，反映整体吞吐。
+        val sessionElapsed = now - runtime.sessionStartAt
+        val averageSpeed = if (sessionElapsed > 0L) {
+            sessionBytes * 1000L / sessionElapsed
+        } else {
+            DownloadProgressState.UNKNOWN_SIZE
+        }
+
         runtime.progress.value = runtime.progress.value.copy(
             state = runtime.state.value,
             downloadedBytes = downloaded,
@@ -524,7 +537,8 @@ class DownloadEngine @Inject constructor(
             } else {
                 DownloadProgressState.UNKNOWN_SIZE
             },
-            speedBytesPerSecond = speed
+            speedBytesPerSecond = speed,
+            averageSpeedBytesPerSecond = averageSpeed
         )
     }
 
@@ -570,6 +584,10 @@ class DownloadEngine @Inject constructor(
         /** 上一次测速采样时的字节数。 */
         @Volatile
         var lastSpeedSampleBytes: Long = 0L
+
+        /** 本次运行开始时间戳（用于计算平均速度）。 */
+        @Volatile
+        var sessionStartAt: Long = 0L
     }
 
     private companion object {

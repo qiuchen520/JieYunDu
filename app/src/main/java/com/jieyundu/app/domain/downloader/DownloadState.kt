@@ -47,6 +47,8 @@ enum class DownloadState {
  * @property downloadedBytes 已下载字节数。
  * @property totalBytes 总字节数；未知时为 -1。
  * @property speedBytesPerSecond 瞬时速度；未知时为 -1。
+ * @property averageSpeedBytesPerSecond 本次运行的平均速度（本运行累计字节 ÷ 本运行累计时长）；
+ *   未知 / 尚未开始时为 -1。用于下载页「均速」展示（Owner 反馈：需展示平均每秒速度）。
  * @property chunkCount 分片总数。
  * @property completedChunks 已完成分片数。
  * @property savePath 目标文件绝对路径；未知时为 null。
@@ -59,6 +61,7 @@ data class DownloadProgressState(
     val downloadedBytes: Long,
     val totalBytes: Long,
     val speedBytesPerSecond: Long,
+    val averageSpeedBytesPerSecond: Long = UNKNOWN_SIZE,
     val chunkCount: Int,
     val completedChunks: Int,
     val savePath: String? = null
@@ -82,6 +85,7 @@ data class DownloadProgressState(
             downloadedBytes = 0L,
             totalBytes = UNKNOWN_SIZE,
             speedBytesPerSecond = UNKNOWN_SIZE,
+            averageSpeedBytesPerSecond = UNKNOWN_SIZE,
             chunkCount = chunkCount,
             completedChunks = 0
         )

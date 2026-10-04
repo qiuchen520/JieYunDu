@@ -66,6 +66,7 @@
     <string name="download_state_canceled">已取消</string>
     <string name="download_progress_format">%1$d%%</string>
     <string name="download_size_format">%1$s / %2$s</string>
+    <string name="download_speed_pair_format">%1$s ·均速 %2$s</string>
     <string name="download_task_untitled">未命名任务</string>
 
     <!-- 设置页（阶段 8）-->
@@ -151,7 +152,7 @@
     <string name="parse_loading_dir">正在加载…</string>
     <string name="parse_dir_load_failed">打开文件夹失败，请重试</string>
     <string name="parse_breadcrumb_separator"> / </string>
-    <string name="parse_download_preparing">正在转存并获取直链…</string>
+    <string name="parse_download_preparing">正在获取直链并开始下载…</string>
     <string name="parse_download_failed">下载启动失败，请重试</string>
     <string name="parse_download_auth_failed">登录态已失效，请在网盘页退出后重新登录</string>
     <string name="parse_download_count">下载选中 (%1$d)</string>

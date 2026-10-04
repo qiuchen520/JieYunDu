@@ -1135,3 +1135,35 @@ Owner 指令（2026-10-03）：按截图条目扩充设置页；**明确允许�
       transfer_share/detail）。
 约束遵守：只改 UC，未动夸克 ShareTransfer；未改玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
 ================================================================================
+================================================================================
+【实现记录 JYD-DLINFO-2026-10-04 · 下载详细信息 + 准备态文案修正（P0）】
+来源：Owner 反馈「二修后不再报下载失败，但一直显示在转存中；且希望下载页展示详细信息
+      （一共有多少 / 已下载多少 / 平均每秒），不要只有进度条」。
+排查结论：
+· 「一直转存中」根因 = HomeViewModel.download() 把 isPreparingDownload 保持到**整个下载结束**
+  才在 finally 复位，期间首页卡片（ParseResultCard）固定渲染 parse_download_preparing
+  「正在转存并获取直链…」→ 观感像卡在转存，实际下载可能正常进行（状态/文案误导）。
+· 下载页 DownloadItem 已展示「已下载 / 总量」与**瞬时速度**，但缺「平均速度」（Owner 要的
+  “平均每秒”）。
+本批落地的代码改动：
+· domain/downloader/DownloadState.kt
+    - DownloadProgressState 新增 averageSpeedBytesPerSecond:Long（默认 UNKNOWN_SIZE），
+      用于承载本次运行的平均速度；initial() 同步补字段。
+· domain/downloader/DownloadEngine.kt
+    - TaskRuntime 新增 sessionStartAt（本次运行起点）；
+    - start() 初始化 averageSpeedBytesPerSecond=0，记录 sessionStartAt；
+    - publishProgress() 计算平均速度 = 本运行累计写入字节 ÷ 本运行已进行时长；
+    - pause()/completed() 置 0，cancel() 置 UNKNOWN_SIZE。
+· ui/screens/download/components/DownloadItem.kt
+    - 列表项右上速度文本改为「瞬时 · 均速 X」（复用 FileSizeFormatter.formatSpeed）。
+· ui/screens/home/HomeViewModel.kt
+    - startDownload() 只在「取链准备」阶段置 isPreparingDownload=true；取链失败与
+      downloadEngine.start() 投递后立即复位，避免整个下载过程都顶着“准备中”。
+· res/values/strings.xml
+    - 新增 download_speed_pair_format = "%1$s ·均速 %2$s"；
+    - parse_download_preparing 文案由「正在转存并获取直链…」改为「正在获取直链并开始下载…」。
+背景：UC 二修后链路已不再报错，剩余为「状态误导 + 详情不足」体验问题。
+约束遵守：仅动下载/首页相关；未改玻璃质感 / 圆角 / Q 弹手感 / 浅色配色；未新增 material-icons；
+         中文文案入 strings.xml（C5）；日志走 Timber（C8）。
+待办：装机复验——下载页是否出现「已下载 / 总量 · 均速」；首页是否不再长期停在“准备中”。
+================================================================================

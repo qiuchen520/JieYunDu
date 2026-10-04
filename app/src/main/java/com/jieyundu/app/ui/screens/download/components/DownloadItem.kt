@@ -136,7 +136,11 @@ fun DownloadItem(
                     )
                     Spacer(modifier = Modifier.width(Dimens.SpaceSm))
                     Text(
-                        text = FileSizeFormatter.formatSpeed(item.progress.speedBytesPerSecond),
+                        text = stringResource(
+                            R.string.download_speed_pair_format,
+                            FileSizeFormatter.formatSpeed(item.progress.speedBytesPerSecond),
+                            FileSizeFormatter.formatSpeed(item.progress.averageSpeedBytesPerSecond)
+                        ),
                         style = MaterialTheme.typography.labelMedium,
                         color = JieYunDuColors.TextFaint
                     )

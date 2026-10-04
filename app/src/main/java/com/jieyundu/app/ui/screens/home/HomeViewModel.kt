@@ -384,6 +384,8 @@ class HomeViewModel @Inject constructor(
      *   （见《抓包事实.md》§9.3③）。
      */
     private suspend fun startDownload(file: FileInfo, context: ShareContext?, sourcePdirFid: String) {
+        // 进入「取链准备」阶段：此期间首页卡片展示准备提示（文案见 parse_download_preparing）。
+        _uiState.value = _uiState.value.copy(isPreparingDownload = true)
         // 按网盘类型取转存器（B2：多网盘路由）。
         val preparer = context?.let { ctx -> netdiskRouter.shareDownloadPreparerFor(ctx.netdiskType) }
         val prepared = if (context != null && preparer != null) {
@@ -393,6 +395,8 @@ class HomeViewModel @Inject constructor(
         }
         val url = prepared?.url ?: file.downloadUrl
         if (url.isNullOrBlank()) {
+            // 取链失败：退出准备态，避免首页一直停留在准备提示。
+            _uiState.value = _uiState.value.copy(isPreparingDownload = false)
             Timber.w("HomeViewModel download skipped: direct link not ready for %s", file.fileName)
             return
         }
@@ -410,6 +414,9 @@ class HomeViewModel @Inject constructor(
         )
         downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
         downloadEngine.start(task)
+        // 任务已投递引擎：退出「准备」阶段，后续进度由下载页展示，避免首页长期显示准备提示
+        // （Owner 反馈：一直显示「转存中」，实为准备文案覆盖了整个下载过程）。
+        _uiState.value = _uiState.value.copy(isPreparingDownload = false)
         val completed = awaitDownloadCompleted(taskId)
         if (completed) {
             publishIfNeeded(taskId, file.fileName, targetFile)
