@@ -82,6 +82,7 @@ private const val PERCENT_SCALE = 100f
  * @param onClick 点击回调（由上层决定暂停 / 继续）。
  * @param onDelete 点击删除按钮的回调（删除任务与本地文件）。
  * @param onToggle 点击暂停 / 继续按钮的回调。
+ * @param onRestart 点击「重新下载」按钮的回调（清空分片后从零开始；仅暂停 / 失败态展示）。
  * @param onShare 点击分享按钮的回调（B2 功能③；仅已完成条目展示）。
  * @param onInstall 点击安装按钮的回调；为 null 表示不展示安装按钮（非 APK）。
  * @param modifier 外部修饰符。
@@ -94,6 +95,7 @@ fun DownloadItem(
     onClick: () -> Unit,
     onDelete: () -> Unit = {},
     onToggle: () -> Unit = {},
+    onRestart: () -> Unit = {},
     onShare: () -> Unit = {},
     onInstall: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -146,6 +148,17 @@ fun DownloadItem(
                 ProgressRow(item = item, isExpanded = isExpanded)
                 Spacer(modifier = Modifier.height(rowSpacing))
                 DetailRow(item = item)
+            }
+            // 重新下载（【JYD-P1-2026-10-04】P1-2）：仅暂停 / 失败态展示，
+            // 与「继续」并列，保证「续传失败时还有一条明确出路」。
+            if (item.progress.state == DownloadState.PAUSED ||
+                item.progress.state == DownloadState.FAILED
+            ) {
+                Spacer(modifier = Modifier.width(Dimens.SpaceSm))
+                ToggleButton(
+                    label = stringResource(R.string.download_action_restart),
+                    onClick = onRestart
+                )
             }
             // 暂停 / 继续（Owner 反馈：下载项必须有显式的暂停按钮，不能只靠点整卡）。
             if (item.progress.state == DownloadState.DOWNLOADING ||

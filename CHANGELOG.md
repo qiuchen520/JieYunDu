@@ -1395,3 +1395,67 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 待办：**单独出包验收**——① 从自己网盘下载文件，完成后网盘里该文件仍在；
 ② 从分享链接转存下载，完成后临时目录里该文件已删。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-P1-2026-10-04 · 任务名持久化 + 重启续传 + 转存登记持久化（P1 三项）】
+来源：Owner 装机复现——① 下载→暂停→划掉后台→重开，任务显示「未命名」；
+      ② 同一任务点「继续」没反应；③ 追加：把转存登记持久化（上批自提的边界）。
+本批三项一起实现、一起出包。
+一、P1-1 任务名持久化
+· data/local/DownloadEntity.kt：新增 `file_name` 列（NOT NULL DEFAULT ''），老数据迁移后为空串，
+  UI 仍回退「未命名任务」；新增 `url` / `headers` 两列（见 P1-2）。
+· data/local/DownloadDao.kt：**关键防回退**——进度每 200ms 刷新一次，原来的
+  `@Insert(REPLACE)` 会把未提供的列覆盖成默认值，等于每 200ms 把任务名清空一次。
+  改为两条显式写路径：
+  - `upsertTaskEntity`（任务存档）：按主键存在与否走 UPDATE 或 INSERT(IGNORE)，写任务名 / 直链 / 请求头；
+  - `updateProgressColumns`（进度刷新）：**只更新进度列**，绝不触碰任务名等列。
+· domain/downloader/DownloadEngine.kt：`start()` 落库改为写「任务存档」
+  （`DownloadCheckpointPort.upsertTask`），任务名 / 直链 / 请求头随之持久化。
+二、P1-2 重启后续传
+· domain/downloader/DownloadTaskRecord.kt（并入 DownloadEngine.kt）：任务存档模型
+  （taskId / url / fileName / fileSize / savePath / chunkCount / headers），与 DownloadTask 一一对应。
+· domain/downloader/DownloadEngine.kt
+    - 新增端口 `DownloadCheckpointPort`（upsertTask / loadTask），由 Room DAO 实现；
+    - `resume()` 改为返回 `EngineActionResult`（密封接口）：Resumed / Restarted / NoOp /
+      NoCheckpoint / MissingPartFiles——**入口必须有明确结果**，杜绝「点了没反应」；
+    - 新增 `resumeFromCheckpoint()`：内存运行态不存在时（进程重启）按存档重建任务；
+      分片不存在 → MissingPartFiles（UI 提示「文件已损坏，请重新下载」）；
+    - 新增 `restart()`：清空该任务全部分片后从零开始（重启后同样可用）；
+    - 抽出 `prepareRuntime()`：新任务 / 普通续传 / 重启续传共用同一套分片与断点计算，避免两套行为；
+    - 新增续传日志：savePath / `.part` 是否存在 / 已下载字节数。
+· domain/downloader/ChunkManager.kt：新增 `hasPartFiles()` / `deleteAllPartFiles()`
+  （按「目标名 + .part + 全数字」逐项比对，避免文件名含 `.` 时正则转义出错）。
+· JieYunDuApp.kt：启动期把库里残留的「等待中 / 下载中」统一纠正为「已暂停」
+  （否则界面显示下载中却永远不动，与「点了没反应」观感一致）。
+· UI（不改视觉基准）：DownloadItem 新增「重新下载」文字按钮（仅暂停 / 失败态展示，
+  与「继续」并列）；DownloadViewModel 新增 `restartTask()` 与一次性反馈消息通道；
+  DownloadScreen 用 Toast 呈现结果（成功 / 文件已损坏 / 缺少续传信息）。
+三、P1-3 转存登记持久化
+· data/local/TransferRecordEntity.kt + TransferRecordDao.kt（新增）：`transfer_records` 表
+  （fid 主键、file_name、dir_fid、netdisk_type、created_at + dir_fid 索引）。
+· domain/transfer/TransferRecordPort.kt（新增）：端口 + TransferRecord 模型（domain 不依赖 data）。
+· domain/transfer/TempFolderManager.kt / UcTempFolderManager.kt：
+  转存登记时写库（`transferRecords.upsert`）、删除成功后同步移除登记（`delete`）、
+  `cleanupAll` 成功后清理对应登记；写库失败只记日志、不阻断下载（D15）。
+· JieYunDuApp.kt：启动期从 `transfer_records` 水合删除守卫（`TempFolderGuard.registerAll`），
+  使「手动清理」在重启后同样能识别并清理重启前产生的临时副本。
+四、数据库升级
+· data/local/AppDatabase.kt：版本 2 → 3，`MIGRATION_2_3` 增加 `file_name` / `url` / `headers`
+  三列（均带默认值，老数据不崩）并建 `transfer_records` 表与其索引；
+  DatabaseModule 注册新迁移与三个端口绑定（DownloadProgressPort / DownloadCheckpointPort /
+  TransferRecordPort）。
+五、单元测试（随 CI 单测执行）
+· data/local/DownloadEntityTest.kt（新增 6 例）：任务存档往返（含任务名 / 直链 / 请求头）、
+  缺直链或落盘路径时返回 null、请求头编解码（含 `:` 与 `=` 的值、空值、畸形行）。
+· domain/transfer/TransferRecordGuardTest.kt（新增 4 例）：水合后重启前副本变为可删、
+  持久化目录 fid 被识别为临时目录、未登记的用户文件仍拒绝、注销后权限回收。
+实现过程中的两处自纠（写进记录，避免后续重犯）：
+1. 初版把「任务名」寄托在进度快照里并沿用 REPLACE 写入 → 进度每 200ms 刷新会把任务名清空。
+   改为「存档写任务列 + 进度只写进度列」两条显式路径；
+2. 初版给 `download_progress` 加了 `transfer_fid` 列，但既无写入方也无读取方（P1-3 的关联
+   由 `transfer_records` 表自身承担）→ 删除该冗余列，避免 schema 与迁移虚增。
+约束遵守：未改 UI 视觉（仅新增一个与既有按钮同款的文字按钮）；未动已完成功能
+（分片 / 续传 / 限速 / 重试核心逻辑未改，仅把「入口」从 Unit 改为带结果）；
+未改任何请求头 / 参数（R3）；中文入 strings.xml（C5）；日志走 Timber（C8）。
+待办：装机验收（见《要求.md》同标识条目）。
+================================================================================

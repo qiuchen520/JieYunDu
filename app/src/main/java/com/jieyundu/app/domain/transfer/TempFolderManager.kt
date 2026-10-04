@@ -10,7 +10,12 @@ import com.jieyundu.app.domain.parser.quark.QuarkCreateFolderRequest
 import com.jieyundu.app.domain.parser.quark.QuarkDeleteRequest
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import com.jieyundu.app.domain.model.NetdiskType
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -28,11 +33,19 @@ import timber.log.Timber
  * 线程安全：fid 缓存为 [Volatile]（可被置空），待清理集合为并发集合。
  *
  * @param api 夸克接口（查询 / 建目录 / 删除）。
+ * @param transferRecords 转存副本登记端口（【JYD-P1-2026-10-04】P1-3：重启后仍能识别临时副本）。
+ *
+ * 注意：`pendingCleanup` 是本进程内的**待清理集合**（供「手动清理」使用），
+ * 其持久化副本存于 [transferRecords]；进程重启后由 Application 启动时重新水合。
  */
 @Singleton
 class TempFolderManager @Inject constructor(
-    private val api: QuarkApi
+    private val api: QuarkApi,
+    private val transferRecords: TransferRecordPort
 ) {
+
+    /** 持久化写入用的作用域（登记落库不阻塞下载主链路）。 */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** 待清理的转存文件 fid 集合。 */
     private val pendingCleanup: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -113,6 +126,21 @@ class TempFolderManager @Inject constructor(
                 // 【JYD-DELSAFE-2026-10-04】同步登记到删除守卫：转存副本是唯一可信的
                 // 「可删」来源，守卫据此放行；未登记的 fid 一律拒绝删除。
                 TempFolderGuard.register(fid)
+                // 【JYD-P1-2026-10-04】P1-3：登记落库，供重启后恢复（重启后内存集合为空）。
+                scope.launch {
+                    runCatching {
+                        transferRecords.upsert(
+                            TransferRecord(
+                                fid = fid,
+                                dirFid = cachedTempFid,
+                                netdiskType = NetdiskType.QUARK.name
+                            )
+                        )
+                    }.onFailure { error ->
+                        // 落库失败不阻断下载：仅本次进程内有效，并记日志（D15）。
+                        Timber.w(error, "TempFolderManager persist transfer record failed fid=%s", fid)
+                    }
+                }
                 Timber.i("TempFolderManager pending cleanup fid=%s", fid)
             }
         }
@@ -154,6 +182,9 @@ class TempFolderManager @Inject constructor(
         if (!deleted) return false
         pendingCleanup.remove(fid)
         TempFolderGuard.unregister(fid)
+        // 【JYD-P1-2026-10-04】P1-3：同步移除持久化登记（已删副本不必再被清理）。
+        runCatching { transferRecords.delete(fid) }
+            .onFailure { error -> Timber.w(error, "TempFolderManager delete transfer record failed fid=%s", fid) }
         if (!tempFid.isNullOrBlank()) {
             deleteTempFolderIfEmpty(tempFid)
         }
@@ -188,6 +219,13 @@ class TempFolderManager @Inject constructor(
         if (accepted) {
             remove(fids)
             fids.forEach { fid -> TempFolderGuard.unregister(fid) }
+            // 【JYD-P1-2026-10-04】P1-3：同步清理持久化登记。
+            fids.forEach { fid ->
+                runCatching { transferRecords.delete(fid) }
+                    .onFailure { error ->
+                        Timber.w(error, "TempFolderManager delete transfer record failed")
+                    }
+            }
         }
         if (!tempFid.isNullOrBlank()) {
             deleteTempFolderIfEmpty(tempFid)

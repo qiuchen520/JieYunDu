@@ -280,3 +280,20 @@ Owner《Bug 修复指令（4 项）》要求 **P0 先做、单独出包验证，
 - 交付状态：commit **`271bbd2e`**；CI [37193698914](https://github.com/qiuchen520/JieYunDu/actions/runs/37193698914)
   **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿，守卫单测 11 例已执行）；
   产物 `/sdcard/Download/极云渡_P0删除安全边界_debug.apk`（11,931,215 B）。
+
+---
+
+### 2026-10-04 · P1 三项（标识 `JYD-P1-2026-10-04`，一起出包）
+Owner 装机复现 + 追加要求，三项一起实现：
+- **P1-1 任务名持久化**：`download_progress` 加 `file_name`（+ `url` / `headers`）；
+  并把 DAO 从「REPLACE 整行写」改为「存档写任务列 / 进度只写进度列」两条显式路径
+  ——否则每 200ms 的进度刷新会把任务名清空（这是本批最容易踩的坑，已自纠）。
+- **P1-2 重启续传**：新增 `DownloadCheckpointPort`（任务存档）与 `EngineActionResult`；
+  `resume()` 在内存运行态缺失时按存档重建，分片丢失则提示「文件已损坏，请重新下载」；
+  新增「重新下载」入口（清分片后从零开始）；续传日志含 savePath / part 是否存在 / 已下载字节；
+  启动期把残留的等待中 / 下载中纠正为「已暂停」。
+- **P1-3 转存登记持久化**：新增 `transfer_records` 表与 `TransferRecordPort`，
+  两个临时目录管理器写库 / 删库同步，启动期水合删除守卫 → 重启后「手动清理」仍有效。
+- 数据库：v2 → v3，`MIGRATION_2_3` 三列 + 一表 + 一索引，老数据均有默认值。
+- 新增单测：`DownloadEntityTest`（6 例）、`TransferRecordGuardTest`（4 例）。
+- 未改：UI 视觉基准、引擎分片 / 限速 / 重试核心逻辑、请求参数（R3）。

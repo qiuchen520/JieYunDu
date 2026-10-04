@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -60,9 +61,17 @@ fun DownloadScreen(modifier: Modifier = Modifier) {
     val viewModel: DownloadViewModel = hiltViewModel()
     val downloadItems by viewModel.items.collectAsState()
     val filter by viewModel.filter.collectAsState()
+    val messageRes by viewModel.message.collectAsState()
     val context = LocalContext.current
     val isExpanded = rememberIsExpandedLayout()
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
+
+    // 【JYD-P1-2026-10-04】P1-2：续传 / 重下结果一次性提示（取用后清除，避免重复弹出）。
+    LaunchedEffect(messageRes) {
+        val res = messageRes ?: return@LaunchedEffect
+        Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
+        viewModel.consumeMessage()
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         DownloadFilterBar(
@@ -113,6 +122,7 @@ fun DownloadScreen(modifier: Modifier = Modifier) {
                         item = item,
                         onClick = { viewModel.toggleTask(item) },
                         onToggle = { viewModel.toggleTask(item) },
+                        onRestart = { viewModel.restartTask(item) },
                         onDelete = { viewModel.deleteTask(item) },
                         onShare = { shareDownload(context, item) },
                         onInstall = if (isApkFile(item.fileName)) {

@@ -58,11 +58,14 @@ import timber.log.Timber
  *
  * @param okHttpClient 全局复用的 OkHttp 客户端（超时配置见 di/NetworkModule）。
  * @param downloadDao 进度落库端口，见类注释。
+ * @param checkpoint 任务存档端口（【JYD-P1-2026-10-04】：任务名 / 直链 / 请求头持久化）。
+ * @param settings 下载设置端口（并发 / 限速 / 重试）。
  */
 @Singleton
 class DownloadEngine @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val downloadDao: DownloadProgressPort,
+    private val checkpoint: DownloadCheckpointPort,
     private val settings: DownloadSettingsPort
 ) {
 
@@ -131,6 +134,39 @@ class DownloadEngine @Inject constructor(
             return
         }
 
+        val chunks = prepareRuntime(task)
+        // 【JYD-SAVEPATH-2026-10-03】启动即落库：既让新任务立即出现。
+        // 【JYD-P1-2026-10-04】改为**任务存档**写入（含任务名 / 直链 / 请求头）：
+        // 任务名据此在重启后仍可显示（P1-1），直链与请求头据此在重启后仍可续传（P1-2）。
+        checkpoint.upsertTask(
+            DownloadTaskRecord(
+                taskId = task.taskId,
+                url = task.url,
+                fileName = task.fileName,
+                fileSize = task.fileSize,
+                savePath = task.savePath,
+                chunkCount = task.chunkCount,
+                headers = task.headers
+            )
+        )
+        // 进度落库：行已在上一句建好，这里只更新进度列（不会碰任务名等列）。
+        downloadDao.upsert(runtimes.getValue(task.taskId).progress.value)
+        // 【JYD-DLSPEED-2026-10-04】启动即写入内存实时快照，下载页据此展示实时数值。
+        publishLive(runtimes.getValue(task.taskId).progress.value)
+        // C1：不直接启动，交给调度器按「最大同时下载任务数」排队 / 放行。
+        schedule(runtimes.getValue(task.taskId))
+    }
+
+    /**
+     * 准备（或重置）任务的运行态：切分分片、读取已落盘进度、写入初始快照。
+     *
+     * 说明：本方法被 [start]（新任务 / 继续）与 [resumeFromRecord]（重启后继续）共用，
+     * 确保「重启续传」与「正常续传」走同一套分片与断点计算逻辑，不会出现两套行为。
+     *
+     * @param task 运行态任务。
+     * @return 本次构造的分片列表。
+     */
+    private fun prepareRuntime(task: DownloadTask): List<Chunk> {
         val targetFile = File(task.savePath)
         val requestedCount = task.chunkCount.coerceIn(
             DownloadTask.MIN_CHUNK_COUNT,
@@ -160,13 +196,7 @@ class DownloadEngine @Inject constructor(
             completedChunks = chunks.count { chunk -> chunk.isCompleted },
             savePath = task.savePath
         )
-        // 【修订 JYD-SAVEPATH-2026-10-03】启动即落库：既让新任务立即出现在下载列表，
-        // 也把落盘路径写入持久层，供进程重启后「删除本地文件」定位目标。
-        downloadDao.upsert(runtime.progress.value)
-        // 【JYD-DLSPEED-2026-10-04】启动即写入内存实时快照，下载页据此展示实时数值。
-        publishLive(runtime.progress.value)
-        // C1：不直接启动，交给调度器按「最大同时下载任务数」排队 / 放行。
-        schedule(runtime)
+        return chunks
     }
 
     /**
@@ -277,24 +307,109 @@ class DownloadEngine @Inject constructor(
      *
      * @param taskId 任务 ID；对应的运行态任务不存在时无法恢复（错误日志提示）。
      */
-    suspend fun resume(taskId: String) {
+    suspend fun resume(taskId: String): EngineActionResult {
         val runtime = runtimes[taskId]
         if (runtime == null) {
-            Timber.e("DownloadEngine resume failed: task %s not found", taskId)
-            return
+            // 【JYD-P1-2026-10-04】P1-2：进程重启后内存运行态已不存在，改由持久化存档重建。
+            return resumeFromCheckpoint(taskId)
         }
         if (runtime.state.value == DownloadState.DOWNLOADING) {
-            return
+            Timber.i("DownloadEngine resume ignored: task %s already downloading", taskId)
+            return EngineActionResult.NoOp
         }
         val persisted = downloadDao.query(taskId)
-        if (persisted != null) {
-            Timber.i(
-                "DownloadEngine resume task %s with persisted bytes %d",
-                taskId,
-                persisted.downloadedBytes
-            )
-        }
+        val downloaded = persisted?.downloadedBytes ?: runtime.initialBytes
+        Timber.i(
+            "DownloadEngine resume task=%s savePath=%s partExists=%s downloadedBytes=%d",
+            taskId,
+            runtime.task.savePath,
+            hasPartFiles(runtime.task.savePath),
+            downloaded
+        )
         start(runtime.task)
+        return EngineActionResult.Resumed
+    }
+
+    /**
+     * 重启后按持久化存档续传（P1-2 主路径）。
+     *
+     * 判定顺序：
+     * 1. 存档缺失或缺少直链（老数据）→ [EngineActionResult.NoCheckpoint]，UI 提示重新下载；
+     * 2. 存档存在但 `.part` 分片全部不存在（被清理 / 被打断落盘）→
+     *    [EngineActionResult.MissingPartFiles]，UI 提示「文件已损坏，请重新下载」；
+     * 3. 分片存在 → 重建运行态并续传（Range 从断点起，不重下已有部分）。
+     *
+     * @param taskId 任务 ID。
+     * @return 续传结果。
+     */
+    private suspend fun resumeFromCheckpoint(taskId: String): EngineActionResult {
+        val record = checkpoint.loadTask(taskId)
+        if (record == null) {
+            Timber.w("DownloadEngine resume task=%s has no usable checkpoint", taskId)
+            return EngineActionResult.NoCheckpoint
+        }
+        if (!hasPartFiles(record.savePath)) {
+            Timber.w(
+                "DownloadEngine resume task=%s savePath=%s partExists=false -> missing part files",
+                taskId,
+                record.savePath
+            )
+            return EngineActionResult.MissingPartFiles
+        }
+        val task = record.toDownloadTask()
+        Timber.i(
+            "DownloadEngine resume(restart-process) task=%s savePath=%s partExists=true fileSize=%d",
+            taskId,
+            task.savePath,
+            task.fileSize
+        )
+        start(task)
+        return EngineActionResult.Resumed
+    }
+
+    /**
+     * 重新下载（P1-2）：清空该任务的 `.part` 分片后从零开始。
+     *
+     * 说明：优先按持久化存档重建任务（重启后可用）；若调用方已有运行态则直接用其任务描述。
+     * 分片被清空后 [prepareRuntime] 读到的已落盘长度全为 0，即从零开始。
+     *
+     * @param taskId 任务 ID。
+     * @return 重下结果。
+     */
+    suspend fun restart(taskId: String): EngineActionResult {
+        val runtime = runtimes[taskId]
+        val task = when {
+            runtime != null -> runtime.task
+            else -> checkpoint.loadTask(taskId)?.toDownloadTask()
+        }
+        if (task == null) {
+            Timber.w("DownloadEngine restart task=%s has no usable checkpoint", taskId)
+            return EngineActionResult.NoCheckpoint
+        }
+        runtime?.job?.cancel()
+        runtime?.job = null
+        val targetFile = File(task.savePath)
+        val removed = chunkManager.deleteAllPartFiles(targetFile)
+        runtime?.chunks = emptyList()
+        Timber.i(
+            "DownloadEngine restart task=%s savePath=%s removedParts=%d",
+            taskId,
+            task.savePath,
+            removed
+        )
+        start(task)
+        return EngineActionResult.Restarted
+    }
+
+    /**
+     * 判断目标文件是否还存在分片临时文件（P1-2：续传可行性判定）。
+     *
+     * @param savePath 目标文件绝对路径。
+     * @return true 表示至少存在一个 `.part` 分片。
+     */
+    private fun hasPartFiles(savePath: String?): Boolean {
+        val path = savePath?.takeIf { value -> value.isNotBlank() } ?: return false
+        return chunkManager.hasPartFiles(File(path))
     }
 
     /**
@@ -697,6 +812,96 @@ class DownloadEngine @Inject constructor(
 }
 
 /**
+ * 下载任务存档（【JYD-P1-2026-10-04】P1-1 / P1-2）。
+ *
+ * 存在理由：进程被杀后内存中的 [TaskRuntime] 全部消失，重启后既要显示任务名（P1-1），
+ * 也要能据直链 / 请求头 / 落盘路径重建任务继续下载（P1-2）。因此把「运行一次下载所需的
+ * 输入参数」持久化下来，其字段与 [DownloadTask] 一一对应。
+ *
+ * @property taskId 任务 ID。
+ * @property url 下载直链（有时效；过期后由上层重新解析）。
+ * @property fileName 任务名（文件名）。
+ * @property fileSize 文件总大小；未知时为 -1。
+ * @property savePath 目标文件绝对路径。
+ * @property chunkCount 分片数量。
+ * @property headers 额外请求头。
+ */
+data class DownloadTaskRecord(
+    val taskId: String,
+    val url: String,
+    val fileName: String,
+    val fileSize: Long,
+    val savePath: String,
+    val chunkCount: Int,
+    val headers: Map<String, String>
+) {
+
+    /**
+     * 还原为运行态任务。
+     *
+     * @return 可直接交给 [DownloadEngine.start] 的任务描述。
+     */
+    fun toDownloadTask(): DownloadTask = DownloadTask(
+        taskId = taskId,
+        url = url,
+        fileName = fileName,
+        fileSize = fileSize,
+        savePath = savePath,
+        chunkCount = chunkCount,
+        headers = headers
+    )
+}
+
+/**
+ * 下载任务的续传 / 重下入口的返回结果（【JYD-P1-2026-10-04】P1-2）。
+ *
+ * 存在理由（Owner 反馈「点继续 / 重新下载没反应」）：入口必须有明确反馈，
+ * 因此引擎不再返回 Unit，而是把「到底发生了什么」显式交给 UI 决定提示文案。
+ * 用密封接口而非枚举：后续若出现新的失败原因，可继续扩展而不破坏调用方穷尽判断。
+ */
+sealed interface EngineActionResult {
+
+    /** 已开始续传（断点续传，不重下已有部分）。 */
+    data object Resumed : EngineActionResult
+
+    /** 已清空分片并从零开始。 */
+    data object Restarted : EngineActionResult
+
+    /** 无需处理（例如任务已在下载中）。 */
+    data object NoOp : EngineActionResult
+
+    /** 没有可用的持久化存档（旧版本记录 / 记录已删）→ UI 提示重新下载。 */
+    data object NoCheckpoint : EngineActionResult
+
+    /** 存档存在但分片临时文件已不存在 → UI 提示「文件已损坏，请重新下载」。 */
+    data object MissingPartFiles : EngineActionResult
+}
+
+/**
+ * 下载任务存档端口（【JYD-P1-2026-10-04】P1-1 / P1-2）。
+ *
+ * 端口定义置于本文件内（不新增文件），由 data 层的 Room `DownloadDao` 实现，
+ * 使 domain 层在保持不反向依赖 data 层的前提下完成「任务名 + 直链 + 请求头」的持久化与恢复。
+ */
+interface DownloadCheckpointPort {
+
+    /**
+     * 写入或更新任务存档。
+     *
+     * @param record 任务存档。
+     */
+    suspend fun upsertTask(record: DownloadTaskRecord)
+
+    /**
+     * 读取任务存档。
+     *
+     * @param taskId 任务 ID。
+     * @return 任务存档；无记录或缺少直链时返回 null。
+     */
+    suspend fun loadTask(taskId: String): DownloadTaskRecord?
+}
+
+/**
  * 下载进度落库端口（依据【修订 JYD-ERRATA-2026-10-03】修订一）。
  *
  * 端口定义置于本文件内（不新增文件）；阶段 5 起由 Room 的 `DownloadDao` 实现，
@@ -706,6 +911,10 @@ interface DownloadProgressPort {
 
     /**
      * 写入或更新一条下载进度。
+     *
+     * 说明（【JYD-P1-2026-10-04】P1-1）：本方法**只更新进度相关列**，不负责建行、
+     * 也不得触碰任务名 / 直链 / 请求头等列——任务名与续传信息由 [DownloadCheckpointPort.upsertTask]
+     * 写入。实现方若用整行覆盖语义（REPLACE / Upsert），会把任务名清空，属实现缺陷。
      *
      * @param progress 进度快照（含任务 ID）。
      */

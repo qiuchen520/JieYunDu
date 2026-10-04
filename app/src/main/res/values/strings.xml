@@ -207,4 +207,11 @@
     <string name="settings_battery_optimization_action">加入白名单</string>
     <string name="settings_battery_optimization_done">已加入「忽略电池优化」白名单。</string>
     <string name="notification_download_silent_text">正在后台下载</string>
+
+    <!-- P1（JYD-P1-2026-10-04）：续传 / 重下入口与反馈文案 -->
+    <string name="download_action_restart">重新下载</string>
+    <string name="download_resume_started">已从断点继续下载</string>
+    <string name="download_restart_started">已重新开始下载</string>
+    <string name="download_resume_missing_parts">文件已损坏，请重新下载</string>
+    <string name="download_resume_no_record">缺少续传信息，请重新下载</string>
 </resources>

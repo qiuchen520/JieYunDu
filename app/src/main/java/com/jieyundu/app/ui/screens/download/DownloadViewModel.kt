@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.R
 import com.jieyundu.app.data.repository.DownloadRepository
 import com.jieyundu.app.domain.downloader.DownloadEngine
+import com.jieyundu.app.domain.downloader.EngineActionResult
 import com.jieyundu.app.domain.downloader.DownloadProgressState
 import com.jieyundu.app.domain.downloader.DownloadState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -154,6 +155,23 @@ class DownloadViewModel @Inject constructor(
     /** 当前筛选档。 */
     val filter: StateFlow<DownloadFilter> = _filter.asStateFlow()
 
+    private val _message = MutableStateFlow<Int?>(null)
+
+    /**
+     * 一次性操作反馈消息（字符串资源 id）。
+     *
+     * 存在理由（【JYD-P1-2026-10-04】P1-2 Owner 要求「两个入口都必须有反馈，不能点了没反应」）：
+     * 续传 / 重下的结果（成功或失败原因）需要让用户看见；UI 取用后调用 [consumeMessage] 清除。
+     */
+    val message: StateFlow<Int?> = _message.asStateFlow()
+
+    /**
+     * 消费一次性反馈消息（UI 已弹出提示后调用）。
+     */
+    fun consumeMessage() {
+        _message.value = null
+    }
+
     /** 下载列表状态流（按更新时间倒序，与 DAO 查询顺序一致；按当前筛选档过滤）。 */
     val items: StateFlow<List<DownloadListItem>> = combine(
         downloadRepository.observeProgress(),
@@ -234,12 +252,41 @@ class DownloadViewModel @Inject constructor(
             }
 
             DownloadState.PAUSED, DownloadState.PENDING -> runEngineAction {
-                downloadEngine.resume(item.progress.taskId)
+                // 【JYD-P1-2026-10-04】P1-2：续传结果必须显式反馈，不能「点了没反应」。
+                reportResult(downloadEngine.resume(item.progress.taskId))
             }
 
             DownloadState.COMPLETED,
             DownloadState.FAILED,
             DownloadState.CANCELED -> Unit
+        }
+    }
+
+    /**
+     * 重新下载：清空该任务的 `.part` 分片后从零开始（【JYD-P1-2026-10-04】P1-2）。
+     *
+     * 说明：与「继续」并列的另一条出路——分片损坏或被清理时，用户可显式选择重下。
+     *
+     * @param item 被重下的列表条目。
+     */
+    fun restartTask(item: DownloadListItem) {
+        runEngineAction {
+            reportResult(downloadEngine.restart(item.progress.taskId))
+        }
+    }
+
+    /**
+     * 把引擎的续传 / 重下结果翻译成用户可见的反馈（P1-2）。
+     *
+     * @param result 引擎返回结果。
+     */
+    private fun reportResult(result: EngineActionResult) {
+        _message.value = when (result) {
+            EngineActionResult.Resumed -> R.string.download_resume_started
+            EngineActionResult.Restarted -> R.string.download_restart_started
+            EngineActionResult.NoOp -> null
+            EngineActionResult.NoCheckpoint -> R.string.download_resume_no_record
+            EngineActionResult.MissingPartFiles -> R.string.download_resume_missing_parts
         }
     }
 

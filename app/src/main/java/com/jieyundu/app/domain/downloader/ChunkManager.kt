@@ -121,6 +121,56 @@ class ChunkManager(
     }
 
     /**
+     * 判断目标文件是否还存在分片临时文件（【JYD-P1-2026-10-04】P1-2 续传可行性判定）。
+     *
+     * 实现说明：分片文件名形如 `目标名.part3`。判断方式是扫描目标文件所在目录，
+     * 匹配「以目标文件名 + `.part` 开头、且其后全为数字」的条目——用逐项比较而非正则，
+     * 避免目标文件名本身含 `.` 时正则转义出错。
+     *
+     * @param targetFile 最终目标文件。
+     * @return true 表示至少存在一个分片临时文件。
+     */
+    fun hasPartFiles(targetFile: File): Boolean {
+        val parent = targetFile.parentFile ?: return false
+        val entries = parent.listFiles() ?: return false
+        val prefix = targetFile.name + PART_SUFFIX
+        return entries.any { entry ->
+            entry.isFile && entry.name.startsWith(prefix) &&
+                entry.name.length > prefix.length &&
+                entry.name.substring(prefix.length).all { symbol -> symbol.isDigit() }
+        }
+    }
+
+    /**
+     * 删除目标文件的全部分片临时文件（不论分片列表是否已知）。
+     *
+     * 说明（【JYD-P1-2026-10-04】P1-2「重新下载」）：重启后内存中的分片列表已丢失，
+     * 无法用 [deletePartFiles] 逐片删除，故按文件名前缀扫描删除。
+     *
+     * @param targetFile 最终目标文件。
+     * @return 实际删除的文件数量。
+     */
+    fun deleteAllPartFiles(targetFile: File): Int {
+        val parent = targetFile.parentFile ?: return 0
+        val entries = parent.listFiles() ?: return 0
+        val prefix = targetFile.name + PART_SUFFIX
+        var removed = 0
+        entries.forEach { entry ->
+            val matched = entry.isFile && entry.name.startsWith(prefix) &&
+                entry.name.length > prefix.length &&
+                entry.name.substring(prefix.length).all { symbol -> symbol.isDigit() }
+            if (matched) {
+                if (entry.delete()) {
+                    removed++
+                } else {
+                    Timber.e("Failed to delete part file: %s", entry.name)
+                }
+            }
+        }
+        return removed
+    }
+
+    /**
      * 删除全部分片临时文件（取消任务或合并完成后调用）。
      *
      * @param targetFile 最终目标文件。

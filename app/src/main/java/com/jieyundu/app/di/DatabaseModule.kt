@@ -11,7 +11,10 @@ import com.jieyundu.app.data.local.AppDatabase
 import com.jieyundu.app.data.local.DownloadDao
 import com.jieyundu.app.data.local.FavoriteDao
 import com.jieyundu.app.data.local.HistoryDao
+import com.jieyundu.app.data.local.TransferRecordDao
+import com.jieyundu.app.domain.downloader.DownloadCheckpointPort
 import com.jieyundu.app.domain.downloader.DownloadProgressPort
+import com.jieyundu.app.domain.transfer.TransferRecordPort
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -42,7 +45,7 @@ object DatabaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
 
     /**
@@ -73,6 +76,16 @@ object DatabaseModule {
     fun provideFavoriteDao(database: AppDatabase): FavoriteDao = database.favoriteDao()
 
     /**
+     * 提供转存登记 DAO（【JYD-P1-2026-10-04】P1-3）。
+     *
+     * @param database 数据库实例。
+     * @return 转存登记 DAO。
+     */
+    @Provides
+    fun provideTransferRecordDao(database: AppDatabase): TransferRecordDao =
+        database.transferRecordDao()
+
+    /**
      * 把 Room 的 [DownloadDao] 绑定为 [DownloadProgressPort]。
      *
      * @param downloadDao 下载进度 DAO。
@@ -81,4 +94,27 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDownloadProgressPort(downloadDao: DownloadDao): DownloadProgressPort = downloadDao
+
+    /**
+     * 把 Room 的 [DownloadDao] 绑定为 [DownloadCheckpointPort]（【JYD-P1-2026-10-04】P1-1 / P1-2）。
+     *
+     * 说明：任务名与续传所需的直链 / 请求头由该端口持久化，使引擎在进程重启后仍能重建任务。
+     *
+     * @param downloadDao 下载进度 DAO。
+     * @return 端口实现。
+     */
+    @Provides
+    @Singleton
+    fun provideDownloadCheckpointPort(downloadDao: DownloadDao): DownloadCheckpointPort = downloadDao
+
+    /**
+     * 把 Room 的 [TransferRecordDao] 绑定为 [TransferRecordPort]（【JYD-P1-2026-10-04】P1-3）。
+     *
+     * @param transferRecordDao 转存登记 DAO。
+     * @return 端口实现。
+     */
+    @Provides
+    @Singleton
+    fun provideTransferRecordPort(transferRecordDao: TransferRecordDao): TransferRecordPort =
+        transferRecordDao
 }
