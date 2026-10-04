@@ -276,3 +276,7 @@ Owner《Bug 修复指令（4 项）》要求 **P0 先做、单独出包验证，
   临时目录自身只允许在「确认空目录」时删除；新增 11 个单元测试（随 CI 单测执行）。
 - 自纠：守卫首版漏判相对路径 `.极云渡临时/xxx`，已补分支。
 - 本批**不含** P1 三项（任务名持久化 / 重启续传 / 网盘管理页），按指令等 P0 验收通过后再推。
+
+- 交付状态：commit **`271bbd2e`**；CI [37193698914](https://github.com/qiuchen520/JieYunDu/actions/runs/37193698914)
+  **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿，守卫单测 11 例已执行）；
+  产物 `/sdcard/Download/极云渡_P0删除安全边界_debug.apk`（11,931,215 B）。
