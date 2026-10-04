@@ -1491,3 +1491,54 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
   「重新下载」只删除 `.part` 分片与重置进度，不触碰任务名 / 直链 / 请求头。
 约束遵守：未改 UI 视觉；未动引擎分片 / 限速 / 重试核心逻辑；未改请求参数（R3）。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-BROWSER-2026-10-04 · 网盘管理页「删除 / 下载到本地」入口恢复】
+来源：Owner 指令——网盘管理页浏览正常，但删除、下载到本地两个功能入口丢失；发布 0.1 前最后一项。
+排查结论：
+· 底层**已有**能力：`QuarkApi.deleteFiles` / `UcApi.deleteFiles`（§10.3）与
+  `QuarkApi.getDownloadUrl`（§10.4）均在，`PersonalBrowser` 接口只暴露了
+  `listPersonalChildren` / `fetchQuota`；`NetdiskBrowserScreen` 的行内也没有任何操作入口。
+  ⇒ 属「业务层能力在、UI 入口缺、接口未暴露」，本批补齐三处。
+· 个人网盘下载的参数边界（R3，重要）：夸克 `file/download` 只认 `fids`（本账号 fid），
+  个人文件可直接取链；**UC 的 `file/download` 请求体强制要求 `pwd_id` / `stoken` /
+  `fids_token` 三个分享态字段**，个人文件的取链报文至今没有抓包依据，故 UC 侧**明确返回
+  「不支持」并提示用户**，绝不猜测参数（宁可少一个入口，也不编造接口）。
+本批落地的改动：
+· domain/parser/PersonalBrowser.kt：新增 `deletePersonalFile(fid)` 与
+  `fetchPersonalDownloadUrl(fid)` 两个能力（接口注释写明语义、安全责任边界与 R3 依据）。
+· domain/parser/quark/QuarkParser.kt：
+    - `deletePersonalFile`：`QuarkDeleteRequest`（`action_type = 2` 移入回收站）→ 成功码判定；
+    - `fetchPersonalDownloadUrl`：`QuarkDownloadRequest(fids = [fid])` → 取 `download_url`。
+· domain/parser/uc/UcParser.kt：
+    - `deletePersonalFile`：`UcDeleteRequest` 同构实现（UC 路径不带 `uc_param_str=`）；
+    - `fetchPersonalDownloadUrl`：**恒返回 null** 并记日志（原因见上，待抓包事实补齐后实现即可打通，
+      UI 无需改动）。
+· domain/transfer/TempFolderGuard.kt：新增**用户主动删除**的显式出口
+  `mayDeleteUserInitiated(fid, userInitiated)`。
+    - 语义划分（必须分清）：`mayDeleteFromTemp` 管「App 自己 / 顺带」的清理，只允许临时目录内；
+      本方法管「用户在管理页明确选中并确认删除自己的文件」，因此不限制在临时目录内；
+    - 但仍**共用同一处判定入口**（避免两处各判、规则漂移），且只有 `userInitiated = true`
+      （UI 确认弹窗之后）才放行，并写审计日志便于日后排查误删投诉。
+· ui/screens/login/NetdiskBrowserViewModel.kt：
+    - 新增动作状态 `NetdiskActionState`（待删除条目 + 一次性提示）；
+    - `requestDelete` / `cancelDelete` / `confirmDelete`：**先确认、再删除**；
+      `confirmDelete` 的链路 = 用户确认 → `mayDeleteUserInitiated` 放行 → 解析器删除 →
+      重新列出当前目录刷新；
+    - `downloadToLocal`：取链 → 复用既有下载链路（`DownloadEngine` 分片下载 +
+      `DownloadSessionRegistry` 登记 + `DownloadService` 前台保活 + 完成后按 A3 发布到公共目录），
+      与首页下载**同一套策略**（落盘目录解析 / 发布逻辑与 `HomeViewModel` 对齐）；
+    - UC 取链为 null 时提示「该网盘暂不支持直接下载自己网盘的文件」。
+· ui/screens/login/NetdiskBrowserScreen.kt：
+    - 行尾新增「…」操作菜单（文字指示符，D8：不引入 material-icons），展开为
+      「下载到本地 / 删除」两个按钮；
+    - 新增删除**确认弹窗**（`AlertDialog`），文案说明「可从网盘回收站恢复」；
+    - 结果用 Toast 一次性提示（删除成功/失败、下载已开始/失败/不支持）。
+· ui/navigation/JieYunDuNavHost.kt：接线动作状态与五个回调。
+· res/values/strings.xml：新增 11 条文案（入口、确认弹窗、结果提示）。
+· 浏览功能未动（列表 / 面包屑 / 返回上一级 / 容量卡保持原样）。
+约束遵守：未改玻璃质感 / 圆角 / 配色（菜单按钮与弹窗沿用既有 GlassButton 与色表）；
+未动已完成功能；删除仅走既有 `file/delete`（未新增 / 未改任何请求字段，R3 只读既有接口）；
+中文入 strings.xml（C5）；日志走 Timber（C8）。
+待办：装机验收（管理页可选下载 / 删除；删除后网盘里确实没了；UC 下载给出明确提示）。
+================================================================================

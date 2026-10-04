@@ -5,22 +5,37 @@
 
 package com.jieyundu.app.ui.screens.login
 
+import android.content.Context
+import android.os.Environment
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.R
+import com.jieyundu.app.data.settings.AppSettingsStore
+import com.jieyundu.app.data.settings.DownloadDirectoryMode
+import com.jieyundu.app.data.storage.PublicDownloadsPublisher
+import com.jieyundu.app.domain.downloader.DownloadEngine
+import com.jieyundu.app.domain.downloader.DownloadState
+import com.jieyundu.app.domain.downloader.DownloadTask
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskServiceRouter
+import com.jieyundu.app.domain.transfer.TempFolderGuard
+import com.jieyundu.app.service.DownloadService
+import com.jieyundu.app.ui.screens.download.DownloadSessionRegistry
 import com.jieyundu.app.ui.screens.home.BrowseLevel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import java.util.UUID
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -33,16 +48,31 @@ import timber.log.Timber
  * 说明：当前夸克与 UC 均有个人网盘浏览实现；其余类型给出「开发中」提示。
  *
  * @param netdiskRouter 网盘能力路由器（B2：按 type 取对应个人网盘浏览器）。
+ * @param downloadEngine 分片下载引擎（「下载到本地」复用既有下载链路）。
+ * @param appSettingsStore 应用设置（下载目录模式 / 并发分片数）。
+ * @param downloadSessionRegistry 会话内任务登记表（下载页显示文件名用）。
+ * @param publicDownloadsPublisher 成品发布器（默认 A3：发布到公共下载目录）。
+ * @param appContext 应用上下文（推导落盘目录）。
  */
 @HiltViewModel
 class NetdiskBrowserViewModel @Inject constructor(
-    private val netdiskRouter: NetdiskServiceRouter
+    private val netdiskRouter: NetdiskServiceRouter,
+    private val downloadEngine: DownloadEngine,
+    private val appSettingsStore: AppSettingsStore,
+    private val downloadSessionRegistry: DownloadSessionRegistry,
+    private val publicDownloadsPublisher: PublicDownloadsPublisher,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NetdiskBrowserState())
 
     /** 网盘管理页 UI 状态。 */
     val uiState: StateFlow<NetdiskBrowserState> = _uiState.asStateFlow()
+
+    private val _state = MutableStateFlow(NetdiskActionState())
+
+    /** 网盘管理页动作状态（删除确认弹窗 / 一次性提示）。 */
+    val actionState: StateFlow<NetdiskActionState> = _state.asStateFlow()
 
     /**
      * 打开某网盘的管理页。
@@ -89,9 +119,197 @@ class NetdiskBrowserViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 请求删除某个条目（只打开确认弹窗，**不执行**删除）。
+     *
+     * 【JYD-BROWSER-2026-10-04】删除自己的网盘文件不可撤销（虽然进回收站），
+     * 因此必须两步：先弹确认，再由 [confirmDelete] 执行。
+     *
+     * @param file 目标条目。
+     */
+    fun requestDelete(file: FileInfo) {
+        _state.value = _state.value.copy(pendingDelete = file)
+    }
+
+    /** 取消删除（关闭确认弹窗）。 */
+    fun cancelDelete() {
+        _state.value = _state.value.copy(pendingDelete = null)
+    }
+
+    /**
+     * 执行删除（用户已在弹窗中确认）。
+     *
+     * 安全链路（指令要求「必须过 P0 的 TempFolderGuard 安全判断」）：
+     * 用户确认 → [TempFolderGuard.mayDeleteUserInitiated]（显式 userInitiated 放行 + 审计日志）
+     * → [PersonalBrowser.deletePersonalFile] → 重新列出当前目录刷新界面。
+     *
+     * @param file 目标条目。
+     */
+    fun confirmDelete(file: FileInfo) {
+        val type = _state.value.netdiskType ?: return
+        val browser = netdiskRouter.personalBrowserFor(type) ?: return
+        _state.value = _state.value.copy(pendingDelete = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (!TempFolderGuard.mayDeleteUserInitiated(file.fid, userInitiated = true)) {
+                    Timber.w("NetdiskBrowser delete refused by guard fid=%s", file.fid)
+                    _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_delete_failed)
+                    return@launch
+                }
+                val deleted = browser.deletePersonalFile(file.fid)
+                _state.value = _state.value.copy(
+                    messageRes = if (deleted) {
+                        R.string.netdisk_browser_delete_done
+                    } else {
+                        R.string.netdisk_browser_delete_failed
+                    }
+                )
+                if (deleted) {
+                    reloadCurrentLevel()
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                Timber.e(exception, "NetdiskBrowser delete failed fid=%s", file.fid)
+                _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_delete_failed)
+            }
+        }
+    }
+
+    /**
+     * 下载条目到本地（复用既有下载链路：取链 → 引擎分片下载 → 完成后发布到公共目录）。
+     *
+     * @param file 目标文件条目。
+     */
+    fun downloadToLocal(file: FileInfo) {
+        if (file.isDirectory) {
+            _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_folder)
+            return
+        }
+        val type = _state.value.netdiskType ?: return
+        val browser = netdiskRouter.personalBrowserFor(type) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = browser.fetchPersonalDownloadUrl(file.fid)
+                if (url.isNullOrBlank()) {
+                    // UC 等网盘的个人文件取链尚无抓包依据 → 明确提示，不猜测参数（R3）。
+                    _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_unsupported)
+                    return@launch
+                }
+                val taskId = UUID.randomUUID().toString()
+                val directory = resolveDownloadDirectory()
+                val targetFile = File(directory, file.fileName)
+                val task = DownloadTask(
+                    taskId = taskId,
+                    url = url,
+                    fileName = file.fileName,
+                    fileSize = file.fileSize,
+                    savePath = targetFile.absolutePath,
+                    chunkCount = appSettingsStore.chunkCount.value,
+                    headers = emptyMap()
+                )
+                downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
+                downloadEngine.start(task)
+                // C2：接线前台服务（保活 + 通知）；失败不影响下载本身。
+                DownloadService.start(appContext, task)
+                _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_started)
+                val completed = awaitDownloadCompleted(taskId)
+                if (completed) {
+                    publishIfNeeded(taskId, file.fileName, targetFile)
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                Timber.e(exception, "NetdiskBrowser download failed fid=%s", file.fid)
+                _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_failed)
+            }
+        }
+    }
+
+    /** 消费一次性提示消息（UI 已弹出后调用）。 */
+    fun consumeMessage() {
+        _state.value = _state.value.copy(messageRes = null)
+    }
+
+    /**
+     * 重新列出当前目录（删除后刷新）。
+     *
+     * 说明：只刷新栈顶层级，路径栈本身不变。
+     */
+    private suspend fun reloadCurrentLevel() {
+        val state = _state.value
+        val type = state.netdiskType ?: return
+        val level = state.currentLevel ?: return
+        val browser = netdiskRouter.personalBrowserFor(type) ?: return
+        val children = browser.listPersonalChildren(level.pdirFid)
+        val stack = state.stack.dropLast(1) + level.copy(files = children)
+        _state.value = _state.value.copy(stack = stack)
+    }
+
+    /**
+     * 等待任务进入终态。
+     *
+     * @param taskId 任务 ID。
+     * @return true 表示下载完成。
+     */
+    private suspend fun awaitDownloadCompleted(taskId: String): Boolean {
+        val finalState = downloadEngine.observe(taskId).firstOrNull { state ->
+            state == DownloadState.COMPLETED ||
+                state == DownloadState.FAILED ||
+                state == DownloadState.CANCELED
+        }
+        return finalState == DownloadState.COMPLETED
+    }
+
+    /**
+     * 默认目录模式下，把成品发布到公共下载目录（与首页下载同一策略）。
+     *
+     * @param taskId 任务 ID。
+     * @param fileName 文件名。
+     * @param workingFile 私有工作目录中的成品。
+     */
+    private suspend fun publishIfNeeded(taskId: String, fileName: String, workingFile: File) {
+        if (appSettingsStore.downloadDirectoryMode != DownloadDirectoryMode.PUBLIC_DOWNLOADS) {
+            return
+        }
+        val published = publicDownloadsPublisher.publish(
+            workingFile,
+            appSettingsStore.publicFolderName()
+        )
+        if (published == null) {
+            Timber.w("NetdiskBrowser: publish to public downloads failed for %s", fileName)
+            return
+        }
+        downloadSessionRegistry.remember(taskId, fileName, published)
+        if (workingFile.isFile && !workingFile.delete()) {
+            Timber.e("NetdiskBrowser: failed to delete private copy: %s", workingFile.name)
+        }
+    }
+
+    /**
+     * 计算本次下载的工作目录（与首页下载同策略，见 HomeViewModel.resolveDownloadDirectory）。
+     *
+     * @return 工作目录；自定义目录不可用时回退应用私有目录。
+     */
+    private fun resolveDownloadDirectory(): File {
+        if (appSettingsStore.downloadDirectoryMode == DownloadDirectoryMode.CUSTOM) {
+            val custom = appSettingsStore.customDirectoryPath
+            if (!custom.isNullOrBlank()) {
+                val dir = File(custom)
+                if (dir.isDirectory || dir.mkdirs()) {
+                    return dir
+                }
+                Timber.w("NetdiskBrowser: custom dir unavailable, fall back to private: %s", custom)
+            }
+        }
+        return appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: appContext.filesDir
+    }
+
     /** 关闭管理页，回到网盘列表。 */
     fun close() {
         _uiState.value = NetdiskBrowserState()
+        _state.value = NetdiskActionState()
     }
 
     /**
@@ -170,3 +388,16 @@ data class NetdiskBrowserState(
     val canNavigateUp: Boolean
         get() = stack.size > 1
 }
+/**
+ * 网盘管理页的「动作」状态（【JYD-BROWSER-2026-10-04】删除 / 下载入口）。
+ *
+ * 与 [NetdiskBrowserState] 分开的原因：浏览状态描述「当前显示什么目录」，
+ * 动作状态描述「正在进行的弹窗与一次性提示」，两者生命周期不同（前者随目录变化，后者随操作消费）。
+ *
+ * @property pendingDelete 待确认删除的条目；为 null 表示不显示确认弹窗。
+ * @property messageRes 一次性提示文案（删除 / 下载结果）；UI 消费后置空。
+ */
+data class NetdiskActionState(
+    val pendingDelete: FileInfo? = null,
+    @StringRes val messageRes: Int? = null
+)

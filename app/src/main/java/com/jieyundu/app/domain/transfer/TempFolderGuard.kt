@@ -6,6 +6,7 @@
 package com.jieyundu.app.domain.transfer
 
 import java.util.concurrent.ConcurrentHashMap
+import timber.log.Timber
 
 /**
  * 网盘侧删除安全守卫（【JYD-DELSAFE-2026-10-04】P0 数据安全）。
@@ -142,6 +143,34 @@ object TempFolderGuard {
         }
         // 规则 2 / 3：路径或父目录 fid 命中临时目录。
         return isInTempFolder(name = name, pdirFid = pdirFid, tempFolderFid = tempFolderFid)
+    }
+
+    /**
+     * **用户主动删除**的放行判定（网盘管理页的「删除」按钮专用）。
+     *
+     * 与 [mayDeleteFromTemp] 的语义区别（必须分清，否则会误伤用户操作）：
+     * - [mayDeleteFromTemp] 管的是「App 自己 / 顺带」的清理——只允许临时目录内的副本，
+     *   用户自己的文件一律拒绝（P0 数据安全边界的默认拒绝语义）；
+     * - 本方法管的是「用户在管理页明确选中并确认删除自己的文件」——目标由用户指定，
+     *   因此**不限制在临时目录内**。
+     *
+     * 但两者共用同一处判定入口与同一套日志/审计，避免"两处各自判断、规则漂移"：
+     * 本方法会记录删除意图，便于日后排查误删投诉。
+     *
+     * 约束：仅当 [userInitiated] 显式为 true（由 UI 的确认弹窗流程传入）才放行，
+     * 且目标 fid 非空；任何"顺带"调用都拿不到放行，必须走 [mayDeleteFromTemp]。
+     *
+     * @param fid 用户选中的文件 / 目录 fid。
+     * @param userInitiated 是否来自用户主动确认的删除（UI 确认弹窗之后）。
+     * @return true 表示允许执行网盘侧删除。
+     */
+    fun mayDeleteUserInitiated(fid: String?, userInitiated: Boolean): Boolean {
+        val target = fid?.trim().orEmpty()
+        if (!userInitiated || target.isEmpty()) {
+            return false
+        }
+        Timber.i("TempFolderGuard user-initiated delete approved fid=%s", target)
+        return true
     }
 
     /**

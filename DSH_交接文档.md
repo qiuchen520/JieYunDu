@@ -319,3 +319,17 @@ Owner 反馈本批唯一的 bug。排查后真因**不是**「重下清空了名
 - 交付状态：commit **`30935ebd`**；CI [37196710761](https://github.com/qiuchen520/JieYunDu/actions/runs/37196710761)
   **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿，新增 5 例已执行）；
   产物 `/sdcard/Download/极云渡_任务名修复_debug.apk`（11,968,275 B）。
+
+---
+
+### 2026-10-04 · 网盘管理页「删除 / 下载到本地」入口恢复（标识 `JYD-BROWSER-2026-10-04`）
+Owner 指令：管理页浏览正常，但删除与下载到本地入口丢失（发布 0.1 前最后一项）。
+- 排查：底层接口**都在**（`file/delete` §10.3、`file/download` §10.4），缺的是
+  `PersonalBrowser` 的能力暴露 + 页面 UI 入口。
+- 恢复：`PersonalBrowser` 增 `deletePersonalFile` / `fetchPersonalDownloadUrl`；
+  两个解析器实现；页面行尾「…」菜单（下载到本地 / 删除）+ 删除确认弹窗 + Toast 结果。
+- 安全：删除走 **`TempFolderGuard.mayDeleteUserInitiated`**（用户主动删除的显式出口，
+  仅确认弹窗后放行并写审计日志）；临时副本清理仍走原 `mayDeleteFromTemp`（默认拒绝）。
+- R3 边界：夸克个人文件取链只传 `fids`，可直接下载；**UC 个人文件取链无抓包依据**
+  （其请求体强制分享态三字段），故 UC 侧明确提示「不支持直接下载」，不编造参数。
+- 未动：浏览功能、玻璃质感 / 圆角 / 配色、既有请求字段。

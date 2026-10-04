@@ -13,6 +13,8 @@ import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.PersonalBrowser
 import com.jieyundu.app.domain.parser.ShareBrowser
+import com.jieyundu.app.domain.parser.quark.QuarkDeleteRequest
+import com.jieyundu.app.domain.parser.quark.QuarkDownloadRequest
 import com.jieyundu.app.domain.util.LinkExtractor
 import java.io.IOException
 import javax.inject.Inject
@@ -211,6 +213,70 @@ class QuarkParser @Inject constructor(
         val member = response.data ?: return@withContext null
         QuotaInfo(used = member.use_capacity, total = member.total_capacity)
     }
+
+    /**
+     * 删除个人网盘中的文件 / 目录（网盘管理页「删除」，§10.3 `file/delete`）。
+     *
+     * 说明（【JYD-BROWSER-2026-10-04】）：
+     * - 语义为**移入回收站**（`action_type = 2`），可在网盘回收站恢复，不是物理抹除；
+     * - 安全判定不在此层：UI 必须先经用户确认，再由
+     *   `TempFolderGuard.mayDeleteUserInitiated` 放行（本类只做协议调用）；
+     * - 请求体与临时目录清理共用 [QuarkDeleteRequest]，参数只有一处来源。
+     *
+     * @param fid 目标文件 / 目录 fid。
+     * @return true 表示服务端接受删除请求。
+     */
+    override suspend fun deletePersonalFile(fid: String): Boolean = withContext(Dispatchers.IO) {
+        if (fid.isBlank()) {
+            return@withContext false
+        }
+        val response = runCatching {
+            api.deleteFiles(QuarkDeleteRequest(filelist = listOf(fid)))
+        }.getOrElse { error ->
+            Timber.w(error, "QuarkParser personal delete failed fid=%s", fid)
+            return@withContext false
+        }
+        if (response.code != SUCCESS_CODE) {
+            Timber.w("QuarkParser personal delete code=%d fid=%s", response.code, fid)
+            return@withContext false
+        }
+        Timber.i("QuarkParser personal delete accepted fid=%s", fid)
+        true
+    }
+
+    /**
+     * 取个人网盘文件的直链（网盘管理页「下载到本地」）。
+     *
+     * 依据：`file/download` 对**本账号**文件只认 `fids`（《抓包事实.md》§10.4），
+     * 不涉及 pwdId / stoken / fid_token，因此个人文件可直接取链（R3：未新增任何参数）。
+     *
+     * @param fid 目标文件 fid。
+     * @return 下载直链；失败返回 null。
+     */
+    override suspend fun fetchPersonalDownloadUrl(fid: String): String? =
+        withContext(Dispatchers.IO) {
+            if (fid.isBlank()) {
+                return@withContext null
+            }
+            val response = runCatching {
+                api.getDownloadUrl(QuarkDownloadRequest(fids = listOf(fid)))
+            }.getOrElse { error ->
+                Timber.w(error, "QuarkParser personal download url failed fid=%s", fid)
+                return@withContext null
+            }
+            if (response.code != SUCCESS_CODE) {
+                Timber.w("QuarkParser personal download code=%d fid=%s", response.code, fid)
+                return@withContext null
+            }
+            response.data.orEmpty()
+                .firstOrNull { item -> item.fid == fid }
+                ?.download_url
+                ?.takeIf { value -> value.isNotBlank() }
+                ?: response.data.orEmpty()
+                    .firstOrNull()
+                    ?.download_url
+                    ?.takeIf { value -> value.isNotBlank() }
+        }
 
     /**
      * 构造个人网盘列表查询参数（《抓包事实.md》§10.2）。

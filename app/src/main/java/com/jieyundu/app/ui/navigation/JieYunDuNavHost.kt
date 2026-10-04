@@ -147,6 +147,7 @@ private fun NetdiskSection(loginViewModel: NetdiskLoginViewModel) {
     val loggedIn by loginViewModel.loggedIn.collectAsState()
     val browserViewModel: NetdiskBrowserViewModel = hiltViewModel()
     val browserState by browserViewModel.uiState.collectAsState()
+    val browserActionState by browserViewModel.actionState.collectAsState()
     val target = loginTarget
     when {
         target != null -> {
@@ -163,6 +164,12 @@ private fun NetdiskSection(loginViewModel: NetdiskLoginViewModel) {
                 onOpenFolder = browserViewModel::openFolder,
                 onNavigateUp = browserViewModel::navigateUp,
                 onClose = browserViewModel::close,
+                actionState = browserActionState,
+                onRequestDelete = browserViewModel::requestDelete,
+                onConfirmDelete = browserViewModel::confirmDelete,
+                onCancelDelete = browserViewModel::cancelDelete,
+                onDownload = browserViewModel::downloadToLocal,
+                onConsumeMessage = browserViewModel::consumeMessage,
                 modifier = Modifier.fillMaxSize()
             )
         }

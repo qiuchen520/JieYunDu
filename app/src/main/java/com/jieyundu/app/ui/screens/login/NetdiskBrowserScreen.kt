@@ -5,6 +5,7 @@
 
 package com.jieyundu.app.ui.screens.login
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,11 +17,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -44,6 +53,12 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
  * @param onOpenFolder 点击文件夹进入下一级。
  * @param onNavigateUp 点击「返回上一级」。
  * @param onClose 关闭管理页回到网盘列表。
+ * @param actionState 动作状态（删除确认弹窗 / 一次性提示）。
+ * @param onRequestDelete 点击「删除」（只打开确认弹窗）。
+ * @param onConfirmDelete 在确认弹窗中确认删除。
+ * @param onCancelDelete 取消删除。
+ * @param onDownload 点击「下载到本地」。
+ * @param onConsumeMessage 消费一次性提示。
  * @param modifier 外部修饰符。
  */
 @Composable
@@ -52,6 +67,12 @@ fun NetdiskBrowserScreen(
     onOpenFolder: (FileInfo) -> Unit,
     onNavigateUp: () -> Unit,
     onClose: () -> Unit,
+    actionState: NetdiskActionState = NetdiskActionState(),
+    onRequestDelete: (FileInfo) -> Unit = {},
+    onConfirmDelete: (FileInfo) -> Unit = {},
+    onCancelDelete: () -> Unit = {},
+    onDownload: (FileInfo) -> Unit = {},
+    onConsumeMessage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isExpanded = rememberIsExpandedLayout()
@@ -59,6 +80,16 @@ fun NetdiskBrowserScreen(
     val contentPadding: Dp =
         if (isExpanded) Dimens.PanelPadding else Dimens.PanelPaddingCompact
     val typeLabel = state.netdiskType?.let { type -> stringResource(type.uiLabelRes()) }.orEmpty()
+    val context = LocalContext.current
+    // 【JYD-BROWSER-2026-10-04】记录「哪一行的操作菜单是展开的」（按 fid 标识）。
+    var expandedFid by remember { mutableStateOf<String?>(null) }
+
+    // 一次性结果提示（删除 / 下载），取用后清除，避免重复弹出。
+    LaunchedEffect(actionState.messageRes) {
+        val res = actionState.messageRes ?: return@LaunchedEffect
+        Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
+        onConsumeMessage()
+    }
 
     Column(
         modifier = modifier
@@ -164,10 +195,35 @@ fun NetdiskBrowserScreen(
                 verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXs)
             ) {
                 items(files) { file ->
-                    BrowserEntryRow(file = file, onOpen = { onOpenFolder(file) })
+                    BrowserEntryRow(
+                        file = file,
+                        menuExpanded = expandedFid == file.fid,
+                        onOpen = { onOpenFolder(file) },
+                        onToggleMenu = {
+                            expandedFid = if (expandedFid == file.fid) null else file.fid
+                        },
+                        onDownload = {
+                            expandedFid = null
+                            onDownload(file)
+                        },
+                        onDelete = {
+                            expandedFid = null
+                            onRequestDelete(file)
+                        }
+                    )
                 }
             }
         }
+    }
+
+    // 删除确认弹窗（不可逆操作二次确认）。
+    val pendingDelete = actionState.pendingDelete
+    if (pendingDelete != null) {
+        DeleteConfirmDialog(
+            file = pendingDelete,
+            onConfirm = { onConfirmDelete(pendingDelete) },
+            onDismiss = onCancelDelete
+        )
     }
 }
 
@@ -225,47 +281,162 @@ private fun QuotaCard(quota: QuotaInfo?, contentPadding: Dp) {
 }
 
 /**
- * 单条目录条目行：文件夹可点击进入，普通文件仅展示名称与大小。
+ * 单条目录条目行：文件夹可点击进入；行尾「…」展开操作菜单（下载到本地 / 删除）。
+ *
+ * 【JYD-BROWSER-2026-10-04】：删除 / 下载入口此前只有业务层没有 UI，本批补齐。
+ * 行尾菜单用**文字「…」**而非图标（D8：不引入 material-icons），且不新增视觉体系。
  *
  * @param file 文件条目。
+ * @param menuExpanded 本行操作菜单是否展开。
  * @param onOpen 点击回调（文件夹进入）。
+ * @param onToggleMenu 点击「…」切换菜单。
+ * @param onDownload 点击「下载到本地」。
+ * @param onDelete 点击「删除」。
  */
 @Composable
-private fun BrowserEntryRow(file: FileInfo, onOpen: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = file.isDirectory, onClick = onOpen)
-            .padding(vertical = Dimens.SpaceXs),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = file.fileName,
-                style = MaterialTheme.typography.titleMedium,
-                color = JieYunDuColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = if (file.isDirectory) {
-                    stringResource(R.string.netdisk_browser_item_folder)
-                } else {
-                    FileSizeFormatter.format(file.fileSize)
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = JieYunDuColors.TextTertiary
-            )
-        }
-        if (file.isDirectory) {
+private fun BrowserEntryRow(
+    file: FileInfo,
+    menuExpanded: Boolean,
+    onOpen: () -> Unit,
+    onToggleMenu: () -> Unit,
+    onDownload: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = file.isDirectory, onClick = onOpen)
+                .padding(vertical = Dimens.SpaceXs),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = file.fileName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = JieYunDuColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (file.isDirectory) {
+                        stringResource(R.string.netdisk_browser_item_folder)
+                    } else {
+                        FileSizeFormatter.format(file.fileSize)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = JieYunDuColors.TextTertiary
+                )
+            }
+            if (file.isDirectory) {
+                Spacer(modifier = Modifier.width(Dimens.SpaceSm))
+                Text(
+                    text = FOLDER_INDICATOR,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = JieYunDuColors.TextTertiary
+                )
+            }
             Spacer(modifier = Modifier.width(Dimens.SpaceSm))
             Text(
-                text = FOLDER_INDICATOR,
+                text = MENU_INDICATOR,
+                modifier = Modifier
+                    .clickable(onClick = onToggleMenu)
+                    .padding(horizontal = Dimens.SpaceSm),
                 style = MaterialTheme.typography.titleMedium,
-                color = JieYunDuColors.TextTertiary
+                color = JieYunDuColors.TextSecondary
+            )
+        }
+        if (menuExpanded) {
+            BrowserActionMenu(
+                onDownload = onDownload,
+                onDelete = onDelete,
+                modifier = Modifier.padding(start = Dimens.SpaceSm, bottom = Dimens.SpaceXs)
             )
         }
     }
+}
+
+/**
+ * 行内操作菜单：下载到本地 / 删除。
+ *
+ * 说明：菜单项用文字按钮；「删除」用警示色（[JieYunDuColors.ProgressFill] 属既有色表，
+ * 不新增颜色），提醒这是不可逆操作。
+ *
+ * @param onDownload 下载回调。
+ * @param onDelete 删除回调。
+ * @param modifier 外部修饰符。
+ */
+@Composable
+private fun BrowserActionMenu(
+    onDownload: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        GlassButton(
+            text = stringResource(R.string.netdisk_browser_download),
+            onClick = onDownload,
+            height = Dimens.ToggleButtonHeight,
+            cornerRadius = Dimens.ButtonCornerCompact,
+            fillColor = JieYunDuColors.GlassFillStrong,
+            borderColor = JieYunDuColors.GlassBorder,
+            contentColor = JieYunDuColors.Primary
+        )
+        GlassButton(
+            text = stringResource(R.string.netdisk_browser_delete),
+            onClick = onDelete,
+            height = Dimens.ToggleButtonHeight,
+            cornerRadius = Dimens.ButtonCornerCompact,
+            fillColor = JieYunDuColors.GlassFillStrong,
+            borderColor = JieYunDuColors.GlassBorder,
+            contentColor = JieYunDuColors.TextPrimary
+        )
+    }
+}
+
+/**
+ * 删除确认弹窗（【JYD-BROWSER-2026-10-04】不可逆操作必须二次确认）。
+ *
+ * @param file 待删除条目。
+ * @param onConfirm 确认删除。
+ * @param onDismiss 取消。
+ */
+@Composable
+private fun DeleteConfirmDialog(
+    file: FileInfo,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.netdisk_browser_delete_confirm_title)) },
+        text = {
+            Text(
+                text = stringResource(R.string.netdisk_browser_delete_confirm_message) +
+                    "\n" + file.fileName
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.netdisk_browser_delete_confirm_action),
+                    color = JieYunDuColors.Primary
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.action_cancel),
+                    color = JieYunDuColors.TextSecondary
+                )
+            }
+        }
+    )
 }
 
 /** 面包屑分隔符。 */
@@ -273,3 +444,6 @@ private const val BREADCRUMB_SEPARATOR = " / "
 
 /** 文件夹行尾指示符（非中文，避免 C5 约束）。 */
 private const val FOLDER_INDICATOR = ">"
+
+/** 操作菜单指示符（非中文，避免 C5 约束）。 */
+private const val MENU_INDICATOR = "\u22EF"

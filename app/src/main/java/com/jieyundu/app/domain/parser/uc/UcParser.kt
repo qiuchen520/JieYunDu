@@ -12,6 +12,7 @@ import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.PersonalBrowser
 import com.jieyundu.app.domain.parser.ShareBrowser
+import com.jieyundu.app.domain.parser.uc.UcDeleteRequest
 import com.jieyundu.app.domain.util.LinkExtractor
 import java.io.IOException
 import javax.inject.Inject
@@ -226,7 +227,54 @@ class UcParser @Inject constructor(
     }
 
     /**
-     * 构造个人网盘列表查询参数（《抓包事实.md》§2）。
+     * 删除个人网盘中的文件 / 目录（网盘管理页「删除」，§10.3 `file/delete`）。
+     *
+     * 依据：《抓包事实.md》§10.3——UC 与夸克同构（UC 的路径不带 `uc_param_str=`）。
+     * 语义同为**移入回收站**（`action_type = 2`），可在网盘回收站恢复。
+     *
+     * 安全判定不在此层：UI 先经用户确认，再由 `TempFolderGuard.mayDeleteUserInitiated` 放行。
+     *
+     * @param fid 目标文件 / 目录 fid。
+     * @return true 表示服务端接受删除请求。
+     */
+    override suspend fun deletePersonalFile(fid: String): Boolean = withContext(Dispatchers.IO) {
+        if (fid.isBlank()) {
+            return@withContext false
+        }
+        val response = runCatching {
+            api.deleteFiles(UcDeleteRequest(filelist = listOf(fid)))
+        }.getOrElse { error ->
+            Timber.w(error, "UcParser personal delete failed fid=%s", fid)
+            return@withContext false
+        }
+        if (response.code != SUCCESS_CODE) {
+            Timber.w("UcParser personal delete code=%d fid=%s", response.code, fid)
+            return@withContext false
+        }
+        Timber.i("UcParser personal delete accepted fid=%s", fid)
+        true
+    }
+
+    /**
+     * 取个人网盘文件的直链——**当前不支持，明确返回 null**（R3：不编造接口参数）。
+     *
+     * 原因：UC 的 `file/download`（[UcApi.getDownloadUrl]）请求体强制要求
+     * `pwd_id` / `stoken` / `fids_token` 三个**分享态**字段（见 [UcDownloadRequest]），
+     * 而个人网盘文件没有分享上下文；个人文件的取链报文至今**没有抓包依据**，
+     * 因此这里不猜测参数、也不复用分享请求体，直接返回 null，由 UI 明确提示用户。
+     *
+     * 后续若拿到 UC 个人文件取链的抓包事实，只需实现本方法即可打通（UI 无需改动）。
+     *
+     * @param fid 目标文件 fid。
+     * @return 恒为 null（待抓包事实补齐后实现）。
+     */
+    override suspend fun fetchPersonalDownloadUrl(fid: String): String? {
+        Timber.i("UcParser personal download url unsupported (no capture evidence) fid=%s", fid)
+        return null
+    }
+
+    /**
+     * 构造个人网盘列表查询参数（《抓包事实》§2）。
      *
      * 写法约定：`pr` / `fr` 由本方法提供，[UcApi.listFiles] 路径里不再写死——与
      * `detail` / `save` 统一，「固定参数」只有一处来源。
