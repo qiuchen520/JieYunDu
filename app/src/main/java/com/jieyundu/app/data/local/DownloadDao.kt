@@ -34,15 +34,24 @@ import kotlinx.coroutines.flow.Flow
 abstract class DownloadDao : DownloadProgressPort, DownloadCheckpointPort {
 
     /**
-     * 插入一条**新**任务的进度行；主键冲突时忽略（不覆盖已有行）。
+     * 插入一条**新**任务的完整行（含任务名 / 直链 / 请求头）。
      *
-     * 说明：冲突即代表该任务已存在，此时任务名 / 直链由 [upsertTaskEntity] 负责更新，
-     * 进度由 [updateProgressColumns] 负责更新——本方法只承担「首次建行」。
+     * 说明：是否「新」由 [existsTask] 显式判定后决定调用，**不依赖** `@Insert` 的返回语义
+     * （Room 在部分版本上把单主键插入的返回值生成为 `Unit`，靠返回值判断会编译失败且不稳）。
      *
-     * @param entity 进度实体。
+     * @param entity 完整任务实体。
      */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertEntity(entity: DownloadEntity)
+
+    /**
+     * 判断指定任务是否已存在（用于决定「插入」还是「按列更新」）。
+     *
+     * @param taskId 任务 ID。
+     * @return 1 表示已存在，0 表示不存在。
+     */
+    @Query("SELECT COUNT(*) FROM download_progress WHERE task_id = :taskId")
+    abstract suspend fun existsTask(taskId: String): Int
 
     /**
      * 仅更新进度相关列（不触碰任务名 / 直链 / 请求头等列）。
@@ -77,8 +86,8 @@ abstract class DownloadDao : DownloadProgressPort, DownloadCheckpointPort {
      * @param entity 任务存档实体。
      */
     suspend fun upsertTaskEntity(entity: DownloadEntity) {
-        val inserted = insertEntity(entity)
-        if (inserted != INSERT_IGNORED) {
+        if (existsTask(entity.taskId) == 0) {
+            insertEntity(entity)
             return
         }
         updateTaskColumns(
@@ -220,9 +229,4 @@ abstract class DownloadDao : DownloadProgressPort, DownloadCheckpointPort {
      */
     override suspend fun loadTask(taskId: String): DownloadTaskRecord? =
         queryEntity(taskId)?.toTaskRecord()
-
-    private companion object {
-        /** `@Insert(IGNORE)` 未插入任何行时的返回值（Room 约定）。 */
-        const val INSERT_IGNORED = -1L
-    }
 }
