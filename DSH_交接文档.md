@@ -339,3 +339,8 @@ Owner 指令：管理页浏览正常，但删除与下载到本地入口丢失�
   后重推 **`cdb71780`**；CI [37197985583](https://github.com/qiuchen520/JieYunDu/actions/runs/37197985583)
   **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿）；
   产物 `/sdcard/Download/极云渡_网盘管理页恢复_debug.apk`。
+- 追加：守卫「用户主动删除」出口的单元测试 4 例（用户确认放行 / 未确认拒绝 / 空 fid 拒绝 /
+  关键回归——用户删除出口不得放松自动清理的默认拒绝语义）；commit `a347fa6c`，
+  CI [37198190101](https://github.com/qiuchen520/JieYunDu/actions/runs/37198190101) **success**。
+  APK 与上一条同功能（仅新增测试），故下载目录未重复出包。
+- 该批为**发布 0.1 前最后一项**；此后进入发布准备（版本号 / README / Release notes）。
