@@ -315,3 +315,7 @@ Owner 反馈本批唯一的 bug。排查后真因**不是**「重下清空了名
 修复：`DownloadProgressState` 增加 `fileName` 读取通道 + `resolveTaskName()` 明确优先级
 （持久化 > 会话登记 > null）+ `upsertTask` 防御性保留既有任务事实；
 新增 `TaskNameResolutionTest`（5 例，含重启场景回归）。
+
+- 交付状态：commit **`30935ebd`**；CI [37196710761](https://github.com/qiuchen520/JieYunDu/actions/runs/37196710761)
+  **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿，新增 5 例已执行）；
+  产物 `/sdcard/Download/极云渡_任务名修复_debug.apk`（11,968,275 B）。
