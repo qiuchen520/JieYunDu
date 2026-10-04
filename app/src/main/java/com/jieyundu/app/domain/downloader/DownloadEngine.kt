@@ -194,7 +194,9 @@ class DownloadEngine @Inject constructor(
             averageSpeedBytesPerSecond = 0L,
             chunkCount = chunks.size,
             completedChunks = chunks.count { chunk -> chunk.isCompleted },
-            savePath = task.savePath
+            savePath = task.savePath,
+            // 【JYD-P1B-2026-10-04】把任务名带进内存快照，供 UI 在会话登记表为空时使用。
+            fileName = task.fileName
         )
         return chunks
     }

@@ -74,7 +74,9 @@ data class DownloadEntity(
         speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE,
         chunkCount = chunkCount,
         completedChunks = completedChunks,
-        savePath = savePath
+        savePath = savePath,
+        // 【JYD-P1B-2026-10-04】把持久化任务名一并交给 UI（空串视为「未命名」，由 UI 兜底文案）。
+        fileName = fileName.takeIf { value -> value.isNotBlank() }
     )
 
     /**

@@ -54,6 +54,10 @@ enum class DownloadState {
  * @property savePath 目标文件绝对路径；未知时为 null。
  *   【修订 JYD-SAVEPATH-2026-10-03】新增：用于持久化落盘路径，使「删除任务」在进程重启后
  *   仍能定位并删除本地文件。带默认值，故既有构造调用无需改动。
+ * @property fileName 任务名（文件名）。
+ *   【JYD-P1B-2026-10-04】新增：**持久化任务名的读取通道**。此前 UI 只从会话登记表取名字，
+ *   进程重启后登记表为空 → 任务显示「未命名任务」，等于 P1-1 存了名字却没人用。
+ *   注意：本字段是**读取方向**的载体；写库时进度刷新不写该列（见 `DownloadProgressPort.upsert` 契约）。
  */
 data class DownloadProgressState(
     val taskId: String,
@@ -64,7 +68,8 @@ data class DownloadProgressState(
     val averageSpeedBytesPerSecond: Long = UNKNOWN_SIZE,
     val chunkCount: Int,
     val completedChunks: Int,
-    val savePath: String? = null
+    val savePath: String? = null,
+    val fileName: String? = null
 ) {
     /** 进度百分比，范围 0..100；大小未知时返回 0。 */
     val percent: Int

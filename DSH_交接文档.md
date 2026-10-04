@@ -304,3 +304,14 @@ Owner 装机复现 + 追加要求，三项一起实现：
   [37195564256](https://github.com/qiuchen520/JieYunDu/actions/runs/37195564256) **success**
   （Build Debug APK / Upload APK / testDebugUnitTest 全绿，新增单测已执行）；
   产物 `/sdcard/Download/极云渡_P1重启续传_debug.apk`（11,961,891 B）。
+
+---
+
+### 2026-10-04 · 修复「重新下载后任务名变未命名」（标识 `JYD-P1B-2026-10-04`）
+Owner 反馈本批唯一的 bug。排查后真因**不是**「重下清空了名字」，而是：
+- `DownloadListItem.fileName` 只取 `sessionRegistry`（进程内内存态），**从未读取 Room 里
+  已经持久化的任务名**；进程重启后注册表为空 → 回落「未命名任务」；
+- 之所以只在「重新下载」暴露：验收流程里的「继续」会经引擎用存档名重写一行，掩盖了这个问题。
+修复：`DownloadProgressState` 增加 `fileName` 读取通道 + `resolveTaskName()` 明确优先级
+（持久化 > 会话登记 > null）+ `upsertTask` 防御性保留既有任务事实；
+新增 `TaskNameResolutionTest`（5 例，含重启场景回归）。

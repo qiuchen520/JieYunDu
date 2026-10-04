@@ -218,7 +218,19 @@ abstract class DownloadDao : DownloadProgressPort, DownloadCheckpointPort {
             state = existing?.state ?: DownloadState.PENDING.name,
             downloadedBytes = existing?.downloadedBytes ?: 0L
         )
-        upsertTaskEntity(entity)
+        // 【JYD-P1B-2026-10-04】防御：任务名 / 直链 / 请求头是「同一文件的既有事实」，
+        // 本次未提供（空值）时一律保留库中已有值——「重新下载」只允许清空 `.part` 分片与进度，
+        // 不允许顺手把任务名清掉（Owner 反馈：点重新下载后任务名变「未命名」）。
+        // 只有调用方**明确给出新值**（例如重新解析换了直链 / 换了 fid）才覆盖。
+        upsertTaskEntity(
+            entity.copy(
+                fileName = entity.fileName.takeIf { value -> value.isNotBlank() }
+                    ?: existing?.fileName.orEmpty(),
+                url = entity.url?.takeIf { value -> value.isNotBlank() } ?: existing?.url,
+                headers = entity.headers?.takeIf { value -> value.isNotBlank() } ?: existing?.headers,
+                savePath = entity.savePath ?: existing?.savePath
+            )
+        )
     }
 
     /**

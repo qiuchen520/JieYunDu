@@ -1459,3 +1459,35 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 未改任何请求头 / 参数（R3）；中文入 strings.xml（C5）；日志走 Timber（C8）。
 待办：装机验收（见《要求.md》同标识条目）。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-P1B-2026-10-04 · 「重新下载后任务名变未命名」修复（P1 追加）】
+来源：Owner 装机反馈——点「重新下载」后任务名变成「未命名」；其余功能正常。
+排查结论（真因与 Owner 推测不同，值得记录）：
+· 不是「重下把 file_name 清了」：全项目只有 `DownloadDao.updateTaskColumns` 会写 `file_name`，
+  且引擎传的是 `task.fileName`；DAO 的进度写入只更新进度列（P1 已防回退），重下路径不会清名。
+· 真因是 **UI 从未读取持久化的名字**：`DownloadListItem.fileName` 只取 `sessionRegistry`
+  （**进程内内存态**），进程重启后该表为空 → 界面回落「未命名任务」。
+  即 P1-1 把名字存进了 Room，但界面的取值链路里没有它。
+· 为何只在「重新下载」暴露：Owner 的验收流程（暂停 → 划掉后台 → 重开 → **继续**）走
+  `resumeFromCheckpoint`，引擎会用存档里的名字**重写一行**，之后显示正常；而点「重新下载」时
+  若不经该重写路径、又要靠 Room 的值显示，就只剩空注册表可查 → 显示「未命名」。
+本批落地的改动：
+· domain/downloader/DownloadState.kt：`DownloadProgressState` 新增 `fileName: String?`（默认 null）
+  ——作为**持久化任务名到 UI 的读取通道**（写库时进度刷新仍不写该列，契约不变）。
+· data/local/DownloadEntity.kt：`toProgress()` 把 `file_name` 一并交给 UI（空串视为无值）。
+· domain/downloader/DownloadEngine.kt：内存进度快照带上 `task.fileName`（实时快照也有名字）。
+· ui/screens/download/DownloadViewModel.kt：
+    - 新增纯函数 `resolveTaskName(persistedName, sessionName)`，明确优先级
+      **持久化（Room）> 会话登记 > null**；
+    - `items` 组装改用该函数（此前只取会话登记）。
+· data/local/DownloadDao.kt：`upsertTask` 增加**防御性保留**——本次未提供（空值）的任务名 /
+  直链 / 请求头一律保留库中已有值，只有调用方明确给出新值（重新解析换了直链 / 换了 fid）才覆盖。
+  这样「重新下载」在实现层也被锁死为「只清 `.part` 分片 + 进度，不动任务事实」。
+· 新增单测 app/src/test/.../download/TaskNameResolutionTest.kt（5 例）：持久化名优先、
+  会话登记为空（重启场景）时仍显示持久化名、回落会话名、空白名回落、两者皆无返回 null。
+指令第 2 条（url / fid 变了才清空重来）：当前实现不存在「清空任务存档」的动作——
+  存档是**覆盖写**，调用方给出新 url / headers 时自然被替换，未给出时按上一条保留既有值；
+  「重新下载」只删除 `.part` 分片与重置进度，不触碰任务名 / 直链 / 请求头。
+约束遵守：未改 UI 视觉；未动引擎分片 / 限速 / 重试核心逻辑；未改请求参数（R3）。
+================================================================================

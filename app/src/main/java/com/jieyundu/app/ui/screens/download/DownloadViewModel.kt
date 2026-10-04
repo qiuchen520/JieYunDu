@@ -128,6 +128,23 @@ data class DownloadListItem(
 )
 
 /**
+ * 解析列表条目应显示的任务名（【JYD-P1B-2026-10-04】）。
+ *
+ * 优先级：**持久化（Room）** > 会话登记 > null。
+ *
+ * 存在理由（本次修复的 bug）：此前只取会话登记表，而该表是**进程内内存态**——
+ * 进程重启后为空，界面便回落到「未命名任务」，等于 P1-1 把名字存进 Room 却没人读。
+ * 抽成纯函数以便单测直接锁定这条优先级。
+ *
+ * @param persistedName Room 中的持久化任务名；空串 / null 视为无值。
+ * @param sessionName 会话登记表中的任务名。
+ * @return 应显示的任务名；两者皆无时返回 null（UI 回退「未命名任务」文案）。
+ */
+internal fun resolveTaskName(persistedName: String?, sessionName: String?): String? =
+    persistedName?.takeIf { value -> value.isNotBlank() }
+        ?: sessionName?.takeIf { value -> value.isNotBlank() }
+
+/**
  * 下载页 ViewModel。
  *
  * 说明：列表数据源为「[DownloadEngine.liveProgress]（引擎实时内存快照）覆盖
@@ -182,9 +199,15 @@ class DownloadViewModel @Inject constructor(
         progressList
             .map { persisted ->
                 val remembered = tasks[persisted.taskId]
+                val merged = mergeLiveProgress(persisted, liveProgress[persisted.taskId])
                 DownloadListItem(
-                    progress = mergeLiveProgress(persisted, liveProgress[persisted.taskId]),
-                    fileName = remembered?.fileName,
+                    progress = merged,
+                    // 【JYD-P1B-2026-10-04】名字来源优先级：**持久化（Room）** > 会话登记 > null。
+                    // 反了就会在进程重启后（会话登记表为空）显示「未命名任务」——这正是本次修的 bug。
+                    fileName = resolveTaskName(
+                        persistedName = merged.fileName,
+                        sessionName = remembered?.fileName
+                    ),
                     // 会话内登记优先（含文件名场景），否则回退到持久化的 savePath，
                     // 使进程重启后仍能定位并删除本地文件（【修订 JYD-SAVEPATH-2026-10-03】）。
                     savePath = remembered?.savePath ?: persisted.savePath
