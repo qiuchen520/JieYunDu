@@ -344,3 +344,24 @@ Owner 指令：管理页浏览正常，但删除与下载到本地入口丢失�
   CI [37198190101](https://github.com/qiuchen520/JieYunDu/actions/runs/37198190101) **success**。
   APK 与上一条同功能（仅新增测试），故下载目录未重复出包。
 - 该批为**发布 0.1 前最后一项**；此后进入发布准备（版本号 / README / Release notes）。
+
+---
+
+### 2026-10-04 · 0.1.0 发布准备（标识 `JYD-RELEASE-2026-10-04`，**未发布**）
+Owner 指令：0.1 功能面已齐 → 做发布准备，**不推送 Release**，Owner 确认后手动发。
+- 版本号：`versionCode = 1` / `versionName = "0.1.0"`（本就符合要求，未改）。
+- CI：`workflow_dispatch` 新增 `build_type`（debug / release，默认 debug）；push / PR 仍固定 debug。
+- `.gitignore`：新增 `*.jks` / `*.keystore` / `*.p12` / `*.pem` / 口令文件忽略规则。
+- `README.md`：更新为 0.1（夸克 / UC 已支持、百度 / 迅雷开发中、GitHub Releases 安装、已知限制、系统要求）。
+- `docs/ReleaseNotes_0.1.0.md`：Release notes 草稿（支持网盘 / 主要功能 / 已知问题 / 系统要求 / 安装）。
+- **release APK 已出**：手动触发 workflow_dispatch(build_type=release)，
+  run [37199848758](https://github.com/qiuchen520/JieYunDu/actions/runs/37199848758) success；
+  产物 `/sdcard/Download/极云渡_0.1.0_release.apk`（8,316,688 B，比 debug 小 3.6MB）。
+- **验签已做**：`apksigner verify --print-certs` → 证书 SHA-256
+  `52c3cc90…61aa6170`（与固定 keystore 一致）→ 证明是**固定签名**而非默认 debug 签名，
+  可覆盖安装现有 debug 包（不丢登录态，无需卸载）。
+- 安全（Owner 裁决）：按指令**未更换口令、未轮换 keystore**；仓库中**不含任何 keystore 文件**
+  （已核查远端 tree：无 `.jks` / `.keystore` / `.p12`）。已知事实：`DSH_交接文档.md` 含明文口令，
+  且该文件在公开仓库历史中——Owner 明确要求保持现状。本批仅补 `.gitignore` 护栏。
+- **发布动作尚未执行**：未创建 GitHub Release、未上传任何 Release 资产、未打 tag。
+  Owner 确认 `docs/ReleaseNotes_0.1.0.md` 与 README 后手动发布（上传 `app-release.apk`）。
