@@ -333,3 +333,9 @@ Owner 指令：管理页浏览正常，但删除与下载到本地入口丢失�
 - R3 边界：夸克个人文件取链只传 `fids`，可直接下载；**UC 个人文件取链无抓包依据**
   （其请求体强制分享态三字段），故 UC 侧明确提示「不支持直接下载」，不编造参数。
 - 未动：浏览功能、玻璃质感 / 圆角 / 配色、既有请求字段。
+
+- 推送过程：首推 `f080f0af`（CI `37197780373` **失败**：新增动作方法里误读 `_state`（动作状态）
+  去取 `netdiskType` / `stack`（浏览状态字段），5 处 Unresolved reference）→ 改为读 `_uiState`
+  后重推 **`cdb71780`**；CI [37197985583](https://github.com/qiuchen520/JieYunDu/actions/runs/37197985583)
+  **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿）；
+  产物 `/sdcard/Download/极云渡_网盘管理页恢复_debug.apk`。
