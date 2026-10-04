@@ -1113,3 +1113,25 @@ Owner 指令（2026-10-03）：按截图条目扩充设置页；**明确允许�
       重登 UC 后依旧 → 判定问题不在登录态 / pdir_fid 语义，而在「UC 无需转存」这一前提。
 约束遵守：只改 UC，未动夸克 ShareTransfer；未改玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
 ================================================================================
+================================================================================
+【实现记录 JYD-UC-FIX2-2026-10-04 · UC 取链令牌来源修正（P0 · 二修）】
+本批落地的代码改动（待 CI 编译验证）：
+· domain/parser/uc/UcApi.kt
+    - 新增 `transferShareDetail(@QueryMap)`（GET transfer_share/detail，带
+      Origin/Referer=https://fast.uc.cn 的 @Headers）；
+    - 新增响应模型 `UcTransferShareDetail`（兼容 detail_info.list / list / file_list 三键）。
+· domain/transfer/UcShareTransfer.kt（重写）
+    - prepare() 先取令牌再取链：fetchShareFidToken() 走 transfer_share/detail 取
+      share_fid_token，再调 file/download（fids/pwd_id/stoken/fids_token）；
+    - buildTransferDetailParams() 组装 11 个查询参数；
+    - 失败点新增日志步骤 transfer-detail；cleanupAfterDownload 仍为空操作。
+· di/NetworkModule.kt
+    - UC 侧 UA 由 ucUserAgent（云盘客户端 1.6.1）改为 ucWebUserAgent（网页 Chrome 120），
+      依据《UC取链请求_逐字段对照.txt》：token / transfer_share/detail / file/download
+      均以普通 Chrome UA 下发。
+· 保留（未删）：
+    - domain/transfer/UcTaskPoller.kt、UcTempFolderManager.kt 仍降级保留备用（Owner 要求）。
+背景：首修后下载端点仍 41020，逐字段对照确认 fids_token 取错接口（v2/detail 应为
+      transfer_share/detail）。
+约束遵守：只改 UC，未动夸克 ShareTransfer；未改玻璃质感 / 圆角 / Q 弹手感 / 浅色配色。
+================================================================================

@@ -7,6 +7,7 @@ package com.jieyundu.app.domain.parser.uc
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.QueryMap
 
@@ -57,6 +58,28 @@ interface UcApi {
     suspend fun getShareDetail(
         @Body body: UcShareDetailRequest
     ): UcResponse<UcShareDetail>
+
+    /**
+     * 取「转存详情」列表（**带 stoken**）——UC 分享取链所需的 `share_fid_token` 来源。
+     *
+     * 请求：`GET https://pc-api.uc.cn/1/clouddrive/transfer_share/detail?entry=ft&fr=pc&pr=UCBrowser`
+     *   + `pwd_id` / `pdir_fid` / `fetch_file_list=1` / `passcode=` / `_page` / `_size`
+     *   / `_fetch_total` / `_fetch_task` / `_fetch_share` / `_sort` / `stoken`。
+     * 额外请求头：`Origin: https://fast.uc.cn`、`Referer: https://fast.uc.cn/`。
+     * 响应：`data` 内列表项含 `share_fid_token`。
+     *
+     * 依据：评审方《UC取链请求_逐字段对照.txt》§三——UC 官方下载流程实际用的是**本接口**
+     * （**不是** `v2/detail`）；其返回的 `share_fid_token` 与本次 stoken 绑定，只有它才能
+     * 通过 `file/download` 的 token 校验（用 `v2/detail` 的令牌会 `41020 token 校验异常`）。
+     *
+     * @param params 查询参数键值对。
+     * @return 统一响应包装体。
+     */
+    @Headers("Origin: https://fast.uc.cn", "Referer: https://fast.uc.cn/")
+    @GET("1/clouddrive/transfer_share/detail?entry=ft&fr=pc&pr=UCBrowser")
+    suspend fun transferShareDetail(
+        @QueryMap params: Map<String, String>
+    ): UcResponse<UcTransferShareDetail>
 
     /**
      * 把分享中的文件转存到本账号（save）。
@@ -240,6 +263,29 @@ data class UcShareDetail(
 data class UcDetailInfo(
     val list: List<UcFile> = emptyList()
 )
+
+/**
+ * `transfer_share/detail` 响应（UC 分享取链的 `share_fid_token` 来源）。
+ *
+ * 说明：官方未逐字给出包裹键，此处兼容三种常见形态（`Json` 已开 `ignoreUnknownKeys`，
+ * 多键兼容不影响解析）：`detail_info.list` / `list` / `file_list`。
+ *
+ * @property detail_info 两级结构（兼容）。
+ * @property list 扁平结构（兼容）。
+ * @property file_list 文件列表结构（兼容）。
+ */
+@Serializable
+data class UcTransferShareDetail(
+    val detail_info: UcDetailInfo? = null,
+    val list: List<UcFile> = emptyList(),
+    val file_list: List<UcFile> = emptyList()
+) {
+    /** 条目列表：按 `detail_info.list` → `list` → `file_list` 取第一个非空。 */
+    val entries: List<UcFile>
+        get() = detail_info?.list?.takeIf { entries -> entries.isNotEmpty() }
+            ?: list.takeIf { entries -> entries.isNotEmpty() }
+            ?: file_list
+}
 
 /**
  * 分享 / 个人网盘内的单个条目。

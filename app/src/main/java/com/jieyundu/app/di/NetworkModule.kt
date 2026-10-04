@@ -121,10 +121,14 @@ object NetworkModule {
             )
             .addInterceptor { chain ->
                 val original = chain.request()
-                // 按目标 host 选择对应网盘的 UA：UC 用 ucUserAgent，其余（夸克）用 quarkUserAgent。
+                // 按目标 host 选择对应网盘的 UA：
+                // - UC：统一用「网页 / 登录态」UA（普通 Chrome 120）。依据评审方
+                //   《UC取链请求_逐字段对照.txt》——token / transfer_share/detail / file/download
+                //   均以普通 Chrome UA 下发，用云盘客户端 UA 取链会被拒。
+                // - 夸克：用 API / 客户端 UA。
                 // 依据：两家 UA 不得混用（《抓包事实.md》§2「三套 UA」与 §1「两套 UA」）。
                 val agent = if (isUcHost(original.url.host)) {
-                    userAgentProvider.ucUserAgent
+                    userAgentProvider.ucWebUserAgent
                 } else {
                     userAgentProvider.quarkUserAgent
                 }
