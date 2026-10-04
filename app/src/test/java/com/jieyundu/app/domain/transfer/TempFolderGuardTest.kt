@@ -156,6 +156,37 @@ class TempFolderGuardTest {
         )
     }
 
+    // --- 用户主动删除（网盘管理页「删除」按钮）：走独立出口，语义与自动清理不同 ---
+
+    @Test
+    fun `user initiated delete allows own file outside temp folder`() {
+        // 管理页删除的是用户自己的文件，不应被「仅临时目录可删」的自动清理规则拦住。
+        assertTrue(
+            TempFolderGuard.mayDeleteUserInitiated(fid = USER_FID, userInitiated = true)
+        )
+    }
+
+    @Test
+    fun `user initiated delete rejected without explicit confirmation`() {
+        // 只有 UI 确认弹窗之后才传 true；任何「顺带」调用拿不到放行。
+        assertFalse(
+            TempFolderGuard.mayDeleteUserInitiated(fid = USER_FID, userInitiated = false)
+        )
+    }
+
+    @Test
+    fun `user initiated delete rejected for blank fid`() {
+        assertFalse(TempFolderGuard.mayDeleteUserInitiated(fid = "", userInitiated = true))
+        assertFalse(TempFolderGuard.mayDeleteUserInitiated(fid = null, userInitiated = true))
+    }
+
+    @Test
+    fun `user initiated delete does not loosen automatic cleanup rules`() {
+        // 关键回归：用户删除出口不得把自动清理的默认拒绝语义松掉。
+        assertTrue(TempFolderGuard.mayDeleteUserInitiated(USER_FID, userInitiated = true))
+        assertFalse(TempFolderGuard.mayDeleteFromTemp(fid = USER_FID, name = "我的报告.docx", pdirFid = "0"))
+    }
+
     @Test
     fun `rejects deleting a non-empty lookalike directory`() {
         assertFalse(
