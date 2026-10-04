@@ -6,6 +6,17 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      # 发布准备（JYD-RELEASE-2026-10-04）：手动触发时可选择构建类型。
+      # 默认 debug，保持既有推送/PR 行为不变；出正式发布包时选 release。
+      build_type:
+        description: '构建类型（debug / release）'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
 
 jobs:
   build:
@@ -32,6 +43,8 @@ jobs:
       # 固定签名（JYD-SIGN-2026-10-03）：从仓库 Secrets 还原固定密钥到临时文件，
       # 并通过环境变量交给 app/build.gradle.kts 的 signingConfigs.fixed 使用。
       # 这样每个 CI 产物的签名恒定，可覆盖安装，不再丢登录态。
+      # 安全（JYD-RELEASE-2026-10-04）：keystore 与口令**只存在于 Secrets 与 runner 临时目录**，
+      # 不写入仓库任何文件；`.gitignore` 亦已忽略 *.jks / *.keystore。
       - name: Prepare signing keystore
         env:
           KEYSTORE_B64: ${{ secrets.SIGN_KEYSTORE_BASE64 }}
@@ -43,18 +56,42 @@ jobs:
             echo "SIGN_KEYSTORE_PATH=$RUNNER_TEMP/jieyundu.jks" >> "$GITHUB_ENV"
           fi
 
-      - name: Build Debug APK
+      # 构建类型解析：手动触发时读 inputs，其余事件（push / PR）固定 debug。
+      - name: Resolve build type
+        id: buildtype
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ github.event.inputs.build_type }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build APK (${{ steps.buildtype.outputs.value }})
         env:
           SIGN_STORE_PASSWORD: ${{ secrets.SIGN_STORE_PASSWORD }}
           SIGN_KEY_ALIAS: ${{ secrets.SIGN_KEY_ALIAS }}
           SIGN_KEY_PASSWORD: ${{ secrets.SIGN_KEY_PASSWORD }}
-        run: gradle assembleDebug --stacktrace
+        run: |
+          if [ "${{ steps.buildtype.outputs.value }}" = "release" ]; then
+            gradle assembleRelease --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
-      - name: Upload APK
+      - name: Upload APK (debug)
+        if: steps.buildtype.outputs.value == 'debug'
         uses: actions/upload-artifact@v4
         with:
           name: jieyundu-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload APK (release)
+        if: steps.buildtype.outputs.value == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jieyundu-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       # 单元测试步骤（整改指令硬伤 2）：只跑本地 JVM 单元测试，全程用测试替身、不触网。

@@ -1542,3 +1542,34 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 中文入 strings.xml（C5）；日志走 Timber（C8）。
 待办：装机验收（管理页可选下载 / 删除；删除后网盘里确实没了；UC 下载给出明确提示）。
 ================================================================================
+
+================================================================================
+【发布准备 JYD-RELEASE-2026-10-04 · 0.1.0 发布准备（不发布，仅准备）】
+来源：Owner 指令——0.1 功能面已齐（P0 安全边界 / P1 三项 / B2+C2 / 网盘管理页均验收通过），
+      做发布准备，**但不推送 Release**，Owner 确认后手动发。
+本批落地的改动：
+· app/build.gradle.kts：版本号已是要求值（`versionCode = 1` / `versionName = "0.1.0"`），本批未改；
+  `release` 构建类型已挂固定签名（`SIGN_KEYSTORE_PATH` 存在时用 `fixed`，否则回退 debug 签名）。
+· .github/workflows/build.yml：新增**手动触发构建类型**（`workflow_dispatch` 输入 `build_type`，
+  可选 debug / release，默认 debug）。debug 走产物 `jieyundu-debug-apk`，
+  release 走 `jieyundu-release-apk`；push / PR 行为不变（固定 debug）。
+· .gitignore：新增 `*.jks` / `*.keystore` / `*.p12` / `*.pem` / `signing.properties` /
+  `keystore.properties` 忽略规则（密钥绝不入库的护栏）。
+· README.md：更新为当前版本 0.1、夸克 / UC 已支持、百度 / 迅雷开发中、
+  安装方式（GitHub Releases 下载）、系统要求、已知限制（UC 个人文件下载暂不支持等）。
+· docs/ReleaseNotes_0.1.0.md（新增）：Release notes 草稿（支持网盘 / 主要功能 / 已知问题 /
+  系统要求 / 安装说明），供 Owner 确认后粘贴到 GitHub Release。
+安全事项（诚实登记 · 风险台账）：
+· 本批按 Owner 指令**未更换签名口令**，也**未轮换 keystore**。
+· 事实：`DSH_交接文档.md` 中记录了 keystore 明文口令，该文件在**公开仓库**的 git 历史中；
+  仓库为 Public，故该口令在 git 历史中可见。
+· 仓库中**不含任何 keystore 文件**（`.jks` / `.keystore` / `.p12` 均未入库），已核查确认；
+  即：拿到口令并不等于拿到密钥，但口令本身已公开。
+· Owner 裁决（原话「不需要换口令，千万不要换口令」）：保持现状，**不轮换**。
+  本批仅补上 `.gitignore` 护栏，避免将来把密钥文件本身误提交。
+· 影响面提示（供 Owner 日后决策，不构成本批动作）：签名密钥轮换会使新旧包签名不同，
+  已安装用户需卸载重装（丢登录态）；首个公开版发布前是成本最低的轮换时机。
+约束遵守：未改任何源码逻辑；未改版本号取值（本就符合要求）；未推送任何 Release；
+未新增任何含口令 / 密钥的文件。
+待办（Owner 手动）：确认 Release notes 与 README 后，在 GitHub 创建 Release 并上传 release APK。
+================================================================================

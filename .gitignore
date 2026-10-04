@@ -29,3 +29,13 @@ Thumbs.db
 
 # 含厂商凭据的本地抓包事实（仅本地留存，脱敏版见 docs/协议参考.md）
 抓包事实.md
+
+# 签名密钥（JYD-RELEASE-2026-10-04）：绝不能入库
+# 说明：keystore 及其口令只允许存在于本机安全目录与 GitHub Actions Secrets；
+# 任何 *.jks / *.keystore / *.p12 / *.pem 与口令文件都不得被提交。
+*.jks
+*.keystore
+*.p12
+*.pem
+signing.properties
+keystore.properties
