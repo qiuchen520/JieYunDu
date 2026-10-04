@@ -297,3 +297,10 @@ Owner 装机复现 + 追加要求，三项一起实现：
 - 数据库：v2 → v3，`MIGRATION_2_3` 三列 + 一表 + 一索引，老数据均有默认值。
 - 新增单测：`DownloadEntityTest`（6 例）、`TransferRecordGuardTest`（4 例）。
 - 未改：UI 视觉基准、引擎分片 / 限速 / 重试核心逻辑、请求参数（R3）。
+
+- 推送过程：首推 `d2ef50d7`（CI `37195389887` **失败**：`DownloadDao` 用 `@Insert(IGNORE)` 的
+  返回值判断是否新建行，而该返回值在 Room 生成为 `Unit`，`!= -1L` 无法编译）→ 改为显式
+  `existsTask()` 判定后重推 **`058742de`**；CI
+  [37195564256](https://github.com/qiuchen520/JieYunDu/actions/runs/37195564256) **success**
+  （Build Debug APK / Upload APK / testDebugUnitTest 全绿，新增单测已执行）；
+  产物 `/sdcard/Download/极云渡_P1重启续传_debug.apk`（11,961,891 B）。
