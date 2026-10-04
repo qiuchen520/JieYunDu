@@ -8,6 +8,7 @@ import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.parser.uc.UcApi
 import com.jieyundu.app.domain.parser.uc.UcDownloadRequest
+import com.jieyundu.app.domain.parser.uc.UcTransferDetailQuery
 import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.HttpException
@@ -105,7 +106,7 @@ class UcShareTransfer @Inject constructor(
         fid: String
     ): String? {
         val response = callWithHttpLog(STEP_TRANSFER_DETAIL) {
-            api.transferShareDetail(buildTransferDetailParams(pwdId, stoken, pdirFid))
+            api.transferShareDetail(UcTransferDetailQuery.build(pwdId, stoken, pdirFid))
         }
         if (response.code != SUCCESS_CODE) {
             Timber.e("UcShareTransfer transfer_share/detail failed code=%d", response.code)
@@ -115,32 +116,6 @@ class UcShareTransfer @Inject constructor(
         Timber.d("UcShareTransfer transfer-detail entries=%d target=%s", entries.size, fid)
         return entries.firstOrNull { entry -> entry.fid == fid }?.share_fid_token
     }
-
-    /**
-     * 构造 `transfer_share/detail` 查询参数（依《UC取链请求_逐字段对照.txt》§三）。
-     *
-     * @param pwdId 分享 ID。
-     * @param stoken 分享临时令牌。
-     * @param pdirFid 分享内目录 fid（根为 `0`）。
-     * @return 查询参数键值对。
-     */
-    private fun buildTransferDetailParams(
-        pwdId: String,
-        stoken: String,
-        pdirFid: String
-    ): Map<String, String> = linkedMapOf(
-        KEY_PWD_ID to pwdId,
-        KEY_PDIR_FID to pdirFid,
-        KEY_FETCH_FILE_LIST to ONE_VALUE,
-        KEY_PASSCODE to EMPTY_PASSCODE,
-        KEY_PAGE to FIRST_PAGE,
-        KEY_SIZE to PAGE_SIZE,
-        KEY_FETCH_TOTAL to ONE_VALUE,
-        KEY_FETCH_TASK to ONE_VALUE,
-        KEY_FETCH_SHARE to ONE_VALUE,
-        KEY_SORT to EMPTY_SORT,
-        KEY_STOKEN to stoken
-    )
 
     /**
      * UC 直连取链**不产生转存副本**，故清理为空操作。
@@ -182,25 +157,5 @@ class UcShareTransfer @Inject constructor(
 
         /** 写入日志的响应体最大字符数（防止超长响应体淹没有用信息）。 */
         const val MAX_ERROR_BODY_CHARS = 500
-
-        /** transfer_share/detail 查询参数名。 */
-        const val KEY_PWD_ID = "pwd_id"
-        const val KEY_PDIR_FID = "pdir_fid"
-        const val KEY_FETCH_FILE_LIST = "fetch_file_list"
-        const val KEY_PASSCODE = "passcode"
-        const val KEY_PAGE = "_page"
-        const val KEY_SIZE = "_size"
-        const val KEY_FETCH_TOTAL = "_fetch_total"
-        const val KEY_FETCH_TASK = "_fetch_task"
-        const val KEY_FETCH_SHARE = "_fetch_share"
-        const val KEY_SORT = "_sort"
-        const val KEY_STOKEN = "stoken"
-
-        /** 查询参数占位值。 */
-        const val ONE_VALUE = "1"
-        const val FIRST_PAGE = "1"
-        const val PAGE_SIZE = "50"
-        const val EMPTY_PASSCODE = ""
-        const val EMPTY_SORT = ""
     }
 }

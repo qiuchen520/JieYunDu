@@ -32,8 +32,10 @@ import timber.log.Timber
  * 1. best-effort 请求 `https://drive.uc.cn/` 首页取 `__pus` / `__puus`（合并登记）；
  * 2. 从分享链接提取 pwd_id（[LinkExtractor.extractShareId]）；
  * 3. 调 token 接口换 stoken（**携带 `share_for_transfer`，UC 与夸克字段不同，不可抄混**）；
- * 4. 调 `sharepage/v2/detail` 取根目录文件列表（`data.detail_info.list`，兼容 `data.list`）；
- * 5. 点文件夹时，以该文件夹 fid 为 `pdir_fid` 再调 v2/detail 取子目录（[listChildren]）。
+ * 4. 调 `transfer_share/detail`（GET，带 stoken）取根目录文件列表；该接口**同时**返回
+ *    `share_fid_token`（取链令牌），故浏览与取链同源，`fid` 不会漂移（《参考实现_源码通读研究.md》§9.3①）。
+ *    响应兼容 `detail_info.list` / `list` / `file_list`；
+ * 5. 点文件夹时，以该文件夹 fid 为 `pdir_fid` 再调同一接口取子目录（[listChildren]）。
  *
  * 转存 + 轮询 + 取直链不在解析阶段（由 [com.jieyundu.app.domain.transfer.UcShareTransfer] 在点下载时执行）。
  *
@@ -142,9 +144,8 @@ class UcParser @Inject constructor(
     /**
      * 列出分享内指定目录的直接子项（点文件夹展开用）。
      *
-     * 说明：浏览阶段拿不到 passcode（[ShareBrowser] 接口签名不含），UC v2/detail 允许
-     * passcode 为空串（《抓包事实.md》§6.1②），故传空串即可；带密码的分享在 token 阶段
-     * 已校验通过，后续 detail 无需再次带码。
+     * 说明：浏览阶段拿不到 passcode（[ShareBrowser] 接口签名不含），`transfer_share/detail`
+     * 允许 passcode 为空串；带密码的分享在 token 阶段已校验通过，后续列表无需再次带码。
      *
      * @param pwdId 分享 ID。
      * @param stoken 分享临时令牌。
@@ -176,16 +177,14 @@ class UcParser @Inject constructor(
         passcode: String,
         pdirFid: String
     ): List<UcFile>? {
-        val detailResponse = api.getShareDetail(
-            UcShareDetailRequest(
-                pwd_id = pwdId,
-                passcode = passcode,
-                pdir_fid = pdirFid,
-                size = PAGE_SIZE
-            )
+        // 列表走 `transfer_share/detail`（与取链令牌同源）。依据《参考实现_源码通读研究.md》
+        // §9.3①：UC 分享的「文件列表」与「share_fid_token」同源于本接口；若浏览改用 v2/detail，
+        // 其 fid 与 transfer_share/detail 的条目可能对不上，取链时按 fid 匹配令牌会落空。
+        val detailResponse = api.transferShareDetail(
+            UcTransferDetailQuery.build(pwdId, stoken, pdirFid, passcode)
         )
         if (detailResponse.code != SUCCESS_CODE) {
-            Timber.w("UcParser detail code=%d pdir=%s", detailResponse.code, pdirFid)
+            Timber.w("UcParser transfer-detail code=%d pdir=%s", detailResponse.code, pdirFid)
             return null
         }
         return detailResponse.data?.entries ?: emptyList()
@@ -282,7 +281,8 @@ class UcParser @Inject constructor(
                     .mapNotNull { raw -> raw.substringBefore(';').trim() }
                     .filter { pair ->
                         pair.startsWith("$PUS_COOKIE_NAME=") ||
-                            pair.startsWith("$PUUS_COOKIE_NAME=")
+                            pair.startsWith("$PUUS_COOKIE_NAME=") ||
+                            pair.startsWith("$PUGS_COOKIE_NAME=")
                     }
                     .joinToString(COOKIE_SEPARATOR)
                 if (cookie.isNotBlank()) {
@@ -335,9 +335,10 @@ class UcParser @Inject constructor(
         /** UC 首页，用于 best-effort 获取 __pus / __puus Cookie。 */
         const val UC_HOME_URL = "https://drive.uc.cn/"
 
-        /** Cookie 名。 */
+        /** Cookie 名（__pugs 为未登录游客兜底，见 §9.3③；登录取到时一并登记，无害）。 */
         const val PUS_COOKIE_NAME = "__pus"
         const val PUUS_COOKIE_NAME = "__puus"
+        const val PUGS_COOKIE_NAME = "__pugs"
 
         /** 响应 Set-Cookie 头名与拼接分隔符。 */
         const val HEADER_SET_COOKIE = "Set-Cookie"
@@ -358,7 +359,6 @@ class UcParser @Inject constructor(
 
         /** 分页参数。 */
         const val FIRST_PAGE = "1"
-        const val PAGE_SIZE = 50
         const val PERSONAL_PAGE_SIZE = "100"
 
         /** 排序表达式（folder 优先）。 */

@@ -1167,3 +1167,35 @@ Owner 指令（2026-10-03）：按截图条目扩充设置页；**明确允许�
          中文文案入 strings.xml（C5）；日志走 Timber（C8）。
 待办：装机复验——下载页是否出现「已下载 / 总量 · 均速」；首页是否不再长期停在“准备中”。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-UC-FIX3-2026-10-04 · UC 浏览列表与取链令牌同源化（P0 · 三修）】
+来源：Owner 交付《参考实现_源码通读研究.md》（脱敏重写版），要求重读 §9.3 并据其修 UC；
+      根因指示为「D1 走了转存链路、D2 fids_token 取自 v2/detail」。
+排查结论（三修真正关键差距）：
+· 首修（FIX）去转存、二修（FIX2）改 fids_token 来源后，取链链路本身已正确；但**浏览列表**
+  （UcParser.fetchEntries）仍走 `sharepage/v2/detail`，而取链令牌走 `transfer_share/detail`——
+  两接口不同源，返回条目的 fid 可能对不上，导致 UcShareTransfer 在 transfer_share/detail 中
+  按 fid 匹配 share_fid_token 落空 → prepare() 返回 null → 下载被**静默跳过**（表现为点了下载没反应）。
+本批落地的代码改动（只动 UC）：
+· domain/parser/uc/UcApi.kt
+    - 新增 `object UcTransferDetailQuery`：共享的 transfer_share/detail 查询参数构造器
+      （pwd_id / pdir_fid / fetch_file_list=1 / passcode / _page=1 / _size=50 /
+      _fetch_total=1 / _fetch_task=1 / _fetch_share=1 / _sort= / stoken），避免两处各写一套漂移；
+    - 删除已是孤儿、且正是「v2/detail 陷阱」源头的三个声明：
+      `getShareDetail()` 方法、`UcShareDetailRequest`、`UcShareDetail`（已确认全项目无引用）；
+    - 文件级 KDoc 订正：UC 分享走「免转存型」链路，不再写「列表走 v2/detail」。
+· domain/parser/uc/UcParser.kt
+    - fetchEntries() 由 `api.getShareDetail(UcShareDetailRequest(...))`（v2/detail POST）改为
+      `api.transferShareDetail(UcTransferDetailQuery.build(...))`——**浏览与取链同源**；
+    - 第 1 步握手 Cookie 采集新增 `__pugs`（PUGS_COOKIE_NAME，游客兜底 Cookie，登录取到亦无害）；
+    - 删除不再使用的 PAGE_SIZE 常量；KDoc 步骤 4 / listChildren 说明改述为 transfer_share/detail。
+· domain/transfer/UcShareTransfer.kt
+    - fetchShareFidToken() 改用共享 `UcTransferDetailQuery.build(...)`；
+    - 删除本地重复的 buildTransferDetailParams() 及其参数常量（KEY_*、ONE_VALUE、FIRST_PAGE、
+      PAGE_SIZE、EMPTY_PASSCODE、EMPTY_SORT）。
+背景：二修后 Owner 反馈「不再报失败，但一直显示转存中」；进一步定位到浏览与取链不同源，
+      使令牌匹配落空、下载被静默跳过（UI 无反馈）。三修即把两处统一到 transfer_share/detail。
+约束遵守：只改 UC，未动夸克 ShareTransfer；未动 UI；中文入 strings.xml（C5）；日志走 Timber（C8）。
+待办：装机复验【粘贴 UC 分享链接 → 解析 → 展开 → 勾选 → 下载 → 成功】。
+================================================================================

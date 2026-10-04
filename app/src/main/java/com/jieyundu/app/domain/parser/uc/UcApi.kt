@@ -15,9 +15,13 @@ import retrofit2.http.QueryMap
  * UC 网盘解析接口（`pc-api.uc.cn`）。
  *
  * 接口契约来源：《抓包事实.md》§2「UC —— 与夸克同构，域名/参数/UA 全不同」与 §6.1
- * 「夸克 / UC 共用结构」。UC 与夸克同源，链路一致（token → detail → save → task →
- * file/download），但**域名、平台参数（`pr=UCBrowser`）、列表走 `v2/detail`、
- * 取链带 `entry=ft`** 均与夸克不同，故单独定义、不共用夸克接口。
+ * 「夸克 / UC 共用结构」。UC 与夸克同源，但**分享取链走「免转存型」链路**（token →
+ * transfer_share/detail → file/download），与夸克的「转存型」（token → detail → save →
+ * task → file/download）不同；**域名、平台参数（`pr=UCBrowser`）、列表走
+ * `transfer_share/detail`、取链带 `entry=ft`** 亦与夸克不同，故单独定义、不共用夸克接口。
+ *
+ * 依据：《参考实现_源码通读研究.md》§9.3——UC 分享文件可直接取链，无需 save/task/
+ * 临时目录；`saveShare`/`getTask`/`createFolder` 仅作降级备用保留。
  *
  * @see com.jieyundu.app.domain.parser.quark.QuarkApi 夸克同构参照
  */
@@ -40,24 +44,6 @@ interface UcApi {
     suspend fun getShareToken(
         @Body body: Map<String, String>
     ): UcResponse<UcShareToken>
-
-    /**
-     * 列出分享内指定目录的条目（UC 为 `v2/detail`，用 POST + 请求体）。
-     *
-     * 请求：`POST https://pc-api.uc.cn/1/clouddrive/share/sharepage/v2/detail?pr=UCBrowser&fr=pc&ve=2.5.20`
-     * （`ve=2.5.20` 依《抓包事实.md》§9.3②「原样实录」补入，与游客 UA `uc-cloud-drive/2.5.20` 一致。）
-     * 请求体见 [UcShareDetailRequest]。
-     * 响应：优先 `data.detail_info.list[]`，兼容 `data.list[]`。
-     *
-     * 依据：《抓包事实.md》§2 与 §6.1②。
-     *
-     * @param body 请求体。
-     * @return 统一响应包装体。
-     */
-    @POST("1/clouddrive/share/sharepage/v2/detail?pr=UCBrowser&fr=pc&ve=2.5.20")
-    suspend fun getShareDetail(
-        @Body body: UcShareDetailRequest
-    ): UcResponse<UcShareDetail>
 
     /**
      * 取「转存详情」列表（**带 stoken**）——UC 分享取链所需的 `share_fid_token` 来源。
@@ -239,22 +225,6 @@ data class UcShareToken(
 )
 
 /**
- * 分享详情响应体（优先 `detail_info.list`，兼容 `list`）。
- *
- * @property detail_info 两级结构（真实）。
- * @property list 扁平结构（兼容）。
- */
-@Serializable
-data class UcShareDetail(
-    val detail_info: UcDetailInfo? = null,
-    val list: List<UcFile> = emptyList()
-) {
-    /** 条目列表：优先 `detail_info.list`，回退 `list`。 */
-    val entries: List<UcFile>
-        get() = detail_info?.list ?: list
-}
-
-/**
  * 分享详情内层结构。
  *
  * @property list 条目列表。
@@ -305,40 +275,6 @@ data class UcFile(
     val size: Long,
     val dir: Boolean = false,
     val share_fid_token: String = ""
-)
-
-/**
- * `v2/detail` 请求体（《抓包事实.md》§6.1②）。
- *
- * @property pwd_id 分享 ID。
- * @property passcode 提取码（无则空串）。
- * @property pdir_fid 目标目录 fid（根为 `0`）。
- * @property force 固定 0。
- * @property page 页码。
- * @property size 每页数量。
- * @property fetch_banner 固定 1。
- * @property fetch_share 固定 1。
- * @property fetch_total 固定 1。
- * @property sort 排序表达式。
- * @property banner_platform 固定 `other`。
- * @property web_platform 固定 `windows`。
- * @property fetch_error_background 固定 1。
- */
-@Serializable
-data class UcShareDetailRequest(
-    val pwd_id: String,
-    val passcode: String = "",
-    val pdir_fid: String,
-    val force: Int = 0,
-    val page: Int = 1,
-    val size: Int = 50,
-    val fetch_banner: Int = 1,
-    val fetch_share: Int = 1,
-    val fetch_total: Int = 1,
-    val sort: String = "file_type:asc,file_name:asc",
-    val banner_platform: String = "other",
-    val web_platform: String = "windows",
-    val fetch_error_background: Int = 1
 )
 
 /**
@@ -500,3 +436,63 @@ data class UcDeleteRequest(
     val filelist: List<String>,
     val exclude_fids: List<String> = emptyList()
 )
+
+/**
+ * UC `transfer_share/detail` 查询参数构造器。
+ *
+ * 存在理由（《参考实现_源码通读研究.md》§9.3①）：UC 分享的「文件列表」与「取链令牌
+ * `share_fid_token`」**同源于本接口**——浏览列表与取链必须走同一个端点，否则两处拿到的
+ * `fid` 可能对不上（列表用 `v2/detail` 的 fid 去 `transfer_share/detail` 里匹配令牌会落空，
+ * 导致取不到令牌、下载被跳过）。为避免两处各写一套参数漂移，统一在此构造。
+ *
+ * 字段集严格对齐 §9.3①：
+ * `pwd_id` / `pdir_fid` / `fetch_file_list=1` / `passcode` / `_page=1` / `_size=50`
+ * / `_fetch_total=1` / `_fetch_task=1` / `_fetch_share=1` / `_sort=` / `stoken`。
+ * （`entry=ft&fr=pc&pr=UCBrowser` 已固化在 [UcApi.transferShareDetail] 的路径上。）
+ */
+object UcTransferDetailQuery {
+
+    /**
+     * 构造 `transfer_share/detail` 查询参数。
+     *
+     * @param pwdId 分享 ID。
+     * @param stoken 分享临时令牌。
+     * @param pdirFid 目录 fid（根为 `0`）。
+     * @param passcode 提取码；无则空串。
+     * @return 查询参数键值对。
+     */
+    fun build(
+        pwdId: String,
+        stoken: String,
+        pdirFid: String,
+        passcode: String = ""
+    ): Map<String, String> = linkedMapOf(
+        KEY_PWD_ID to pwdId,
+        KEY_PDIR_FID to pdirFid,
+        KEY_FETCH_FILE_LIST to ONE_VALUE,
+        KEY_PASSCODE to passcode,
+        KEY_PAGE to ONE_VALUE,
+        KEY_SIZE to PAGE_SIZE,
+        KEY_FETCH_TOTAL to ONE_VALUE,
+        KEY_FETCH_TASK to ONE_VALUE,
+        KEY_FETCH_SHARE to ONE_VALUE,
+        KEY_SORT to EMPTY_VALUE,
+        KEY_STOKEN to stoken
+    )
+
+    /** 查询参数名与固定占位值。 */
+    private const val KEY_PWD_ID = "pwd_id"
+    private const val KEY_PDIR_FID = "pdir_fid"
+    private const val KEY_FETCH_FILE_LIST = "fetch_file_list"
+    private const val KEY_PASSCODE = "passcode"
+    private const val KEY_PAGE = "_page"
+    private const val KEY_SIZE = "_size"
+    private const val KEY_FETCH_TOTAL = "_fetch_total"
+    private const val KEY_FETCH_TASK = "_fetch_task"
+    private const val KEY_FETCH_SHARE = "_fetch_share"
+    private const val KEY_SORT = "_sort"
+    private const val KEY_STOKEN = "stoken"
+    private const val ONE_VALUE = "1"
+    private const val PAGE_SIZE = "50"
+    private const val EMPTY_VALUE = ""
+}
