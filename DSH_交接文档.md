@@ -259,3 +259,9 @@ Owner 指令：B1 验收通过后开 B2 + C2，两批同推、一次出包。
   必须有通知，无法做到真正零通知；前台服务本身继续运行，后台下载不受影响。
 - 未改：引擎下载核心逻辑（分片 / 续传 / 限速 / 重试）、玻璃质感基准、圆角规格、配色常量。
 - 待确认：装机复验清单见《要求.md》同标识条目（通知刷新、两个开关、白名单入口、玻璃观感）。
+
+- 交付状态：首推 `942bd787`（CI `37192303287` **失败**：`timeout` 需 `Duration`、
+  缺 `Dp` / `padding` 导入、`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 应在 `Settings` 而非
+  `PowerManager`）→ 修正版 **`1635e321`**；CI [37192605586](https://github.com/qiuchen520/JieYunDu/actions/runs/37192605586)
+  **success**（Build Debug APK / Upload APK / testDebugUnitTest 全绿）；
+  产物 `/sdcard/Download/极云渡_B2玻璃化_C2通知_debug.apk`（11,928,711 B）。
