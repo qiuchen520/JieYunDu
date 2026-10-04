@@ -650,34 +650,43 @@ class DownloadEngine @Inject constructor(
         var sessionStartAt: Long = 0L
     }
 
-    private companion object {
+    /**
+     * 伴生对象（**public**，供下载页复用状态判定口径）。
+     *
+     * 说明：内部常量以 `private` 成员保留在本伴生对象内（不外泄）；对外仅暴露
+     * [ACTIVE_STATES]，「活动态」判定因此只有一处定义，避免 UI 层复制集合导致漂移。
+     */
+    companion object {
         /** 分片下载线程名前缀（便于抓日志 / 排查）。 */
-        const val DOWNLOAD_THREAD_NAME = "jyd-download"
+        private const val DOWNLOAD_THREAD_NAME = "jyd-download"
 
         /** Range 请求头名。 */
-        const val HEADER_RANGE = "Range"
+        private const val HEADER_RANGE = "Range"
 
         /** 单次读取缓冲区大小：64 KiB。 */
-        const val BUFFER_SIZE_BYTES = 64 * 1024
+        private const val BUFFER_SIZE_BYTES = 64 * 1024
 
         /** 单分片最大重试次数。 */
-        const val MAX_RETRY_PER_CHUNK = 3
+        private const val MAX_RETRY_PER_CHUNK = 3
 
         /** 重试等待时长。 */
-        const val RETRY_DELAY_MILLIS = 1500L
+        private const val RETRY_DELAY_MILLIS = 1500L
 
         /** 进度发射节流间隔。 */
-        const val PROGRESS_INTERVAL_MILLIS = 200L
+        private const val PROGRESS_INTERVAL_MILLIS = 200L
 
         /** 任务级失败重试的等待时长（C1）。 */
-        const val TASK_RETRY_DELAY_MILLIS = 2000L
+        private const val TASK_RETRY_DELAY_MILLIS = 2000L
 
         /**
          * 「活动态」集合（C1）：处于这些状态的任务视为已在进行，重复 start 会被忽略。
          *
          * 注意：不含 [DownloadState.PAUSED]，否则 [resume] 内部调用 [start] 会被误判为重复启动。
+         *
+         * 对外可见（【JYD-DLSPEED-2026-10-04】）：下载页在合并实时进度时需按同一口径判定
+         * 任务是否仍在进行，故把判定集合公开为只读值，避免 UI 层另建一份集合产生漂移。
          */
-        val ACTIVE_STATES = setOf(DownloadState.PENDING, DownloadState.DOWNLOADING)
+        val ACTIVE_STATES: Set<DownloadState> = setOf(DownloadState.PENDING, DownloadState.DOWNLOADING)
     }
 }
 
