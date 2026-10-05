@@ -385,3 +385,16 @@ Owner 指令：抓包事实已升级为详细版，开始百度构建。
   产物 `/sdcard/Download/极云渡_B3-1百度解析_debug.apk`。
 - 下一批（B3-2，待 Owner 确认）：转存 `share/transfer` → `locatedownload` 取链 → 下载 → 清理，
   以及百度个人网盘浏览 / 管理（删除需过 `TempFolderGuard` 判定）。
+
+---
+
+### 2026-10-05 · 百度 errno 两阶段判定修正（标识 `JYD-BAIDU-ERRNO-2026-10-05`）
+Owner 指出 B3-1 首版把百度失败判定做成了 UC 风格（按请求上下文归类）——两家不可抄混。
+- 新增 `BaiduErrnoRules`：`share/verify` 阶段 `-12`=提取码错误；`listShare` 阶段
+  「需要提取码」是**组合判定**（无 sekey 且 errno≠0），`-6` 并列提示登录，
+  `errno=2` 归为子目录认证失败（**不是**提取码）；403=分享失效、31066=文件不存在。
+- 打开**服务端消息透传**通道（此前 `ParseResult.Error.message` 被 UI 丢弃），
+  失败时显示「服务端原文 (errno=N)」。
+- 新增 `BaiduErrnoRulesTest` 11 例；自纠一处并发隐患（verify 失败结果曾暂存在单例伴生状态，
+  已改为局部返回值）。
+- 未动 UC（其风格为 status≠200 + 透传 message，本批不碰）。

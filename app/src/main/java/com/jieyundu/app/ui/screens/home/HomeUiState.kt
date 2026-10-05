@@ -122,6 +122,13 @@ internal fun parseErrorLabelRes(code: String): Int = when (code) {
     // 提取码错误在两家的机器码不同（QUARK_/UC_），UI 统一映射为「重试」提示。
     "QUARK_WRONG_PASSWORD", "UC_WRONG_PASSWORD", "BAIDU_WRONG_PASSWORD" ->
         R.string.password_error_retry
+    // 百度 errno 语义（JYD-BAIDU-ERRNO-2026-10-05）：-12=提取码错误（上一行复用），
+    // -6=需要提取码或登录，其它非 -12 的 verify 失败，以及 errno=2 的子目录认证失败。
+    "BAIDU_VERIFY_FAILED" -> R.string.parse_code_baidu_verify_failed
+    "BAIDU_NEED_PASSWORD_OR_LOGIN" -> R.string.parse_code_baidu_need_password_or_login
+    "BAIDU_SUB_DIR_AUTH_FAILED" -> R.string.parse_code_baidu_sub_dir_auth_failed
+    "BAIDU_SHARE_EXPIRED" -> R.string.parse_code_share_expired
+    "BAIDU_FILE_NOT_FOUND" -> R.string.parse_code_file_not_found
     "BAIDU_NOT_IMPLEMENTED", "XUNLEI_NOT_IMPLEMENTED" ->
         R.string.parse_code_not_implemented
     "QUARK_NETWORK_ERROR", "UC_NETWORK_ERROR", "BAIDU_NETWORK_ERROR", "APP_NETWORK_ERROR" ->

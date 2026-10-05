@@ -130,14 +130,21 @@ fun ParseResultCard(
             contentPadding = contentPadding
         )
 
-        result is ParseResult.Error -> InfoCard(
-            text = stringResource(
-                R.string.parse_error_format,
-                stringResource(parseErrorLabelRes(result.code))
-            ),
-            modifier = modifier,
-            contentPadding = contentPadding
-        )
+        result is ParseResult.Error -> {
+            val label = stringResource(parseErrorLabelRes(result.code))
+            // 服务端消息透传（JYD-BAIDU-ERRNO-2026-10-05）：message 与 code 不同即为服务端原文
+            // （如 err_errmsg / show_msg），另起一行展示，让用户看到精确原因（例如提取码错误）。
+            val detail = result.message.takeIf { value -> value.isNotBlank() && value != result.code }
+            InfoCard(
+                text = if (detail == null) {
+                    stringResource(R.string.parse_error_format, label)
+                } else {
+                    stringResource(R.string.parse_error_format, label) + "\n" + detail
+                },
+                modifier = modifier,
+                contentPadding = contentPadding
+            )
+        }
 
         else -> IdleHint(modifier = modifier)
     }

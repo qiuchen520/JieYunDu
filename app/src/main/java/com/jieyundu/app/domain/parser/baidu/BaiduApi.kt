@@ -106,14 +106,18 @@ interface BaiduApi {
 /**
  * `share/verify` 响应。
  *
- * @property errno 业务错误码；0 表示成功。
+ * @property errno 业务错误码；0 表示成功；**-12 为提取码错误**。
  * @property randsk 提取码换取的随机密钥（URL 编码形态，直接当 `sekey`）。
+ * @property err_msg 服务端错误描述（存在时优先透传给用户）。
+ * @property show_msg 服务端面向用户的提示（存在时优先透传）。
  * @property request_id 服务端请求 ID（诊断用）。
  */
 @Serializable
 data class BaiduShareVerifyResponse(
     val errno: Int = -1,
     val randsk: String? = null,
+    val err_msg: String? = null,
+    val show_msg: String? = null,
     val request_id: Long? = null
 )
 
@@ -124,6 +128,8 @@ data class BaiduShareVerifyResponse(
  * @property title 分享标题。
  * @property share_id 分享 ID（数字；转存时需要）。
  * @property uk 分享者用户 ID（转存时作为 `from` 参数）。
+ * @property err_msg 服务端错误描述（存在时优先透传给用户）。
+ * @property show_msg 服务端面向用户的提示（存在时优先透传）。
  * @property list 条目列表。
  */
 @Serializable
@@ -132,6 +138,8 @@ data class BaiduShareListResponse(
     val title: String? = null,
     val share_id: Long? = null,
     val uk: Long? = null,
+    val err_msg: String? = null,
+    val show_msg: String? = null,
     val list: List<BaiduShareFile> = emptyList()
 )
 

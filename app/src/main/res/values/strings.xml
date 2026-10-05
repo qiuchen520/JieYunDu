@@ -49,6 +49,13 @@
     <string name="parse_code_protocol">响应格式异常</string>
     <string name="parse_code_not_implemented">该网盘解析功能开发中，敬请期待</string>
     <string name="parse_code_unknown">未知错误</string>
+    <!-- 百度 errno 语义文案（JYD-BAIDU-ERRNO-2026-10-05）：-12 提取码错误（复用「提取码错误，请重试」）、
+         「需要提取码」为组合判定（无 sekey 且列分享失败）、-6 需并列提示登录、2 为子目录认证失败（非提取码）。 -->
+    <string name="parse_code_baidu_verify_failed">提取码校验失败，请重试</string>
+    <string name="parse_code_baidu_need_password_or_login">该分享需要提取码，或需要登录百度网盘</string>
+    <string name="parse_code_baidu_sub_dir_auth_failed">子目录打开失败，请重新解析分享后重试</string>
+    <string name="parse_code_share_expired">分享已失效，请重新获取链接</string>
+    <string name="parse_code_file_not_found">分享中的文件不存在或已被删除</string>
 
     <!-- 网盘展示名（UI 层映射，替代 NetdiskType.displayName，见 C5）-->
     <string name="netdisk_baidu">百度网盘</string>
