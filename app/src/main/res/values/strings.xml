@@ -226,6 +226,7 @@
     <string name="settings_battery_optimization_action">加入白名单</string>
     <string name="settings_battery_optimization_done">已加入「忽略电池优化」白名单。</string>
     <string name="notification_download_silent_text">正在后台下载</string>
+    <string name="notification_download_more_tasks">另有 %1$d 个任务</string>
 
     <!-- P1（JYD-P1-2026-10-04）：续传 / 重下入口与反馈文案 -->
     <string name="download_action_restart">重新下载</string>

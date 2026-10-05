@@ -7,18 +7,12 @@
 package com.jieyundu.app.ui.screens.home
 
 import android.content.Context
-import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.R
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.data.remote.UserAgentProvider
-import com.jieyundu.app.data.settings.AppSettingsStore
-import com.jieyundu.app.data.settings.DownloadDirectoryMode
-import com.jieyundu.app.data.storage.PublicDownloadsPublisher
 import com.jieyundu.app.domain.downloader.DownloadEngine
-import com.jieyundu.app.domain.downloader.DownloadState
-import com.jieyundu.app.domain.downloader.DownloadTask
 import com.jieyundu.app.domain.login.CookieExtractor
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
@@ -28,20 +22,17 @@ import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.NetdiskServiceRouter
 import com.jieyundu.app.domain.parser.ParserRegistry
 import com.jieyundu.app.domain.util.LinkExtractor
-import com.jieyundu.app.service.DownloadService
+import com.jieyundu.app.ui.screens.download.DownloadLauncher
 import com.jieyundu.app.ui.screens.download.DownloadSessionRegistry
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
-import java.util.UUID
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import retrofit2.HttpException
@@ -60,26 +51,18 @@ import timber.log.Timber
  * 线程约束（C9）：耗时工作显式调度到 [Dispatchers.IO]；[CancellationException] 一律原样抛出（C3）。
  *
  * @param parserRegistry 解析器注册表。
+ * @param downloadLauncher 下载投递共享入口（建任务 / 启动前台服务 / 等待完成 / 发布成品）。
  * @param netdiskRouter 网盘能力路由器（B2：按 type 取分享浏览器 / 转存器）。
- * @param downloadEngine 分片下载引擎。
- * @param downloadSessionRegistry 会话内「任务 ID → 文件名」登记表（下载列表展示用）。
  * @param cookieStore 登录态 Cookie 仓库；下载时按网盘域取 Cookie 注入请求头。
  * @param userAgentProvider 四家网盘 Referer 常量提供者。
- * @param appSettingsStore 应用设置（下载并发数、下载目录模式）。
- * @param publicDownloadsPublisher 成品发布器（默认 A3：把私有目录成品发布到公共下载目录）。
- * @param appContext 应用上下文，仅用于推导默认落盘目录。
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val parserRegistry: ParserRegistry,
     private val netdiskRouter: NetdiskServiceRouter,
-    private val downloadEngine: DownloadEngine,
-    private val downloadSessionRegistry: DownloadSessionRegistry,
+    private val downloadLauncher: DownloadLauncher,
     private val cookieStore: CookieStore,
     private val userAgentProvider: UserAgentProvider,
-    private val appSettingsStore: AppSettingsStore,
-    private val publicDownloadsPublisher: PublicDownloadsPublisher,
-    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -401,101 +384,31 @@ class HomeViewModel @Inject constructor(
             Timber.w("HomeViewModel download skipped: direct link not ready for %s", file.fileName)
             return
         }
-        val directory = resolveDownloadDirectory()
-        val taskId = UUID.randomUUID().toString()
-        val targetFile = File(directory, file.fileName)
-        val task = DownloadTask(
-            taskId = taskId,
+        // 【JYD-DEBT1-2026-10-05】下载投递统一走 DownloadLauncher（与网盘管理页共用同一实现）。
+        val launched = downloadLauncher.start(
             url = url,
             fileName = file.fileName,
             fileSize = file.fileSize,
-            savePath = targetFile.absolutePath,
-            chunkCount = appSettingsStore.chunkCount.value,
             headers = buildDownloadHeaders(context?.netdiskType)
         )
-        downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
-        downloadEngine.start(task)
-        // C2：接线前台服务（保活 + 通知）；服务只承担保活/通知，失败不影响下载本身。
-        DownloadService.start(appContext, task)
         // 任务已投递引擎：退出「准备」阶段，后续进度由下载页展示，避免首页长期显示准备提示
         // （Owner 反馈：一直显示「转存中」，实为准备文案覆盖了整个下载过程）。
         _uiState.value = _uiState.value.copy(isPreparingDownload = false)
-        val completed = awaitDownloadCompleted(taskId)
+        val completed = downloadLauncher.awaitCompleted(launched.taskId)
         if (completed) {
-            publishIfNeeded(taskId, file.fileName, targetFile)
+            downloadLauncher.publishIfNeeded(
+                taskId = launched.taskId,
+                fileName = file.fileName,
+                workingFile = launched.workingFile
+            )
         }
         if (completed && prepared != null && preparer != null) {
             preparer.cleanupAfterDownload(prepared.newFid)
         }
     }
 
-    /**
-     * 计算本次下载的工作目录（B2 功能①）。
-     *
-     * 规则：
-     * - CUSTOM 模式且已设置有效路径 → 直接写入用户目录（真实路径，需「所有文件访问」A1 权限）；
-     * - 否则（默认 PUBLIC_DOWNLOADS）→ 先写应用私有下载目录，下载完成后再由 [publishIfNeeded]
-     *   发布到公共 `Download/极云渡/`（A3，无需任何存储权限）。
-     *
-     * @return 工作目录；自定义目录不可用时回退到应用私有目录。
-     */
-    private fun resolveDownloadDirectory(): File {
-        if (appSettingsStore.downloadDirectoryMode == DownloadDirectoryMode.CUSTOM) {
-            val custom = appSettingsStore.customDirectoryPath
-            if (!custom.isNullOrBlank()) {
-                val dir = File(custom)
-                if (dir.isDirectory || dir.mkdirs()) {
-                    return dir
-                }
-                Timber.w("HomeViewModel: custom dir unavailable, fall back to private: %s", custom)
-            }
-        }
-        return appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: appContext.filesDir
-    }
 
-    /**
-     * 默认（A3）模式下，把私有目录成品发布到公共下载目录，并删除私有副本。
-     *
-     * 说明：发布成功后更新会话登记为可访问位置（`content://` 或公共路径），供下载列表的
-     * 分享 / 安装按钮与删除操作使用；发布失败则保留私有副本（至少文件仍在，避免丢文件）。
-     *
-     * @param taskId 任务 ID。
-     * @param fileName 文件名。
-     * @param workingFile 私有工作文件（发布后删除）。
-     */
-    private suspend fun publishIfNeeded(taskId: String, fileName: String, workingFile: File) {
-        if (appSettingsStore.downloadDirectoryMode != DownloadDirectoryMode.PUBLIC_DOWNLOADS) {
-            return
-        }
-        val published = publicDownloadsPublisher.publish(
-            workingFile,
-            appSettingsStore.publicFolderName()
-        )
-        if (published == null) {
-            Timber.w("HomeViewModel: publish to public downloads failed for %s", fileName)
-            return
-        }
-        downloadSessionRegistry.remember(taskId, fileName, published)
-        if (workingFile.isFile && !workingFile.delete()) {
-            Timber.e("HomeViewModel: failed to delete private copy: %s", workingFile.name)
-        }
-    }
 
-    /**
-     * 等待下载任务到达终态。
-     *
-     * @param taskId 任务 ID。
-     * @return true 表示下载成功完成（据此决定是否清理临时文件；失败保留以便续传）。
-     */
-    private suspend fun awaitDownloadCompleted(taskId: String): Boolean {
-        val finalState = downloadEngine.observe(taskId).firstOrNull { state ->
-            state == DownloadState.COMPLETED ||
-                state == DownloadState.FAILED ||
-                state == DownloadState.CANCELED
-        }
-        return finalState == DownloadState.COMPLETED
-    }
 
     /**
      * 组装下载请求所需的附加请求头（Referer + Cookie）。

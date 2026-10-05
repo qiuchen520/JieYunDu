@@ -58,11 +58,26 @@ class NotificationHelper @Inject constructor(
      * @param percent 进度百分比，0..100。
      * @return 通知对象。
      */
-    fun buildProgressNotification(fileName: String, percent: Int): Notification {
+    fun buildProgressNotification(
+        fileName: String,
+        percent: Int,
+        extraTaskCount: Int = 0
+    ): Notification {
         val bounded = percent.coerceIn(0, MAX_PERCENT)
+        // 聚合通知（【JYD-DEBT1-2026-10-05】）：多个任务并发时附「另有 N 个任务」，
+        // 避免用户以为只有一个任务在下载。
+        val baseText = context.getString(R.string.notification_download_progress_text, bounded)
+        val text = if (extraTaskCount > 0) {
+            baseText + SEPARATOR + context.getString(
+                R.string.notification_download_more_tasks,
+                extraTaskCount
+            )
+        } else {
+            baseText
+        }
         return baseBuilder(
             title = context.getString(R.string.notification_download_title),
-            text = context.getString(R.string.notification_download_progress_text, bounded)
+            text = text
         )
             .setSubText(fileName)
             .setProgress(MAX_PERCENT, bounded, false)
@@ -171,5 +186,8 @@ class NotificationHelper @Inject constructor(
 
         /** 百分比上限。 */
         const val MAX_PERCENT = 100
+
+        /** 聚合通知文案分隔符（非中文，避免 C5 约束）。 */
+        private const val SEPARATOR = " · "
     }
 }

@@ -6,36 +6,25 @@
 package com.jieyundu.app.ui.screens.login
 
 import android.content.Context
-import android.os.Environment
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.R
-import com.jieyundu.app.data.settings.AppSettingsStore
-import com.jieyundu.app.data.settings.DownloadDirectoryMode
-import com.jieyundu.app.data.storage.PublicDownloadsPublisher
-import com.jieyundu.app.domain.downloader.DownloadEngine
-import com.jieyundu.app.domain.downloader.DownloadState
-import com.jieyundu.app.domain.downloader.DownloadTask
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.NetdiskType
 import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskServiceRouter
 import com.jieyundu.app.domain.transfer.TempFolderGuard
-import com.jieyundu.app.service.DownloadService
-import com.jieyundu.app.ui.screens.download.DownloadSessionRegistry
+import com.jieyundu.app.ui.screens.download.DownloadLauncher
 import com.jieyundu.app.ui.screens.home.BrowseLevel
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.util.UUID
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -57,11 +46,7 @@ import timber.log.Timber
 @HiltViewModel
 class NetdiskBrowserViewModel @Inject constructor(
     private val netdiskRouter: NetdiskServiceRouter,
-    private val downloadEngine: DownloadEngine,
-    private val appSettingsStore: AppSettingsStore,
-    private val downloadSessionRegistry: DownloadSessionRegistry,
-    private val publicDownloadsPublisher: PublicDownloadsPublisher,
-    @ApplicationContext private val appContext: Context
+    private val downloadLauncher: DownloadLauncher
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NetdiskBrowserState())
@@ -196,26 +181,20 @@ class NetdiskBrowserViewModel @Inject constructor(
                     _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_unsupported)
                     return@launch
                 }
-                val taskId = UUID.randomUUID().toString()
-                val directory = resolveDownloadDirectory()
-                val targetFile = File(directory, file.fileName)
-                val task = DownloadTask(
-                    taskId = taskId,
+                // 【JYD-DEBT1-2026-10-05】与首页共用同一投递实现。
+                val launched = downloadLauncher.start(
                     url = url,
                     fileName = file.fileName,
-                    fileSize = file.fileSize,
-                    savePath = targetFile.absolutePath,
-                    chunkCount = appSettingsStore.chunkCount.value,
-                    headers = emptyMap()
+                    fileSize = file.fileSize
                 )
-                downloadSessionRegistry.remember(taskId, file.fileName, task.savePath)
-                downloadEngine.start(task)
-                // C2：接线前台服务（保活 + 通知）；失败不影响下载本身。
-                DownloadService.start(appContext, task)
                 _state.value = _state.value.copy(messageRes = R.string.netdisk_browser_download_started)
-                val completed = awaitDownloadCompleted(taskId)
+                val completed = downloadLauncher.awaitCompleted(launched.taskId)
                 if (completed) {
-                    publishIfNeeded(taskId, file.fileName, targetFile)
+                    downloadLauncher.publishIfNeeded(
+                        taskId = launched.taskId,
+                        fileName = file.fileName,
+                        workingFile = launched.workingFile
+                    )
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -246,65 +225,8 @@ class NetdiskBrowserViewModel @Inject constructor(
         _uiState.value = browsing.copy(stack = stack)
     }
 
-    /**
-     * 等待任务进入终态。
-     *
-     * @param taskId 任务 ID。
-     * @return true 表示下载完成。
-     */
-    private suspend fun awaitDownloadCompleted(taskId: String): Boolean {
-        val finalState = downloadEngine.observe(taskId).firstOrNull { state ->
-            state == DownloadState.COMPLETED ||
-                state == DownloadState.FAILED ||
-                state == DownloadState.CANCELED
-        }
-        return finalState == DownloadState.COMPLETED
-    }
 
-    /**
-     * 默认目录模式下，把成品发布到公共下载目录（与首页下载同一策略）。
-     *
-     * @param taskId 任务 ID。
-     * @param fileName 文件名。
-     * @param workingFile 私有工作目录中的成品。
-     */
-    private suspend fun publishIfNeeded(taskId: String, fileName: String, workingFile: File) {
-        if (appSettingsStore.downloadDirectoryMode != DownloadDirectoryMode.PUBLIC_DOWNLOADS) {
-            return
-        }
-        val published = publicDownloadsPublisher.publish(
-            workingFile,
-            appSettingsStore.publicFolderName()
-        )
-        if (published == null) {
-            Timber.w("NetdiskBrowser: publish to public downloads failed for %s", fileName)
-            return
-        }
-        downloadSessionRegistry.remember(taskId, fileName, published)
-        if (workingFile.isFile && !workingFile.delete()) {
-            Timber.e("NetdiskBrowser: failed to delete private copy: %s", workingFile.name)
-        }
-    }
 
-    /**
-     * 计算本次下载的工作目录（与首页下载同策略，见 HomeViewModel.resolveDownloadDirectory）。
-     *
-     * @return 工作目录；自定义目录不可用时回退应用私有目录。
-     */
-    private fun resolveDownloadDirectory(): File {
-        if (appSettingsStore.downloadDirectoryMode == DownloadDirectoryMode.CUSTOM) {
-            val custom = appSettingsStore.customDirectoryPath
-            if (!custom.isNullOrBlank()) {
-                val dir = File(custom)
-                if (dir.isDirectory || dir.mkdirs()) {
-                    return dir
-                }
-                Timber.w("NetdiskBrowser: custom dir unavailable, fall back to private: %s", custom)
-            }
-        }
-        return appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: appContext.filesDir
-    }
 
     /** 关闭管理页，回到网盘列表。 */
     fun close() {

@@ -423,3 +423,19 @@ Owner 反馈：百度 Cookie 存不进、也不会自动保存。
   `LoginValidationConfigTest` 7 例）；产物 `/sdcard/Download/极云渡_百度Cookie修复_debug.apk`。
 - 复验要点：百度登录页登录后应**自动保存**并回到网盘列表；「保存登录态」与「粘贴 Cookie」
   两条手动路径也应成功；重启 App 后百度仍显示已登录。
+
+---
+
+### 2026-10-05 · 债批次 1（标识 `JYD-DEBT1-2026-10-05`）
+Owner 问「是不是一堆屎山」，我先用实测数据体检（非主观评价），再按 Owner 选择做债批次。
+本批四件事：
+1. **修真 bug**：`DownloadService` 原本只跟踪一个任务、任一任务终态就收前台 + 释放唤醒锁——
+   同时任务数 >1 时其余任务失去保活。现改为多任务跟踪、全终态收尾、聚合通知（「另有 N 个任务」）。
+2. **去重**：抽 `DownloadLauncher`，首页与网盘管理页共用下载投递链路；
+   HomeViewModel 顺带去掉 5 个已死的注入依赖（这是我上批复制代码的后果，已修）。
+3. **清死代码**：删 `UcTaskPoller.kt`（0 引用）；`UcTempFolderManager` 未删，仅标注「无调用方、
+   待 Owner 拍板」。
+4. **补引擎单测**：`DownloadEngineTest` 5 例，用假 HTTP 驱动真实引擎，以 **Range 头**为证据
+   验证「断点续传不重头」与「重新下载真从 0 开始」。
+- 未改：UI 视觉、引擎下载核心逻辑、三家协议实现。
+- 待你拍板：`UcTempFolderManager` 删还是留（一句话即可）。
