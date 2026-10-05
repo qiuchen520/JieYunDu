@@ -1573,3 +1573,57 @@ complete 三刻，未新增任何下载过程中的 Room 写入。
 未新增任何含口令 / 密钥的文件。
 待办（Owner 手动）：确认 Release notes 与 README 后，在 GitHub 创建 Release 并上传 release APK。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-BAIDU-2026-10-05 · B3-1 百度网盘：分享解析与浏览】
+来源：Owner 指令「抓包事实.md 已升级为详细版，准备开始百度构建」（发布 0.1.0 之后新一批）。
+依据：本机《抓包事实.md》（**未入库**，含厂商凭据）§1 / §3 / §6.2 / §11.3；
+      全程遵守 R3——只实现有抓包证据的端点与参数，未推测任何字段。
+本批范围（B3-1）：**分享链接解析 + 分享目录逐级展开**。
+  下载链路（转存 → 高速直链 → 下载 → 清理）**不在本批**，见下方「下一批」。
+本批落地的改动：
+· domain/parser/baidu/BaiduApi.kt（新增）
+    - 仅声明两个已有证据的端点：
+      `POST share/verify`（提取码校验，换 `randsk`；`Referer` 含分享短码，故用参数动态传）
+      与 `GET rest/2.0/xpan/share?method=list`（分享列表）；
+    - 请求体 / 查询参数逐字段对齐 §11.3 #2 / #3；`root` 常量显式区分
+      `ROOT_TOP_LEVEL = 1` / `ROOT_SUB_DIRECTORY = 0`（文档明确警告「容易写反」）；
+    - `sekey` 用 `@Query(encoded = true)`：`randsk` 本身已是 URL 编码形态，避免二次编码；
+    - 响应模型：`errno` 成功判定（百度用 `errno == 0`，**不是** code）；`isdir` 用 `JsonElement`
+      承载（抓包为字符串 "1"/"0"，兼容数字形态，避免类型漂移导致序列化异常）。
+· domain/parser/baidu/BaiduParser.kt（由占位骨架改为实现）
+    - 实现 `NetdiskParser`（`match` / `parse`）与 `ShareBrowser`（`listChildren`）；
+    - 短码归一化直接复用 `LinkExtractor.extractShareId`（**其内部已实现百度去前导 `1`**，
+      见 §1：`/s/1xxxx` 的真实短码不含 `1`）；
+    - 目录以**路径**为 id（§11.3 #3：目录项用 `path`、文件项用 `fs_id`）；
+    - 异常处理沿用 UC 同款：`CancellationException` 原样抛出（C3）、`IOException` → 网络码、
+      `SerializationException` → 协议码；
+    - **未带提取码时的失败归类**：百度「需要提取码 / 码错误」的 `errno` 取值现有抓包未覆盖，
+      故沿用 UC 的「按请求上下文归类」策略（未带码→提示输入；已带码→判为码错误），
+      并标 `TODO(用户抓包)`，**不猜测 errno 数值**。
+· data/remote/UserAgentProvider.kt
+    - 补百度**两套 UA**（§3）：`baiduWebUserAgent`（Chrome 124）与
+      `baiduNetdiskUserAgent`（`netdisk;12.24.6;…`）；原空串字段 `baiduUserAgent`
+      取值改为客户端 UA（直链下载用），保持既有引用点不变。
+· di/NetworkModule.kt
+    - 新增百度 BaseUrl 与 `provideBaiduApi`；
+    - **UA 选择升级为「host + 路径」二维**：百度在同一个 host 上混用两套 UA，
+      故按「CDN 主机 `d.pcs.baidu.com` 或客户端接口前缀（`/api/list`、`/api/filemanager`、
+      `/api/create`、`/api/quota`）」判定客户端 UA，其余走网页 UA；同时支持方法级
+      `@Headers` 显式指定 UA 时不再被覆盖（保留扩展点）；
+    - Cookie 域新增 `baidu.com`（注入 + 响应采集）——`share/verify` 下发的
+      `BDCLND` 由此自动登记，子目录列表（`root=0`）必须带它才不会 `errno=2`（§6.2 坑①）。
+· di/AppModule.kt：把 `BaiduParser` 以 `ShareBrowser` 身份多绑定注册（首页文件夹展开用）。
+· ui/screens/home/HomeUiState.kt：补 `BAIDU_*` 错误码 → 文案映射（链接无效 / 详情失败 /
+  提取码错误 / 网络 / 协议），使百度解析失败的提示与夸克、UC 一致。
+· app/src/test/java/com/jieyundu/app/domain/util/BaiduLinkTest.kt（新增 7 例）
+    - 锁死百度短码规则：`/s/1aBcDeF123` → `aBcDeF123`（去前导 `1`）、下划线/连字符、
+      类型判定、`?pwd=` 与中文关键字取码、非百度链接不被归一化、空文本无链接。
+下一批（B3-2，待 Owner 确认后做）：转存 `share/transfer`（§11.3 #6）→
+  高速直链 `locatedownload`（#7，抓包常量为设备指纹参数）→ 复用现有下载引擎 →
+  下载完成后按 `TempFolderGuard` 安全边界清理转存副本；另含百度个人网盘浏览/管理。
+约束遵守：未改 UI 视觉；未动既有夸克 / UC 逻辑；未推测任何接口参数（R3）；
+  中文入 strings.xml（本批未新增文案，复用既有映射）；日志走 Timber（C8）；
+  《抓包事实.md》仍在 .gitignore 内，**未入库**，其内容只转化为协议常量与字段名。
+待办：装机复验——粘贴百度分享链接（含/不含提取码）→ 解析出文件列表 → 展开子目录。
+================================================================================

@@ -365,3 +365,17 @@ Owner 指令：0.1 功能面已齐 → 做发布准备，**不推送 Release**�
   且该文件在公开仓库历史中——Owner 明确要求保持现状。本批仅补 `.gitignore` 护栏。
 - **发布动作尚未执行**：未创建 GitHub Release、未上传任何 Release 资产、未打 tag。
   Owner 确认 `docs/ReleaseNotes_0.1.0.md` 与 README 后手动发布（上传 `app-release.apk`）。
+
+---
+
+### 2026-10-05 · B3-1 百度网盘：分享解析与浏览（标识 `JYD-BAIDU-2026-10-05`）
+Owner 指令：抓包事实已升级为详细版，开始百度构建。
+- 本批**只做解析与浏览**：`BaiduApi`（share/verify + xpan/share）+ `BaiduParser`
+  （`NetdiskParser` + `ShareBrowser`）+ 百度两套 UA + `baidu.com` Cookie 域 + DI 多绑定 + 错误码映射。
+- 关键实现点：短码去前导 `1`（复用 `LinkExtractor`）、`root` 顶层=1/子目录=0、
+  `randsk` 已是 URL 编码故 `sekey` 用 `encoded = true`、目录以路径为 id、
+  `BDCLND` 由响应 Cookie 拦截器自动登记（子目录列表必需）。
+- 明确未做（下一批 B3-2）：转存 `share/transfer` → `locatedownload` 取链 → 下载 → 清理。
+  因此**本批百度解析出的文件尚不可下载**（`downloadUrl` 为 null），属有意分批，非遗漏。
+- 未推测任何参数：百度「需要提取码/码错误」的 `errno` 数值现有抓包未覆盖，
+  按请求上下文归类并标 TODO(用户抓包)。《抓包事实.md》未入库。

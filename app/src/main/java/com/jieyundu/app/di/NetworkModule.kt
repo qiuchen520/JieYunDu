@@ -9,6 +9,7 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
 import com.jieyundu.app.BuildConfig
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.data.remote.UserAgentProvider
+import com.jieyundu.app.domain.parser.baidu.BaiduApi
 import com.jieyundu.app.domain.parser.quark.QuarkApi
 import com.jieyundu.app.domain.parser.uc.UcApi
 import dagger.Module
@@ -52,6 +53,9 @@ object NetworkModule {
     /** 夸克 PC 接口 BaseUrl。 */
     private const val BASE_URL_QUARK = "https://drive-pc.quark.cn/"
 
+    /** 百度网盘接口 BaseUrl（《抓包事实.md》§3：`pan.baidu.com`）。 */
+    private const val BASE_URL_BAIDU = "https://pan.baidu.com/"
+
     /** UC PC 接口 BaseUrl（《抓包事实.md》§2：业务基址 pc-api.uc.cn，**不是** drive-pc.quark.cn）。 */
     private const val BASE_URL_UC = "https://pc-api.uc.cn/"
 
@@ -72,6 +76,21 @@ object NetworkModule {
 
     /** UC Cookie 域名后缀（同时覆盖 drive.uc.cn 与 pc-api.uc.cn）。 */
     private const val COOKIE_DOMAIN_UC = "uc.cn"
+
+    /** 百度 Cookie 域名后缀（同时覆盖 pan.baidu.com / yun.baidu.com / d.pcs.baidu.com）。 */
+    private const val COOKIE_DOMAIN_BAIDU = "baidu.com"
+
+    /** 百度 CDN 直链主机（该主机的请求一律使用客户端 UA）。 */
+    private const val HOST_BAIDU_PCS = "d.pcs.baidu.com"
+
+    /**
+     * 百度**客户端 UA** 的路径前缀（同一 host 上按接口区分两套 UA）。
+     *
+     * 依据：《抓包事实.md》§11.3 #4/#5/#9/#14——建目录 / 个人列表 / filemanager / 配额用客户端 UA；
+     * 其余（`share/verify`、`xpan/share`、`gettemplatevariable`、`filemetas`）用网页 UA。
+     */
+    private val BAIDU_NETDISK_PATH_PREFIXES =
+        listOf("/api/list", "/api/filemanager", "/api/create", "/api/quota")
 
     /** 多 Cookie 拼接分隔符（HTTP Cookie 头规范）。 */
     private const val COOKIE_SEPARATOR = "; "
@@ -127,12 +146,22 @@ object NetworkModule {
                 //   均以普通 Chrome UA 下发，用云盘客户端 UA 取链会被拒。
                 // - 夸克：用 API / 客户端 UA。
                 // 依据：两家 UA 不得混用（《抓包事实.md》§2「三套 UA」与 §1「两套 UA」）。
-                val agent = if (isUcHost(original.url.host)) {
-                    userAgentProvider.ucWebUserAgent
-                } else {
-                    userAgentProvider.quarkUserAgent
+                val host = original.url.host
+                val agent = when {
+                    isUcHost(host) -> userAgentProvider.ucWebUserAgent
+                    // 百度：**同一 host 混用两套 UA**，按「CDN 主机 or 客户端接口路径」区分
+                    // （《抓包事实.md》§3 / §11.3）。
+                    isBaiduHost(host) -> if (host == HOST_BAIDU_PCS ||
+                        isBaiduNetdiskPath(original.url.encodedPath)
+                    ) {
+                        userAgentProvider.baiduNetdiskUserAgent
+                    } else {
+                        userAgentProvider.baiduWebUserAgent
+                    }
+                    else -> userAgentProvider.quarkUserAgent
                 }
-                val request = if (agent.isNotBlank()) {
+                // 方法级 @Headers 已指定 UA 的请求不再覆盖（保留给后续需要固定 UA 的接口）。
+                val request = if (agent.isNotBlank() && original.header(HEADER_USER_AGENT) == null) {
                     original.newBuilder().header(HEADER_USER_AGENT, agent).build()
                 } else {
                     original
@@ -212,6 +241,26 @@ object NetworkModule {
             .create(UcApi::class.java)
 
     /**
+     * 提供百度接口实现（《抓包事实.md》§3：业务基址 `pan.baidu.com`）。
+     *
+     * 说明：`locatedownload` 走另一主机 `d.pcs.baidu.com`（§11.3 #7），
+     * 该端点在 B3-2 接入时以 `@Url` 绝对地址调用，无需第二个 Retrofit 实例。
+     *
+     * @param okHttpClient 全局客户端。
+     * @param json JSON 解析器。
+     * @return BaiduApi 动态代理实例。
+     */
+    @Provides
+    @Singleton
+    fun provideBaiduApi(okHttpClient: OkHttpClient, json: Json): BaiduApi =
+        Retrofit.Builder()
+            .baseUrl(BASE_URL_BAIDU)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(CONTENT_TYPE_JSON.toMediaType()))
+            .build()
+            .create(BaiduApi::class.java)
+
+    /**
      * 判定目标 host 是否属于 UC 域名族。
      *
      * @param host 请求目标主机名（如 `pc-api.uc.cn`）。
@@ -219,6 +268,24 @@ object NetworkModule {
      */
     private fun isUcHost(host: String): Boolean =
         host == COOKIE_DOMAIN_UC || host.endsWith(".$COOKIE_DOMAIN_UC")
+
+    /**
+     * 判定目标 host 是否属于百度域名族。
+     *
+     * @param host 请求目标主机名（如 `pan.baidu.com` / `d.pcs.baidu.com`）。
+     * @return true 表示百度。
+     */
+    private fun isBaiduHost(host: String): Boolean =
+        host == COOKIE_DOMAIN_BAIDU || host.endsWith(".$COOKIE_DOMAIN_BAIDU")
+
+    /**
+     * 判定百度请求路径是否属于「客户端 UA」接口。
+     *
+     * @param path 请求路径（如 `/api/list`）。
+     * @return true 表示应使用客户端 UA。
+     */
+    private fun isBaiduNetdiskPath(path: String): Boolean =
+        BAIDU_NETDISK_PATH_PREFIXES.any { prefix -> path.startsWith(prefix) }
 
     /** 日志 TAG。 */
     private const val TAG_HTTP = "OkHttp"
@@ -313,6 +380,8 @@ object NetworkModule {
                     COOKIE_DOMAIN_QUARK
                 host == COOKIE_DOMAIN_UC || host.endsWith(".$COOKIE_DOMAIN_UC") ->
                     COOKIE_DOMAIN_UC
+                host == COOKIE_DOMAIN_BAIDU || host.endsWith(".$COOKIE_DOMAIN_BAIDU") ->
+                    COOKIE_DOMAIN_BAIDU
                 else -> null
             }
             if (domainSuffix != null) {

@@ -112,19 +112,21 @@ internal fun NetdiskType.uiLabelRes(): Int = when (this) {
  */
 @StringRes
 internal fun parseErrorLabelRes(code: String): Int = when (code) {
-    "QUARK_INVALID_LINK", "UC_INVALID_LINK", "APP_INVALID_LINK" ->
+    "QUARK_INVALID_LINK", "UC_INVALID_LINK", "BAIDU_INVALID_LINK", "APP_INVALID_LINK" ->
         R.string.parse_code_invalid_link
     "QUARK_TOKEN_FAILED", "UC_TOKEN_FAILED" -> R.string.parse_code_token_failed
-    "QUARK_DETAIL_FAILED", "UC_DETAIL_FAILED" -> R.string.parse_code_detail_failed
+    "QUARK_DETAIL_FAILED", "UC_DETAIL_FAILED", "BAIDU_DETAIL_FAILED" ->
+        R.string.parse_code_detail_failed
     "QUARK_DOWNLOAD_FAILED" -> R.string.parse_code_download_failed
     "QUARK_TRANSFER_FAILED" -> R.string.parse_code_transfer_failed
     // 提取码错误在两家的机器码不同（QUARK_/UC_），UI 统一映射为「重试」提示。
-    "QUARK_WRONG_PASSWORD", "UC_WRONG_PASSWORD" -> R.string.password_error_retry
+    "QUARK_WRONG_PASSWORD", "UC_WRONG_PASSWORD", "BAIDU_WRONG_PASSWORD" ->
+        R.string.password_error_retry
     "BAIDU_NOT_IMPLEMENTED", "XUNLEI_NOT_IMPLEMENTED" ->
         R.string.parse_code_not_implemented
-    "QUARK_NETWORK_ERROR", "UC_NETWORK_ERROR", "APP_NETWORK_ERROR" ->
+    "QUARK_NETWORK_ERROR", "UC_NETWORK_ERROR", "BAIDU_NETWORK_ERROR", "APP_NETWORK_ERROR" ->
         R.string.parse_code_network
-    "QUARK_PROTOCOL_ERROR", "UC_PROTOCOL_ERROR", "APP_PROTOCOL_ERROR" ->
+    "QUARK_PROTOCOL_ERROR", "UC_PROTOCOL_ERROR", "BAIDU_PROTOCOL_ERROR", "APP_PROTOCOL_ERROR" ->
         R.string.parse_code_protocol
     else -> R.string.parse_code_unknown
 }

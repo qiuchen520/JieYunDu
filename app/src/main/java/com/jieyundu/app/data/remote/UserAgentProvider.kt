@@ -40,9 +40,32 @@ class UserAgentProvider @Inject constructor() {
     /** 夸克 Referer。 */
     val quarkReferer: String = "https://pan.quark.cn/"
 
-    // TODO(用户抓包): 填入百度网盘客户端 User-Agent 原文
-    /** 百度网盘 User-Agent。 */
-    val baiduUserAgent: String = ""
+    /**
+     * 百度网盘**客户端** User-Agent（`yun/api/list`、`filemanager`、`locatedownload` 用）。
+     *
+     * 来源：《抓包事实.md》§3「两套 UA」之②（原文 `netdisk;12.24.6;…`）。
+     * 注意：百度在**同一个 host 上混用两套 UA**——按接口（路径）区分，见 `NetworkModule`。
+     */
+    val baiduNetdiskUserAgent: String =
+        "netdisk;12.24.6;piano;android-android;16;JSbridge4.4.0;jointBridge;1.1.0"
+
+    /**
+     * 百度网盘**网页 / 登录态** User-Agent（`share/verify`、`xpan/share`、
+     * `gettemplatevariable`、`filemetas` 用）。
+     *
+     * 来源：《抓包事实.md》§3「两套 UA」之①（Chrome 124）。
+     */
+    val baiduWebUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+    /**
+     * 百度网盘 User-Agent（下载链路默认用客户端 UA）。
+     *
+     * 说明：历史字段名保持不变（`HomeViewModel` 的下载头构造引用它），
+     * 取值与 [baiduNetdiskUserAgent] 一致——直链下载走客户端 UA（《抓包事实.md》§3）。
+     */
+    val baiduUserAgent: String = baiduNetdiskUserAgent
 
     /** 百度 Referer。 */
     val baiduReferer: String = "https://pan.baidu.com/"

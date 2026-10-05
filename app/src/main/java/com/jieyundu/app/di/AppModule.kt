@@ -111,6 +111,16 @@ object AppModule {
     fun provideUcShareBrowser(parser: UcParser): ShareBrowser = parser
 
     /**
+     * 注册百度分享目录浏览器（多绑定，B3-1）。
+     *
+     * @param parser 百度解析器实例（同时实现 [NetdiskParser] 与 [ShareBrowser]）。
+     * @return 以 [ShareBrowser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideBaiduShareBrowser(parser: BaiduParser): ShareBrowser = parser
+
+    /**
      * 注册夸克个人网盘浏览器（多绑定）。
      *
      * @param parser 夸克解析器实例（同时实现 [NetdiskParser] / [ShareBrowser] / [PersonalBrowser]）。
