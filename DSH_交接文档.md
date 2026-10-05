@@ -439,3 +439,10 @@ Owner 问「是不是一堆屎山」，我先用实测数据体检（非主观�
    验证「断点续传不重头」与「重新下载真从 0 开始」。
 - 未改：UI 视觉、引擎下载核心逻辑、三家协议实现。
 - 待你拍板：`UcTempFolderManager` 删还是留（一句话即可）。
+
+- 交付状态：commit **`9dfd8636`**；CI [37262014817](https://github.com/qiuchen520/JieYunDu/actions/runs/37262014817)
+  **success**（Build APK (debug) / Upload / testDebugUnitTest 全绿——**新增 5 个引擎单测已在 CI 实跑通过**，
+  其 Range 断言验证了「断点续传不重头 / 重新下载真从 0 开始」）；远端已确认删除 `UcTaskPoller.kt`；
+  产物 `/sdcard/Download/极云渡_债批次1_debug.apk`。
+- 复验要点（多任务并发）：设置页把「同时下载任务数」设为 ≥2 → 同时下两个任务 →
+  通知栏应显示聚合进度（多任务时带「另有 N 个任务」），且**先下完的任务不会中断另一个任务**的保活。
