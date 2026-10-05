@@ -398,3 +398,9 @@ Owner 指出 B3-1 首版把百度失败判定做成了 UC 风格（按请求上�
 - 新增 `BaiduErrnoRulesTest` 11 例；自纠一处并发隐患（verify 失败结果曾暂存在单例伴生状态，
   已改为局部返回值）。
 - 未动 UC（其风格为 status≠200 + 透传 message，本批不碰）。
+
+- 交付状态：commit **`4fe3994c`**；CI [37259269096](https://github.com/qiuchen520/JieYunDu/actions/runs/37259269096)
+  **success**（Build APK (debug) / Upload / testDebugUnitTest 全绿，含新增 `BaiduErrnoRulesTest` 11 例）；
+  产物 `/sdcard/Download/极云渡_B3-1百度errno修正_debug.apk`。
+- 复验要点：公共分享（无码）应直接成功；加密分享不带码 → 弹提取码；码错 → 「提取码错误，请重试」
+  且卡片第二行显示服务端原文与 `(errno=-12)`；未登录解析加密分享 → 「需要提取码，或需要登录百度网盘」。
