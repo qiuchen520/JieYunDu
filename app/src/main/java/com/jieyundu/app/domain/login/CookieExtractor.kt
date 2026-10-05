@@ -73,7 +73,10 @@ object CookieExtractor {
             "https://drive.quark.cn"
         )
 
-        NetdiskType.BAIDU -> listOf("https://pan.baidu.com")
+        // 百度：BDUSS 通常挂在 `.baidu.com`，读取 pan 子域即可拿到；
+        // 但 App 的列表 / 配额接口走 `yun.baidu.com`（《抓包事实.md》§11.3 #5/#14），
+        // 故一并覆盖该子域，避免只挂在 yun 子域上的 Cookie 漏采。
+        NetdiskType.BAIDU -> listOf("https://pan.baidu.com", "https://yun.baidu.com")
         NetdiskType.UC -> listOf("https://drive.uc.cn")
         NetdiskType.XUNLEI -> listOf("https://pan.xunlei.com")
     }

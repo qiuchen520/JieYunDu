@@ -404,3 +404,16 @@ Owner 指出 B3-1 首版把百度失败判定做成了 UC 风格（按请求上�
   产物 `/sdcard/Download/极云渡_B3-1百度errno修正_debug.apk`。
 - 复验要点：公共分享（无码）应直接成功；加密分享不带码 → 弹提取码；码错 → 「提取码错误，请重试」
   且卡片第二行显示服务端原文与 `(errno=-12)`；未登录解析加密分享 → 「需要提取码，或需要登录百度网盘」。
+
+---
+
+### 2026-10-05 · 百度 Cookie 无法保存（标识 `JYD-BAIDU-COOKIE-2026-10-05`）
+Owner 反馈：百度 Cookie 存不进、也不会自动保存。
+- **主因**：`LoginValidator` 没有百度校验端点（`validationUrlOf(BAIDU) == null`），
+  而 `validate()` 在无端点时直接返回 false，`submit()` 又以 `passed` 为落库前提 →
+  自动保存 / 手动保存 / 粘贴三条路径全被拦死，且无任何提示。
+- **次因**：登录 WebView 的 UA 写死夸克网页 UA，与网盘类型无关。
+- 修复：接入百度只读探测端点 `gettemplatevariable`（判据 `"bdstoken"`）+ 按类型选 UA
+  （新增 `UserAgentProvider.webUserAgentOf` 单一来源）+ 百度采集补 `yun.baidu.com`。
+- 新增 `LoginValidationConfigTest` 7 例，专门回归「百度不得再没有校验端点」。
+- 未动夸克 / UC 登录链路（端点、判据、UA 保持原值）。

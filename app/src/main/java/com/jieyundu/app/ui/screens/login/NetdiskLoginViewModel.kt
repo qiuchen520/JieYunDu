@@ -68,12 +68,16 @@ class NetdiskLoginViewModel @Inject constructor(
     val loggedIn: StateFlow<Set<NetdiskType>> = loginStateManager.loggedIn
 
     /**
-     * 内嵌 WebView 登录页应使用的网页 UA。
+     * 内嵌 WebView 登录页应使用的网页 UA（**按网盘类型**）。
      *
-     * 说明：当前阶段仅接入夸克，返回其网页 UA；UC / 百度 / 迅雷的登录网页 UA
-     * 待对应平台接入时补充。
+     * 修复（【JYD-BAIDU-COOKIE-2026-10-05】）：此前无论哪家都返回夸克网页 UA，
+     * 导致百度登录页以夸克 UA 打开；现改为按类型取（单一来源见
+     * [UserAgentProvider.webUserAgentOf]）。
+     *
+     * @param type 网盘类型。
+     * @return 网页 UA；该平台未抓包时返回空串（WebView 保持默认 UA）。
      */
-    val webUserAgent: String get() = userAgentProvider.quarkWebUserAgent
+    fun webUserAgentFor(type: NetdiskType): String = userAgentProvider.webUserAgentOf(type)
 
     /** 最近一次真实网络校验的时间戳（节流用）。 */
     private var lastValidateAtMillis = 0L

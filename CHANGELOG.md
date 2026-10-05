@@ -1674,3 +1674,49 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
   ③ 密码错误 → 「提取码错误，请重试」+ 服务端原文与 `(errno=-12)`；
   ④ 未登录解析加密分享 → 提示「需要提取码，或需要登录百度网盘」。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-BAIDU-COOKIE-2026-10-05 · 百度 Cookie 无法保存 / 无法自动保存（修复）】
+来源：Owner 反馈——「无法保存百度饼干，也没办法自动保存」。
+排查结论（两个真实原因，均在登录链路，与 B3-1 解析无关）：
+根因①（主因）**百度没有登录校验端点** → Cookie 永远不被落库。
+· `LoginValidator.validationUrlOf(BAIDU)` 原为 `null`（注释「待阶段 9 实现时接入」），
+  而 `validate()` 在 `url == null` 时**直接返回 false**；
+· `NetdiskLoginViewModel.submit()` 的落库条件是 `if (passed) { cookieStore.save(...) }`
+  → 自动保存（轮询 BDUSS 出现即提交）与手动保存、粘贴 Cookie 全部被这道校验拦死，
+  表现为「字段明明识别到了（`BDUSS` 判定已通过）却始终存不进」，且**没有任何提示**。
+根因② WebView 登录页 UA 写死为夸克网页 UA。
+· `NetdiskLoginViewModel.webUserAgent` 直接返回 `userAgentProvider.quarkWebUserAgent`，
+  与网盘类型无关 → 百度登录页以**夸克 UA** 打开（登录链路可能异常、Cookie 指纹不一致）。
+本批落地的改动：
+· domain/login/LoginValidator.kt
+    - `validationUrlOf(BAIDU)` 接入**只读探测**端点
+      `GET https://pan.baidu.com/api/gettemplatevariable?clienttype=0&app_id=250528&web=1&fields=%5B%22bdstoken%22%5D`
+      （《抓包事实.md》§11.3 #1：已登录返回 `result.bdstoken` / `result.username`，未登录不带）；
+      fields 的方括号与引号按 URL 规范百分号编码；
+    - 新增 `markerOf(type)`：百度判据为 `"bdstoken"`，夸克 / UC 维持既有 `"data"`；
+    - 新增 `userAgentOf(type)`：百度用**网页 UA**（§11.3 #1 要求 Cookie + UA_WEB）；
+      夸克 / UC **刻意保持既有取值**（两家登录链路已验收，避免回归）；
+    - `validationUrlOf` / `markerOf` / `userAgentOf` 由 private 提升为 internal，便于单测锁定
+      （防止将来又把百度端点摘掉）。
+· data/remote/UserAgentProvider.kt：新增 `webUserAgentOf(type)` 作为「按网盘取网页 UA」的
+  **单一来源**（夸克 / UC / 百度）；迅雷尚未抓包 → 返回空串（WebView 保持默认 UA，
+  不拿别家 UA 顶替）。
+· ui/screens/login/NetdiskLoginViewModel.kt：`webUserAgent` 属性改为
+  `webUserAgentFor(type)` 方法，按类型取 UA。
+· ui/screens/login/WebViewLoginScreen.kt：登录 WebView 改为传
+  `viewModel.webUserAgentFor(type)`。
+· domain/login/CookieExtractor.kt：百度的 Cookie 采集 URL 由仅 `pan.baidu.com`
+  扩为 `pan.baidu.com` + `yun.baidu.com`（列表 / 配额接口走 yun 子域，避免漏采）。
+· app/src/test/.../login/LoginValidationConfigTest.kt（新增 7 例）
+    - **回归锁定**：百度必须有校验端点、且以 `bdstoken` 探测、带 `app_id=250528`；
+      夸克 / UC 端点不变；迅雷无 Cookie 校验端点；
+    - 判据：百度 `"bdstoken"`、其他 `"data"`；
+    - UA：百度校验用网页 UA（且不得含 `quark-cloud-drive`）；WebView UA 按类型区分。
+说明：不改「Cookie 出现 ≠ 登录成功」的两级校验设计——百度现在有了只读探测端点，
+  校验语义保持完整；本批只是把**缺失的端点补上**，不是绕过校验。
+约束遵守：未改 UI 视觉；未动夸克 / UC 登录行为（端点、判据、UA 均保持原值）；
+  中文入 strings.xml（本批无新增文案）；日志走 Timber（C8）。
+待办：装机复验——① 百度页登录后应**自动保存**并切回网盘列表（登录态标记为已登录）；
+  ② 「保存登录态」按钮应成功；③ 「粘贴 Cookie」应成功；④ 重启 App 后百度仍为已登录。
+================================================================================

@@ -5,6 +5,7 @@
 
 package com.jieyundu.app.data.remote
 
+import com.jieyundu.app.domain.model.NetdiskType
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -110,4 +111,21 @@ class UserAgentProvider @Inject constructor() {
 
     /** 迅雷 Referer。 */
     val xunleiReferer: String = "https://pan.xunlei.com/"
+
+    /**
+     * 按网盘类型取**网页 / 登录态** User-Agent（内嵌 WebView 登录页、登录校验用）。
+     *
+     * 存在理由（【JYD-BAIDU-COOKIE-2026-10-05】）：此前 WebView 登录页与登录校验都写死
+     * 夸克 UA，导致百度登录页以夸克 UA 打开、且百度 Cookie 校验请求带错 UA。
+     * 收敛到本方法作为**单一来源**，各调用方不再各自拼 UA。
+     *
+     * @param type 网盘类型。
+     * @return 对应网页 UA；该平台尚未抓包（如迅雷）时返回空串，调用方应保持 WebView 默认 UA。
+     */
+    fun webUserAgentOf(type: NetdiskType): String = when (type) {
+        NetdiskType.QUARK -> quarkWebUserAgent
+        NetdiskType.UC -> ucWebUserAgent
+        NetdiskType.BAIDU -> baiduWebUserAgent
+        NetdiskType.XUNLEI -> xunleiUserAgent
+    }
 }

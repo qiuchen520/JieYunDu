@@ -22,9 +22,13 @@ import timber.log.Timber
  * 核心认知：「Cookie 出现」≠「登录成功」。必须拿候选 Cookie 真实请求一个轻量只读
  * 接口，返回成功才判定登录成立。本类即承担该「第二级校验」。
  *
- * 校验接口（《抓包事实.md》第 1、2 节）：
+ * 校验接口（《抓包事实.md》第 1、2 节与 §11.3 #1）：
  * - 夸克：`https://pan.quark.cn/account/info`
  * - UC  ：`https://drive.uc.cn/account/info`
+ * - 百度：`https://pan.baidu.com/api/gettemplatevariable`（`fields=["bdstoken"]`）——
+ *   该接口是**只读探测**：已登录时返回 `result.bdstoken` / `result.username`，
+ *   未登录则不带该字段。此前百度没有校验端点，[validate] 因 `url == null` 恒返回 false，
+ *   导致**百度 Cookie 永远存不进**（【JYD-BAIDU-COOKIE-2026-10-05】修复）。
  *
  * 说明：请求显式携带候选 Cookie（不依赖 CookieStore，避免把未校验的凭证提前落库）；
  * OkHttpClient 复用全局单例（其 CookieInterceptor 检测到已有 Cookie 头时不会覆盖）。
@@ -55,13 +59,20 @@ class LoginValidator @Inject constructor(
             val request = Request.Builder()
                 .url(url)
                 .header(HEADER_COOKIE, cookie)
-                .header(HEADER_USER_AGENT, userAgentProvider.quarkUserAgent)
+                .apply {
+                    // UA 按网盘取值：百度用网页 UA（§11.3 #1）；
+                    // 夸克 / UC **保持既有取值不变**（两家登录链路已验收，本批不动）。
+                    val agent = userAgentOf(type)
+                    if (agent.isNotBlank()) {
+                        header(HEADER_USER_AGENT, agent)
+                    }
+                }
                 .get()
                 .build()
             try {
                 okHttpClient.newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
-                    val passed = response.isSuccessful && body.contains(MARKER_LOGGED_IN_DATA)
+                    val passed = response.isSuccessful && body.contains(markerOf(type))
                     Timber.d(
                         "LoginValidator %s http=%d passed=%b",
                         type,
@@ -86,12 +97,42 @@ class LoginValidator @Inject constructor(
      * @param type 网盘类型。
      * @return 校验接口 URL；未支持的平台返回 null。
      */
-    private fun validationUrlOf(type: NetdiskType): String? = when (type) {
+    internal fun validationUrlOf(type: NetdiskType): String? = when (type) {
         NetdiskType.QUARK -> "https://pan.quark.cn/account/info"
         NetdiskType.UC -> "https://drive.uc.cn/account/info"
-        // 百度 / 迅雷校验接口待阶段 9 实现时接入。
-        NetdiskType.BAIDU -> null
+        // 百度：gettemplatevariable 是只读探测接口（§11.3 #1）；
+        // fields 的方括号与引号按 URL 规范百分号编码。
+        NetdiskType.BAIDU -> "https://pan.baidu.com/api/gettemplatevariable" +
+            "?clienttype=0&app_id=250528&web=1&fields=%5B%22bdstoken%22%5D"
+        // 迅雷登录态是 access_token（JWT），非 Cookie，本校验不适用。
         NetdiskType.XUNLEI -> null
+    }
+
+    /**
+     * 登录成功的响应判据（各网盘字段名不同）。
+     *
+     * @param type 网盘类型。
+     * @return 成功响应中必现的字段字面量。
+     */
+    internal fun markerOf(type: NetdiskType): String = when (type) {
+        // 百度：已登录才返回 result.bdstoken / result.username。
+        NetdiskType.BAIDU -> MARKER_BAIDU_BDSTOKEN
+        else -> MARKER_LOGGED_IN_DATA
+    }
+
+    /**
+     * 校验请求使用的 User-Agent。
+     *
+     * 说明：百度用**网页 UA**（《抓包事实.md》§11.3 #1）；夸克 / UC 沿用既有的
+     * `quarkUserAgent`——两家登录链路已验收，本批**刻意不改**其取值以避免回归
+     * （UC 使用夸克 UA 属历史遗留不一致，列为后续单独清理项）。
+     *
+     * @param type 网盘类型。
+     * @return UA 字符串；空串表示不设置该头（交由网络层按 host 选择）。
+     */
+    internal fun userAgentOf(type: NetdiskType): String = when (type) {
+        NetdiskType.BAIDU -> userAgentProvider.webUserAgentOf(type)
+        else -> userAgentProvider.quarkUserAgent
     }
 
     private companion object {
@@ -108,5 +149,13 @@ class LoginValidator @Inject constructor(
          * 该判据为启发式，待 Owner 实测后按真实响应体校准。
          */
         const val MARKER_LOGGED_IN_DATA = "\"data\""
+
+        /**
+         * 百度登录成功的标志字段。
+         *
+         * 依据：《抓包事实.md》§11.3 #1——`gettemplatevariable` 返回
+         * `result.bdstoken` / `result.username`，未登录不带。
+         */
+        const val MARKER_BAIDU_BDSTOKEN = "\"bdstoken\""
     }
 }

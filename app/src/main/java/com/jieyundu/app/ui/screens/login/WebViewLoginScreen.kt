@@ -124,7 +124,12 @@ fun WebViewLoginScreen(
         )
         AndroidView(
             factory = { context ->
-                createLoginWebView(context, type, viewModel.webUserAgent, interceptedCookie)
+                createLoginWebView(
+                    context,
+                    type,
+                    viewModel.webUserAgentFor(type),
+                    interceptedCookie
+                )
             },
             modifier = Modifier
                 .fillMaxWidth()
