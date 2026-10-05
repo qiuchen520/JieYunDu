@@ -417,3 +417,9 @@ Owner 反馈：百度 Cookie 存不进、也不会自动保存。
   （新增 `UserAgentProvider.webUserAgentOf` 单一来源）+ 百度采集补 `yun.baidu.com`。
 - 新增 `LoginValidationConfigTest` 7 例，专门回归「百度不得再没有校验端点」。
 - 未动夸克 / UC 登录链路（端点、判据、UA 保持原值）。
+
+- 交付状态：commit **`d5e178b9`**；CI [37260677789](https://github.com/qiuchen520/JieYunDu/actions/runs/37260677789)
+  **success**（Build APK (debug) / Upload / testDebugUnitTest 全绿，含新增
+  `LoginValidationConfigTest` 7 例）；产物 `/sdcard/Download/极云渡_百度Cookie修复_debug.apk`。
+- 复验要点：百度登录页登录后应**自动保存**并回到网盘列表；「保存登录态」与「粘贴 Cookie」
+  两条手动路径也应成功；重启 App 后百度仍显示已登录。
