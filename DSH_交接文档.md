@@ -379,3 +379,9 @@ Owner 指令：抓包事实已升级为详细版，开始百度构建。
   因此**本批百度解析出的文件尚不可下载**（`downloadUrl` 为 null），属有意分批，非遗漏。
 - 未推测任何参数：百度「需要提取码/码错误」的 `errno` 数值现有抓包未覆盖，
   按请求上下文归类并标 TODO(用户抓包)。《抓包事实.md》未入库。
+
+- 交付状态：commit **`3601cb97`**；CI [37258093027](https://github.com/qiuchen520/JieYunDu/actions/runs/37258093027)
+  **success**（Build APK (debug) / Upload / testDebugUnitTest 全绿，含新增 `BaiduLinkTest` 7 例）；
+  产物 `/sdcard/Download/极云渡_B3-1百度解析_debug.apk`。
+- 下一批（B3-2，待 Owner 确认）：转存 `share/transfer` → `locatedownload` 取链 → 下载 → 清理，
+  以及百度个人网盘浏览 / 管理（删除需过 `TempFolderGuard` 判定）。
