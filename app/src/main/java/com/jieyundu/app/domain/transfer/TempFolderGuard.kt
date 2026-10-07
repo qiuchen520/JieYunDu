@@ -30,7 +30,7 @@ import timber.log.Timber
  */
 object TempFolderGuard {
 
-    /** 临时目录标识名（与 TempFolderManager / UcTempFolderManager 保持一致）。 */
+    /** 临时目录标识名（与 TempFolderManager 保持一致；UC 侧同构实现已于 JYD-DEBT2-2026-10-07 删除）。 */
     const val TEMP_FOLDER_MARKER = ".极云渡临时"
 
     /** 根目录 pdir_fid。 */

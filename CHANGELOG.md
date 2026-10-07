@@ -1768,3 +1768,49 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
   ≥2，两个任务同时下，确认通知聚合显示且前台保活不中断）；③ 债批次 2 候选：两个临时目录管理器
   合并（约 72% 重复）、`DownloadEngine` 拆分文件（~1000 行）。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT2-2026-10-07 · 债批次 2（死代码删除 + 引擎契约拆分 + 卫生清理）】
+来源：Owner 拍板「先做债批次 2」，并要求用「最少代码解决真问题」的口径总体审视代码。
+一、删死代码（= 债批次 2 候选里的「两个临时目录管理器合并」）
+    · 删除 domain/transfer/UcTempFolderManager.kt（340 行，全项目 0 生产调用方）。
+      依据：UC 自【修订 JYD-UC-FIX-2026-10-03】改直连取链免转存，
+      UcShareTransfer.cleanupAfterDownload 已是空操作；转存链路整体闲置
+      （UcTaskPoller 已于 JYD-DEBT1 删除）。将来若恢复 UC 转存，从版本历史取回。
+    · 临时目录机制因此只剩夸克一份实现（TempFolderManager）；
+      TempFolderGuard 的 KDoc 里「与 TempFolderManager / UcTempFolderManager 保持一致」
+      同步改为只提 TempFolderManager。
+二、拆 DownloadEngine（1019 行 → 865 行）
+    · 新增同包 domain/downloader/DownloadContracts.kt（对外契约面）：
+      端口 DownloadProgressPort / DownloadCheckpointPort / DownloadSettingsPort +
+      值类型 DownloadTaskRecord / EngineActionResult。
+    · 引擎文件只留实现：任务生命周期、调度闸门、分片请求与重试、进度/测速发布、
+      内部类 SpeedLimiter 与 TaskRuntime。
+    · 拆分方式为**同包搬迁**：包名、类名、方法签名、构造参数全不变 →
+      所有调用方（DownloadDao / AppSettingsStore / DownloadViewModel / 两个测试）
+      import 与行为零改动，本批无任何逻辑改动。
+    · 规格登记：《要求.md》§7.5 的注「端口定义（嵌套于 DownloadEngine.kt 内，不新增文件）」
+      已同步修订为「置于同包 DownloadContracts.kt」，并在文末新增
+      【规格变更 JYD-DEBT2-2026-10-07】（双登记）。
+三、本批未改、登记为债批次 3 候选（有证据，不猜）
+    · 个人网盘列表参数构造重复三处：QuarkParser.buildPersonalListParams、
+      UcParser.buildPersonalListParams、TempFolderManager.buildListParams——三者同构
+      （仅 pr/fr 常量与文件头不同，约 30 行 × 3）。因涉及**已验收的协议参数构造**，
+      为不碰已验证链路，本批不动；若要收，可抽一个 (pr, fr, pdirFid) 共享构造器。
+四、卫生清理（Owner 已批准）
+    · 删除源码树内残留的编辑器临时目录
+      （app/src/main/java/com/jieyundu/app/domain/util/.DownloadTimeFormatter.kt.<pid>.<uuid>.tmpdir/，
+      2 个重复文件，未被 .gitignore 覆盖，误提交会污染仓库）。
+      根因：本机 DSH 文件写入后端会在目标旁留下 .l2s.*.tmpdir 与悬空符号链接，
+      本次交付期间复现过一次（DownloadContracts.kt 曾落成目录），已就地修复为真实文件。
+    · 补齐 28 个文件的末尾换行，使本地工作区与 GitHub HEAD 逐字节一致（原差异仅为 EOF 换行）。
+五、约束遵守
+    · 未改下载核心逻辑与续传语义；未动夸克 / UC / 百度协议实现；未改 UI 与视觉；
+      未新增依赖；本批无新增中文文案（C5 不适用）；日志仍走 Timber（C8）。
+六、推送 / CI
+    · 待推送：本会话未挂载 GitHub 连接器，工作区亦无本地 .git（沿用 GitHub Data API 推送约定），
+      待推送通道确认后补 push 与 CI run 号；CI 全绿前不得视为已出包。
+待办：① Owner 装机复验（本批为纯重构 + 删死代码，预期行为零变化）；
+      ② 债批次 3 是否开工（列表参数去重）；
+      ③ 推送通道（GitHub 凭据）确认。
+================================================================================
