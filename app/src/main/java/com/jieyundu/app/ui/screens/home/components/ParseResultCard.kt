@@ -6,7 +6,6 @@
 package com.jieyundu.app.ui.screens.home.components
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,10 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,6 +39,8 @@ import com.jieyundu.app.R
 import com.jieyundu.app.domain.model.FileInfo
 import com.jieyundu.app.domain.model.ParseResult
 import com.jieyundu.app.domain.util.FileSizeFormatter
+import com.jieyundu.app.ui.icons.FolderGlyph
+import com.jieyundu.app.ui.icons.CheckGlyph
 import com.jieyundu.app.ui.glass.GlassButton
 import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.home.BrowseLevel
@@ -443,63 +440,6 @@ private fun SelectionBox(checked: Boolean) {
     }
 }
 
-/**
- * 自绘「文件夹」图标（D8：不引入 material-icons）。
- *
- * @param modifier 外部修饰符。
- */
-@Composable
-private fun FolderGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.Primary
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val tabTop = h * FOLDER_TAB_TOP_Y
-        val tabWidth = w * FOLDER_TAB_WIDTH_RATIO
-        val tabHeight = h * FOLDER_TAB_HEIGHT_RATIO
-        val corner = w * FOLDER_CORNER_RATIO
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(w * FOLDER_TAB_LEFT_X, tabTop),
-            size = Size(tabWidth, tabHeight),
-            cornerRadius = CornerRadius(corner, corner)
-        )
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(w * FOLDER_BODY_LEFT_X, tabTop + tabHeight * FOLDER_BODY_TOP_OFFSET),
-            size = Size(w * FOLDER_BODY_WIDTH_RATIO, h * FOLDER_BODY_HEIGHT_RATIO),
-            cornerRadius = CornerRadius(corner, corner)
-        )
-    }
-}
-
-/**
- * 自绘「对勾」图标（D8：不引入 material-icons）。
- *
- * @param modifier 外部修饰符。
- */
-@Composable
-private fun CheckGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.OnPrimary
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        drawLine(
-            color = color,
-            start = Offset(w * CHECK_START_X, h * CHECK_MID_Y),
-            end = Offset(w * CHECK_MID_X, h * CHECK_BOTTOM_Y),
-            strokeWidth = w * CHECK_STROKE_RATIO,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(w * CHECK_MID_X, h * CHECK_BOTTOM_Y),
-            end = Offset(w * CHECK_END_X, h * CHECK_TOP_Y),
-            strokeWidth = w * CHECK_STROKE_RATIO,
-            cap = StrokeCap.Round
-        )
-    }
-}
 
 /**
  * 需要提取码卡片。
@@ -540,51 +480,3 @@ private const val ROOT_LEVEL_KEY = "__root__"
 
 /** 未选中任何文件时下载按钮的透明度（置灰表现）。 */
 private const val DISABLED_BUTTON_ALPHA = 0.45f
-
-/** 对勾起点横向占比。 */
-private const val CHECK_START_X = 0.15f
-
-/** 对勾折点横向占比。 */
-private const val CHECK_MID_X = 0.42f
-
-/** 对勾终点横向占比。 */
-private const val CHECK_END_X = 0.85f
-
-/** 对勾起点纵向占比。 */
-private const val CHECK_TOP_Y = 0.25f
-
-/** 对勾折点纵向占比。 */
-private const val CHECK_MID_Y = 0.55f
-
-/** 对勾终点纵向占比。 */
-private const val CHECK_BOTTOM_Y = 0.78f
-
-/** 对勾线宽相对宽度比例。 */
-private const val CHECK_STROKE_RATIO = 0.14f
-
-/** 文件夹图标：标签顶边纵向占比。 */
-private const val FOLDER_TAB_TOP_Y = 0.14f
-
-/** 文件夹图标：标签左边横向占比。 */
-private const val FOLDER_TAB_LEFT_X = 0.08f
-
-/** 文件夹图标：标签宽度占比。 */
-private const val FOLDER_TAB_WIDTH_RATIO = 0.44f
-
-/** 文件夹图标：标签高度占比。 */
-private const val FOLDER_TAB_HEIGHT_RATIO = 0.20f
-
-/** 文件夹图标：圆角相对宽度比例。 */
-private const val FOLDER_CORNER_RATIO = 0.10f
-
-/** 文件夹图标：主体左边横向占比。 */
-private const val FOLDER_BODY_LEFT_X = 0.06f
-
-/** 文件夹图标：主体宽度占比。 */
-private const val FOLDER_BODY_WIDTH_RATIO = 0.88f
-
-/** 文件夹图标：主体高度占比。 */
-private const val FOLDER_BODY_HEIGHT_RATIO = 0.60f
-
-/** 文件夹图标：主体相对标签底部的纵向偏移比例。 */
-private const val FOLDER_BODY_TOP_OFFSET = 0.60f

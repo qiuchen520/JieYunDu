@@ -2078,3 +2078,30 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 待办：① 装机复验下载页实时速度 / 剩余时间 / 暂停继续（本批为纯搬迁，数值口径逐字保留）；
       ② CI 结果待回填（含 testDebugUnitTest 的 3 个新用例）。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT11-2026-10-07 · 债批次 10：最后两处「职责混杂」文件拆分】
+来源：Owner 目标「把架构全部拆分清楚」+ 审计表：>400 行文件中尚未处理的
+      `ParseResultCard.kt`（图标混在卡片里）与 `di/NetworkModule.kt`（拦截器混在装配里）。
+一、解析结果卡片：`ParseResultCard.kt` 590 → 482 行；新增 `ui/icons/ParseGlyphs.kt`（126 行）
+    · 自绘「文件夹」与「对勾」两个图标及其 15 个几何常量迁出（纯绘制、无业务状态），
+      可见性 private → internal；卡片只保留「解析结果长什么样」：空闲 / 信息 / 成功 / 需要提取码
+      四种卡片、文件行、勾选框与选择逻辑。
+    · 清理 5 个因此未用的导入（Canvas / CornerRadius / Offset / Size / StrokeCap）。
+    · 与 JYD-DEBT7 的 `ui/icons/DownloadGlyphs.kt` 形成同一约定：**自绘图标一律进 ui/icons**。
+二、网络装配：`di/NetworkModule.kt` 399 → 273 行；新增 `data/remote/CookieInterceptors.kt`（138 行）
+    · 两条 OkHttp 拦截器（`CookieInterceptor` 按域名注入、`ResponseCookieInterceptor` 采集
+      响应 Set-Cookie 回写）与它们依赖的 7 个常量（三个域名后缀 / 两个头名 / 分隔符 / GET）
+      归位到 Cookie 复用层（`CookieStore` 同包），NetworkModule 只负责构建 OkHttpClient /
+      Retrofit 与四家 API 实例。
+    · NetworkModule 改为 import 域名常量（`isUcHost` / `isBaiduHost` 仍用），
+      并删掉 2 个因此未用的导入（Interceptor / Response）。
+    · 拦截器语义、顺序、注册位置逐字不变（仍在同一 OkHttpClient 上、同一顺序）。
+三、《要求.md》§6 结构表随之刷新
+    · 本次新增两个文件后立即重生成 §6（覆盖 data/remote 与 ui/icons 的新条目），
+      使「精确到文件」这一节继续与现实一致（生成口径已固化为可复用脚本）。
+四、校验
+    · 推送前自检（括号平衡 / 孤儿注释 / KDoc 后无声明）：123 个 .kt、0 问题；
+    · 逐文件核对未用导入（本轮清掉 7 处）与跨包符号（新文件均 internal、同模块）。
+待办：装机复验解析结果卡片（文件夹图标 / 勾选框）与登录态相关请求（Cookie 注入与回写）。
+================================================================================
