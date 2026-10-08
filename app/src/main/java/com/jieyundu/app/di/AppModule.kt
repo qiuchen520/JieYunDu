@@ -121,6 +121,16 @@ object AppModule {
     fun provideBaiduShareBrowser(parser: BaiduParser): ShareBrowser = parser
 
     /**
+     * 注册迅雷分享目录浏览器（多绑定，JYD-XUNLEI-P1A-2026-10-08）。
+     *
+     * @param parser 迅雷解析器实例（同时实现 [NetdiskParser] 与 [ShareBrowser]）。
+     * @return 以 [ShareBrowser] 身份暴露的同一实例。
+     */
+    @Provides
+    @IntoSet
+    fun provideXunleiShareBrowser(parser: XunleiParser): ShareBrowser = parser
+
+    /**
      * 注册夸克个人网盘浏览器（多绑定）。
      *
      * @param parser 夸克解析器实例（同时实现 [NetdiskParser] / [ShareBrowser] / [PersonalBrowser]）。

@@ -8,6 +8,7 @@ package com.jieyundu.app.data.remote
 import com.jieyundu.app.domain.model.NetdiskType
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.jieyundu.app.domain.parser.xunlei.XunleiConfig
 
 /**
  * 四家网盘请求头常量提供者（依据【修订 JYD-ERRATA-2026-10-03】修订三）。
@@ -87,8 +88,19 @@ class UserAgentProvider @Inject constructor() {
     val ucReferer: String = "https://drive.uc.cn/"
 
     // TODO(用户抓包): 填入迅雷云盘客户端 User-Agent 原文
-    /** 迅雷云盘 User-Agent。 */
-    val xunleiUserAgent: String = ""
+    /**
+     * 迅雷云盘 App 客户端 User-Agent（业务与认证接口）。
+     *
+     * 来源：《抓包事实.md》§4「UA」之 App（SDK 版本 8.31.0.9726）。
+     */
+    val xunleiUserAgent: String = XunleiConfig.UA_APP
+
+    /**
+     * 迅雷云盘网页 User-Agent（内嵌登录页使用）。
+     *
+     * 来源：《抓包事实.md》§4「UA」之 Web。
+     */
+    val xunleiWebUserAgent: String = XunleiConfig.UA_WEB
 
     /** 迅雷 Referer。 */
     val xunleiReferer: String = "https://pan.xunlei.com/"
@@ -107,6 +119,6 @@ class UserAgentProvider @Inject constructor() {
         NetdiskType.QUARK -> quarkWebUserAgent
         NetdiskType.UC -> ucWebUserAgent
         NetdiskType.BAIDU -> baiduWebUserAgent
-        NetdiskType.XUNLEI -> xunleiUserAgent
+        NetdiskType.XUNLEI -> xunleiWebUserAgent
     }
 }

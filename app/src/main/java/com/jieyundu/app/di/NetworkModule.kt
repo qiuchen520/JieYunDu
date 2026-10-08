@@ -11,11 +11,16 @@ import com.jieyundu.app.data.remote.COOKIE_DOMAIN_BAIDU
 import com.jieyundu.app.data.remote.COOKIE_DOMAIN_UC
 import com.jieyundu.app.data.remote.CookieInterceptor
 import com.jieyundu.app.data.remote.CookieStore
+import com.jieyundu.app.data.remote.XunleiAuthInterceptor
+import com.jieyundu.app.data.remote.XunleiFingerprint
+import com.jieyundu.app.data.remote.XunleiTokenStore
 import com.jieyundu.app.data.remote.ResponseCookieInterceptor
 import com.jieyundu.app.data.remote.UserAgentProvider
 import com.jieyundu.app.domain.parser.baidu.BaiduApi
 import com.jieyundu.app.domain.parser.quark.QuarkApi
 import com.jieyundu.app.domain.parser.uc.UcApi
+import com.jieyundu.app.domain.parser.xunlei.XunleiApi
+import com.jieyundu.app.domain.parser.xunlei.XunleiConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -70,6 +75,12 @@ object NetworkModule {
     /** 百度 CDN 直链主机（该主机的请求一律使用客户端 UA）。 */
     private const val HOST_BAIDU_PCS = "d.pcs.baidu.com"
 
+    /** 迅雷业务主机（Bearer 认证）。 */
+    private const val HOST_XUNLEI_PAN = "api-pan.xunlei.com"
+
+    /** 迅雷认证主机（换 token / 刷新）。 */
+    private const val HOST_XUNLEI_AUTH = "xluser-ssl.xunlei.com"
+
     /**
      * 百度**客户端 UA** 的路径前缀（同一 host 上按接口区分两套 UA）。
      *
@@ -96,13 +107,17 @@ object NetworkModule {
      *
      * @param userAgentProvider 四家网盘 UA 常量提供者。
      * @param cookieStore 内存态 Cookie 仓库，供 [CookieInterceptor] 按域名注入。
+     * @param xunleiFingerprint 迅雷一机一指纹（注入 `X-Device-Id` 等设备头）。
+     * @param xunleiTokenStore 迅雷登录态（注入 `Authorization: Bearer` 与 `X-Captcha-Token`）。
      * @return 配置好超时、默认 UA、Cookie 注入与调试日志的客户端。
      */
     @Provides
     @Singleton
     fun provideOkHttpClient(
         userAgentProvider: UserAgentProvider,
-        cookieStore: CookieStore
+        cookieStore: CookieStore,
+        xunleiFingerprint: XunleiFingerprint,
+        xunleiTokenStore: XunleiTokenStore
     ): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_CONNECT_SECONDS, TimeUnit.SECONDS)
@@ -139,6 +154,8 @@ object NetworkModule {
                     } else {
                         userAgentProvider.baiduWebUserAgent
                     }
+                    // 迅雷：认证与业务主机统一用 App 客户端 UA（《抓包事实.md》§4「UA」）。
+                    isXunleiApiHost(host) -> userAgentProvider.xunleiUserAgent
                     else -> userAgentProvider.quarkUserAgent
                 }
                 // 方法级 @Headers 已指定 UA 的请求不再覆盖（保留给后续需要固定 UA 的接口）。
@@ -149,6 +166,8 @@ object NetworkModule {
                 }
                 chain.proceed(request)
             }
+            // 迅雷：设备头 / 验证码头 / Bearer（业务主机才带 Authorization；游客匿名时不带）。
+            .addInterceptor(XunleiAuthInterceptor(xunleiFingerprint, xunleiTokenStore))
             .addInterceptor(CookieInterceptor(cookieStore))
             .addInterceptor(ResponseCookieInterceptor(cookieStore))
             .apply {
@@ -242,6 +261,26 @@ object NetworkModule {
             .create(BaiduApi::class.java)
 
     /**
+     * 提供迅雷业务接口实现（《抓包事实.md》§4：业务基址 `api-pan.xunlei.com`）。
+     *
+     * 说明：认证主机（`xluser-ssl.xunlei.com`，换 token / 刷新）将在登录链路落地时
+     * 另建 Retrofit（届时按 §11.4 #5/#6 的字段实现），本批先只落业务主机。
+     *
+     * @param okHttpClient 全局客户端（含迅雷设备头 / Bearer 注入拦截器）。
+     * @param json JSON 解析器。
+     * @return XunleiApi 动态代理实例。
+     */
+    @Provides
+    @Singleton
+    fun provideXunleiApi(okHttpClient: OkHttpClient, json: Json): XunleiApi =
+        Retrofit.Builder()
+            .baseUrl(XunleiConfig.PAN_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(CONTENT_TYPE_JSON.toMediaType()))
+            .build()
+            .create(XunleiApi::class.java)
+
+    /**
      * 判定目标 host 是否属于 UC 域名族。
      *
      * @param host 请求目标主机名（如 `pc-api.uc.cn`）。
@@ -258,6 +297,18 @@ object NetworkModule {
      */
     private fun isBaiduHost(host: String): Boolean =
         host == COOKIE_DOMAIN_BAIDU || host.endsWith(".$COOKIE_DOMAIN_BAIDU")
+
+    /**
+     * 判定目标 host 是否属于迅雷接口主机。
+     *
+     * 只认《抓包事实.md》§4 给出的两个主机（业务 `api-pan` / 认证 `xluser-ssl`），
+     * 避免把设备指纹头带到无关的 xunlei.com 主机上。
+     *
+     * @param host 请求目标主机名。
+     * @return true 表示迅雷接口主机。
+     */
+    private fun isXunleiApiHost(host: String): Boolean =
+        host == HOST_XUNLEI_PAN || host == HOST_XUNLEI_AUTH
 
     /**
      * 判定百度请求路径是否属于「客户端 UA」接口。

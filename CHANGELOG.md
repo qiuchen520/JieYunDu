@@ -2155,3 +2155,76 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 修复（D12 首推）：CI run 37766736200 在 `compileDebugUnitTestKotlin` 失败——
     `assertFalse` 按 JUnit 签名应为 `(message, condition)`，首推写成了 `(condition, message)`，
     类型不匹配。已修正并加注释注明参数顺序；其余 3 个新用例未报错（ChunkManagerTest 2 例已通过编译）。
+
+================================================================================
+【实现记录 JYD-XUNLEI-P1A-2026-10-08 · 迅雷阶段 1A：一机一指纹 + 分享解析（只读）】
+来源：Owner 指令「百度协议已过期，先做迅雷」+ 明确放行（允许照抄《抓包事实.md》的签名常量，
+      但不得编造任何字段）+ 分三阶段、每阶段出包验收。
+本批范围裁定（**先做无登录依赖的部分**）：
+    依据事实复核，阶段 1 的三项验收里，「WebView 登录成功」**在事实文档中没有依据**（见文末
+    待决项 ①②），而「粘贴分享链接解析出文件列表」「文件夹能展开」**完全有据**
+    （§11.4 #10/#11：分享接口 Bearer **或游客匿名不写 Authorization**）。故本批交付后者 +
+    登录所需的地基件，登录链路等 Owner 裁定后进行。
+一、签名与指纹（Owner 硬性约束①④）
+    · `domain/parser/xunlei/XunleiSigning.kt`：实现 **devicesign** 两段哈希公式
+      `div101.{deviceId}{md5(sha1(deviceId + 包名 + appid + APP_KEY))}`；
+      **已用文档官方 fallback 组逐字符验证**（算出 `div101.78a...858b` 与文档所载完全一致），
+      并写成单测锚点；`sha1Hex` / `md5Hex` 一并提供。
+    · `captcha_sign` **刻意未实现**：文档只给了「`1.<10层md5>`」与 10 个盐，**没给折叠算法**
+      （初始输入 / 逐层顺序 / 是否混入 deviceId、timestamp）。10 个盐按顺序原样留档，
+      函数返回 null 并标 `TODO(用户抓包)`，另有一条单测**专门锁住「不许偷偷编造」**。
+    · `data/remote/XunleiFingerprint.kt`：一机一指纹——首次启动随机生成 32 位十六进制
+      deviceId / peerId，EncryptedSharedPreferences 持久化后永久复用；`deviceSign` 由 deviceId
+      现算（不落盘，避免不一致）。**正常路径绝不使用官方指纹**；仅在「随机源不可用」这一
+      极端退化路径按文档回退官方值兜底（保证不崩，且留 Timber 告警便于排查）。
+    · `domain/parser/xunlei/XunleiConfig.kt`：域名 / 凭据 / 两套 UA / 10 个盐 / 官方兜底指纹 /
+      `share_status` 三态常量 / `kind = drive#folder`，全部照抄事实文档并注明出处。
+二、登录态地基（Owner 硬性约束②③）
+    · `domain/util/JwtExpiry.kt`：JWT `exp` / `sub` 读取（**不校验签名**，仅解析自身令牌），
+      含 60 秒提前量的过期判定；用 `java.util.Base64` 以便 JVM 单测。
+    · `data/remote/XunleiTokenStore.kt`：access_token / refresh_token / captcha_token 加密持久化 +
+      内存缓存 + `isAccessTokenExpired()` / `accessTokenExpiresAtMillis()` / `clear()`。
+    · `data/remote/XunleiAuthInterceptor.kt`：统一注入 `X-Client-Id` / `X-Device-Id` /
+      `X-Client-Version` / `X-Captcha-Token`（有才带）/ `Origin`+`Referer`（仅业务主机）/
+      `Authorization: Bearer`（**仅业务主机且已登录**——未登录一个头也不加，从而支持游客解析）。
+三、分享解析与浏览（阶段 1 的可用部分）
+    · `domain/parser/xunlei/XunleiModels.kt` + `XunleiApi.kt`：`drive/v1/share`、
+      `drive/v1/share/detail`、`drive/v1/about`（阶段 3 用）三个端点与 wire 模型。
+    · `XunleiParser.kt`：由占位骨架改为**可用实现**（`NetdiskParser` + `ShareBrowser`）——
+      解析分享（按 `share_status` 分流 成功 / 需要提取码 / 提取码错误）、
+      展开子目录（`share/detail` + `pass_code_token`）、根目录防御分支（改走分享接口，
+      不臆造 `share/detail` 的根取值）、网络与协议错误码。
+      文件大小字段在事实文档中**未逐字段列出**，故按 `TODO(用户抓包)` 处理（缺失时为 0）。
+    · 接线：`NetworkModule`（迅雷 App UA 分支、鉴权拦截器、`provideXunleiApi`）、
+      `AppModule`（以 `@IntoSet` 注册迅雷 `ShareBrowser`）、
+      `UserAgentProvider`（补迅雷 App / Web 两套 UA，WebView 登录页改用网页 UA）、
+      `HomeUiState`（新增 6 个迅雷错误码映射，复用既有文案，未新增 strings）。
+四、测试（21 例，全部纯 JVM）
+    · `XunleiSigningTest`（5）：devicesign 对官方值、前缀与长度、哈希定长、captcha_sign 未实现、
+      10 个盐照抄。
+    · `JwtExpiryTest`（4）：exp/sub、提前量边界、非法输入保守判过期、缺 exp 判过期。
+    · `XunleiParserTest`（12）：域名判定、分享成功映射、带/不带 pass_code、三种 share_status
+      分流、无分享 id 不发请求、网络失败码、子目录请求参数、根目录回退、失败返回空列表。
+五、约束遵守
+    · 未动夸克 / UC / 百度的解析与登录代码（仅 `UserAgentProvider` 增加两个常量 +
+      `HomeUiState` 增加映射分支，均为纯增量）；未改 UI 视觉；未新增依赖；
+      本批无新增 strings.xml 文案；日志走 Timber（C8）；取消异常原样抛出（C3）。
+
+================================================================================
+【待决 · 迅雷阶段 1 被阻塞的两点（需 Owner 定，铁律 R3「不编造」）】
+① **WebView 登录 → access_token 的链路，事实文档里没有依据。**
+   文档只有 **App SDK 登录链路**（§11.4 #1-#6）：`captcha/init` → `login`(账号密码) 或
+   `sendsms`+`smslogin`(短信) → `POST /v1/auth/signin/token`(signin_token=sessionID)
+   → `access_token`/`refresh_token`；以及 Web 端 CLIENT_ID/SECRET（§4 凭据表）。
+   **缺**：Web 授权端点（authorize URL）、授权码换 token 端点，或「WebView 会话里的令牌落在哪」
+   的任何记载。→ 需 Owner 三选一：
+   (a) 继续用 WebView 登录，请补该链路的抓包（授权端点 / code 换 token / 或 Web 会话取 token 的位置）；
+   (b) 改为 **App SDK 登录**（原生 UI 收账号密码或短信验证码）——与《要求.md》4.1「内嵌网页登录」
+       口径不同，需 Owner 裁决并允许新增登录 UI；
+   (c) 阶段 1 先只交付「游客分享解析」（本批已可验收），登录与后续阶段等抓包。
+② **`captcha_sign` 的折叠算法缺失**（10 个盐有了，算法没有）。→ 需 Owner 补：
+   初始输入是什么、10 层如何串联、是否混入 deviceId / timestamp。
+   （该签名只影响 `captcha/init`，即登录链路；不影响本批的游客分享解析。）
+
+待办：① 装机复验（见下）；② CI 结果回填；③ Owner 对上述 ①② 裁定后进入阶段 1B/2。
+================================================================================
