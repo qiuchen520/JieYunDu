@@ -85,9 +85,10 @@ class BaiduLinkTest {
             "\u63D0\u53D6\u7801\uFF1A" + "ab12"
         val link = LinkExtractor.extract(text)
         assertEquals("aBcD_ef", link?.shareId)
+        // JUnit 的断言签名是 (message, condition)，注意顺序。
         assertFalse(
-            link?.rawUrl?.endsWith("\u3002") ?: true,
-            "trailing Chinese full stop must not be part of rawUrl"
+            "trailing Chinese full stop must not be part of rawUrl",
+            link?.rawUrl.orEmpty().endsWith("\u3002")
         )
         assertEquals("ab12", link?.password)
     }

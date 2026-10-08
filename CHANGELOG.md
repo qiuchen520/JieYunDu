@@ -2149,3 +2149,6 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
       符合对外文档口径（§6.1）。
 待办：装机无需复验（纯文档）；若 Owner 认为 README 需加「截图 / 更新日志」入口，可下一批补。
 ================================================================================
+修复（D12 首推）：CI run 37766736200 在 `compileDebugUnitTestKotlin` 失败——
+    `assertFalse` 按 JUnit 签名应为 `(message, condition)`，首推写成了 `(condition, message)`，
+    类型不匹配。已修正并加注释注明参数顺序；其余 3 个新用例未报错（ChunkManagerTest 2 例已通过编译）。
