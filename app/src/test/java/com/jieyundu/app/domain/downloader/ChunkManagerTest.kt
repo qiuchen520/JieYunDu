@@ -138,4 +138,59 @@ class ChunkManagerTest {
 
         directory.deleteRecursively()
     }
+
+    /**
+     * 分片扫描只认「目标名 + .part + 纯数字」（【JYD-DEBT5-2026-10-07】去重后的行为锁定）。
+     *
+     * 说明：`hasPartFiles` 与 `deleteAllPartFiles` 现共用私有谓词 `partFilesOf`；
+     * 该判定的三种「像但不是」形态必须继续被排除——否则「重启续传」会误判可续传。
+     */
+    @Test
+    fun hasPartFiles_matchesOnlyNumericPartsOfTarget() {
+        val directory = Files.createTempDirectory("chunkmanager-scan").toFile()
+        val target = File(directory, "movie.mp4")
+
+        assertFalse(manager.hasPartFiles(target), "no parts yet")
+
+        // 命中：正牌分片
+        File(directory, "movie.mp4.part0").writeText("A")
+        assertTrue(manager.hasPartFiles(target))
+
+        // 不命中：后缀非纯数字
+        File(directory, "movie.mp4.partX").writeText("A")
+        // 不命中：目标名不同（前缀不符）
+        File(directory, "movie.mp4.bak.part1").writeText("A")
+        File(directory, "other.bin.part1").writeText("A")
+        // 不命中：目标是目录而非文件
+        File(directory, "movie.mp4.part2").mkdirs()
+
+        // 把唯一命中的正牌分片删掉后，剩下的都是「像但不是」——必须判为无分片。
+        File(directory, "movie.mp4.part0").delete()
+        assertFalse(manager.hasPartFiles(target), "only look-alikes remain")
+
+        directory.deleteRecursively()
+    }
+
+    /** 「重新下载」清分片：删除全部分片、保留目标成品本身。 */
+    @Test
+    fun deleteAllPartFiles_removesPartsKeepsTarget() {
+        val directory = Files.createTempDirectory("chunkmanager-delete").toFile()
+        val target = File(directory, "video.bin")
+        target.writeText("TARGET")
+
+        manager.partFile(target, 0).writeText("AA")
+        manager.partFile(target, 1).writeText("BB")
+        File(directory, "video.bin.partX").writeText("keep")
+        File(directory, "other.bin.part0").writeText("keep")
+
+        val removed = manager.deleteAllPartFiles(target)
+
+        assertEquals(2, removed)
+        assertTrue(target.isFile, "target file must survive")
+        assertTrue(File(directory, "video.bin.partX").isFile, "non-numeric suffix must survive")
+        assertTrue(File(directory, "other.bin.part0").isFile, "other target must survive")
+        assertFalse(manager.hasPartFiles(target))
+
+        directory.deleteRecursively()
+    }
 }
