@@ -60,7 +60,7 @@ internal fun DirectoryCard(
     )
     GlassButton(
         text = stringResource(R.string.settings_download_dir_change),
-        onClick = requestCustomDirectory,
+        onClick = onRequestDirectory,
         height = Dimens.ButtonHeightCompact,
         cornerRadius = Dimens.ButtonCornerCompact,
         fillColor = JieYunDuColors.ButtonFill,

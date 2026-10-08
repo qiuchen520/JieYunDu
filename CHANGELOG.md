@@ -1991,3 +1991,28 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 待办：① 装机复验设置页（10 张卡与拆分前应完全一致：档位可点、目录可改、日志可导出、
       白名单状态从系统页返回后刷新）；② 下载项三个行尾图标（删除/分享/安装）外观与点击区域不变。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT8-2026-10-07 · 债批次 7：个人网盘查询参数四处重复收敛为一处】
+来源：Domain 层审计「个人网盘列表参数构造重复三处」（逐条 grep 核实；实施时又发现第 4 处）。
+问题：`QuarkParser.buildPersonalListParams`、`UcParser.buildPersonalListParams`、
+      `TempFolderManager.buildListParams` 三处产出的查询参数**字段完全相同**（仅 pr/fr 取值
+      不同：ucpro/pc 与 UCBrowser/pc）；`TaskPoller` 还各自重写了一份 pr/fr 常量。
+      协议参数一旦调整就要改四处，且极易只改一处造成漂移。
+本批改动：
+    · 新增 `domain/parser/PersonalListQuery.kt`：唯一构造器 `build(pr, fr, pdirFid)` +
+      四个平台常量（QUARK_PR/QUARK_FR/UC_PR/UC_FR），字段集依《抓包事实.md》§10.2。
+    · `QuarkParser` / `UcParser`：`buildPersonalListParams` 改为调用共享构造器；
+      各自 companion 里的 pr/fr 常量删除，三处/两处引用改指共享常量。
+    · `TempFolderManager`：`buildListParams` 改为调用共享构造器，并删除本地重复的
+      pr/fr/分页/排序/键名共 17 个常量（原先只为该方法存在）。
+    · `TaskPoller`：pr/fr 改指共享常量，删除本地两份重复常量。
+    · 行为零变化：产出的 map 键值逐字段一致；协议、UI、数据库均未触动。
+修复（D7 遗留）：CI run 37762739944 报 `StorageCards.kt:63 Unresolved reference:
+    requestCustomDirectory`——拆分设置页时把页面局部 lambda 名带进了组件；已改为组件形参
+    `onRequestDirectory`，并扫查其余四个组件文件确认无同类跨层引用。
+校验：推送前自检 119 个 .kt / 0 问题；全库反查确认无「字符串里出现类名」的替换误伤
+    （本轮曾把 `"QUARK_PROTOCOL_ERROR"` 误替换，已修复并列为检查项）。
+待办：装机复验个人网盘浏览（夸克 / UC 列目录）与「临时文件清理」；
+      确认协议错误码文案未变（QUARK_PROTOCOL_ERROR / UC_PROTOCOL_ERROR 原值不变）。
+================================================================================

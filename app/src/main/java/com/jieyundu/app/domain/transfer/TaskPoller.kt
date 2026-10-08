@@ -6,6 +6,7 @@
 package com.jieyundu.app.domain.transfer
 
 import com.jieyundu.app.domain.parser.quark.QuarkApi
+import com.jieyundu.app.domain.parser.PersonalListQuery
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.delay
@@ -59,8 +60,8 @@ class TaskPoller @Inject constructor(
      * @return 查询参数键值对。
      */
     private fun buildTaskParams(taskId: String): Map<String, String> = mapOf(
-        KEY_PR to QUARK_PR,
-        KEY_FR to QUARK_FR,
+        KEY_PR to PersonalListQuery.QUARK_PR,
+        KEY_FR to PersonalListQuery.QUARK_FR,
         KEY_TASK_ID to taskId
     )
 
@@ -76,10 +77,6 @@ class TaskPoller @Inject constructor(
 
         /** 轮询间隔（毫秒）。 */
         const val POLL_INTERVAL_MILLIS = 1000L
-
-        /** 夸克 PC 平台固定查询参数。 */
-        const val QUARK_PR = "ucpro"
-        const val QUARK_FR = "pc"
 
         /** 查询参数名。 */
         const val KEY_PR = "pr"

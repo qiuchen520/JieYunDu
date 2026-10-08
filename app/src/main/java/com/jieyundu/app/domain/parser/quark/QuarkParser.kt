@@ -291,16 +291,12 @@ class QuarkParser @Inject constructor(
      * @param pdirFid 目标目录 fid。
      * @return 查询参数键值对。
      */
-    private fun buildPersonalListParams(pdirFid: String): Map<String, String> = mapOf(
-        KEY_PR to QUARK_PR,
-        KEY_FR to QUARK_FR,
-        KEY_PDIR_FID to pdirFid,
-        KEY_PAGE to FIRST_PAGE,
-        KEY_SIZE to PERSONAL_PAGE_SIZE,
-        KEY_FETCH_TOTAL to ONE_VALUE,
-        KEY_FETCH_SUB_DIRS to ZERO_VALUE,
-        KEY_SORT to PERSONAL_SORT
-    )
+    private fun buildPersonalListParams(pdirFid: String): Map<String, String> =
+        PersonalListQuery.build(
+            pr = PersonalListQuery.QUARK_PR,
+            fr = PersonalListQuery.QUARK_FR,
+            pdirFid = pdirFid
+        )
 
     /**
      * 构造容量查询参数（《抓包事实.md》§10.1）。
@@ -308,8 +304,8 @@ class QuarkParser @Inject constructor(
      * @return 查询参数键值对。
      */
     private fun buildMemberParams(): Map<String, String> = mapOf(
-        KEY_PR to QUARK_PR,
-        KEY_FR to QUARK_FR,
+        KEY_PR to PersonalListQuery.QUARK_PR,
+        KEY_FR to PersonalListQuery.QUARK_FR,
         KEY_FETCH_SUBSCRIBE to TRUE_VALUE,
         KEY_CH to HOME_CHANNEL
     )
@@ -388,8 +384,8 @@ class QuarkParser @Inject constructor(
         stoken: String,
         pdirFid: String
     ): Map<String, String> = mapOf(
-        KEY_PR to QUARK_PR,
-        KEY_FR to QUARK_FR,
+        KEY_PR to PersonalListQuery.QUARK_PR,
+        KEY_FR to PersonalListQuery.QUARK_FR,
         KEY_PWD_ID to pwdId,
         KEY_STOKEN to stoken,
         KEY_PDIR_FID to pdirFid,
@@ -430,10 +426,6 @@ class QuarkParser @Inject constructor(
 
         /** 根目录的 pdir_fid 取值（实测根目录为 "0"）。 */
         const val ROOT_PDIR_FID = "0"
-
-        /** 夸克 PC 平台固定查询参数。 */
-        const val QUARK_PR = "ucpro"
-        const val QUARK_FR = "pc"
 
         /** detail 接口固定查询参数。 */
         const val FORCE_VALUE = "0"

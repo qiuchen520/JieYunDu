@@ -282,16 +282,12 @@ class UcParser @Inject constructor(
      * @param pdirFid 目标目录 fid。
      * @return 查询参数键值对。
      */
-    private fun buildPersonalListParams(pdirFid: String): Map<String, String> = mapOf(
-        KEY_PR to UC_PR,
-        KEY_FR to UC_FR,
-        KEY_PDIR_FID to pdirFid,
-        KEY_PAGE to FIRST_PAGE,
-        KEY_SIZE to PERSONAL_PAGE_SIZE,
-        KEY_FETCH_TOTAL to ONE_VALUE,
-        KEY_FETCH_SUB_DIRS to ZERO_VALUE,
-        KEY_SORT to PERSONAL_SORT
-    )
+    private fun buildPersonalListParams(pdirFid: String): Map<String, String> =
+        PersonalListQuery.build(
+            pr = PersonalListQuery.UC_PR,
+            fr = PersonalListQuery.UC_FR,
+            pdirFid = pdirFid
+        )
 
     /**
      * 构造容量查询参数（《抓包事实.md》§10.1）。
@@ -299,8 +295,8 @@ class UcParser @Inject constructor(
      * @return 查询参数键值对。
      */
     private fun buildMemberParams(): Map<String, String> = mapOf(
-        KEY_PR to UC_PR,
-        KEY_FR to UC_FR,
+        KEY_PR to PersonalListQuery.UC_PR,
+        KEY_FR to PersonalListQuery.UC_FR,
         KEY_FETCH_SUBSCRIBE to TRUE_VALUE,
         KEY_CH to HOME_CHANNEL
     )
@@ -400,10 +396,6 @@ class UcParser @Inject constructor(
 
         /** 无提取码时传给 detail 的空串（《抓包事实.md》§6.1②）。 */
         const val EMPTY_PASSCODE = ""
-
-        /** UC PC 平台固定查询参数。 */
-        const val UC_PR = "UCBrowser"
-        const val UC_FR = "pc"
 
         /** 分页参数。 */
         const val FIRST_PAGE = "1"

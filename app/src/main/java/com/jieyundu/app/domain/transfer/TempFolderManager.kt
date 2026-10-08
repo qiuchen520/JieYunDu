@@ -11,6 +11,7 @@ import com.jieyundu.app.domain.parser.quark.QuarkDeleteRequest
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import com.jieyundu.app.domain.model.NetdiskType
+import com.jieyundu.app.domain.parser.PersonalListQuery
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -296,16 +297,12 @@ class TempFolderManager @Inject constructor(
      * @param pdirFid 目标目录 fid。
      * @return 查询参数键值对。
      */
-    private fun buildListParams(pdirFid: String): Map<String, String> = mapOf(
-        KEY_PR to QUARK_PR,
-        KEY_FR to QUARK_FR,
-        KEY_PDIR_FID to pdirFid,
-        KEY_PAGE to FIRST_PAGE,
-        KEY_SIZE to PAGE_SIZE,
-        KEY_FETCH_TOTAL to ONE,
-        KEY_FETCH_SUB_DIRS to ZERO,
-        KEY_SORT to LIST_SORT
-    )
+    private fun buildListParams(pdirFid: String): Map<String, String> =
+        PersonalListQuery.build(
+            pr = PersonalListQuery.QUARK_PR,
+            fr = PersonalListQuery.QUARK_FR,
+            pdirFid = pdirFid
+        )
 
     private companion object {
         /** 临时目录名（项目自定义，避免与用户目录撞名）。 */
@@ -317,25 +314,5 @@ class TempFolderManager @Inject constructor(
         /** 成功状态码。 */
         const val SUCCESS_CODE = 0
 
-        /** 夸克 PC 平台固定查询参数（须与其他 `file/sort` 调用方保持一致）。 */
-        const val QUARK_PR = "ucpro"
-        const val QUARK_FR = "pc"
-
-        /** 列表分页与排序固定参数（《抓包事实.md》§10.2）。 */
-        const val FIRST_PAGE = "1"
-        const val PAGE_SIZE = "100"
-        const val ONE = "1"
-        const val ZERO = "0"
-        const val LIST_SORT = "file_type:asc,updated_at:desc"
-
-        /** 查询参数名。 */
-        const val KEY_PR = "pr"
-        const val KEY_FR = "fr"
-        const val KEY_PDIR_FID = "pdir_fid"
-        const val KEY_PAGE = "_page"
-        const val KEY_SIZE = "_size"
-        const val KEY_FETCH_TOTAL = "_fetch_total"
-        const val KEY_FETCH_SUB_DIRS = "_fetch_sub_dirs"
-        const val KEY_SORT = "_sort"
     }
 }
