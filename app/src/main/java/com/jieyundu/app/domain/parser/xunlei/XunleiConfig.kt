@@ -68,6 +68,12 @@ object XunleiConfig {
     /** OAuth2 重定向地址（§6.3 captcha/init 的 redirect_uri）。 */
     const val REDIRECT_URI = "xlaccsdk01://xunlei.com/callback?state=harbor"
 
+    /** 验证码盾注入用的 App 名（§4 ⑤ `XlCaptcha.init` 配置）。 */
+    const val APP_NAME_FOR_CAPTCHA = "ANDROID-com.xunlei.downloadprovider"
+
+    /** 验证码盾注入用的 platformVersion（§4 ⑤ 配置为 `"10"`）。 */
+    const val CAPTCHA_PLATFORM_VERSION = "10"
+
     /** 业务与认证请求的 Origin / Referer（§11.4）。 */
     const val ORIGIN = "https://pan.xunlei.com"
     const val REFERER = "https://pan.xunlei.com/"

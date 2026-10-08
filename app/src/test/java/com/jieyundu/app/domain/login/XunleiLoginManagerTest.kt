@@ -12,12 +12,10 @@ import com.jieyundu.app.domain.parser.xunlei.XunleiCaptchaInitRequest
 import com.jieyundu.app.domain.parser.xunlei.XunleiCaptchaInitResponse
 import com.jieyundu.app.domain.parser.xunlei.XunleiConfig
 import com.jieyundu.app.domain.parser.xunlei.XunleiExchangeTokenRequest
-import com.jieyundu.app.domain.parser.xunlei.XunleiLoginRequest
+import com.jieyundu.app.domain.parser.xunlei.XunleiLoginBody
 import com.jieyundu.app.domain.parser.xunlei.XunleiLoginResponse
-import com.jieyundu.app.domain.parser.xunlei.XunleiSendSmsRequest
 import com.jieyundu.app.domain.parser.xunlei.XunleiSendSmsResponse
 import com.jieyundu.app.domain.parser.xunlei.XunleiSigning
-import com.jieyundu.app.domain.parser.xunlei.XunleiSmsLoginRequest
 import com.jieyundu.app.domain.parser.xunlei.XunleiTokenResponse
 import java.io.IOException
 import kotlin.test.Test
@@ -59,10 +57,17 @@ class XunleiLoginManagerTest {
         assertTrue(result is XunleiLoginResult.Success, "expected success, got $result")
         assertEquals(listOf("login", "captcha", "exchange"), api.calls)
         // 登录请求体照 §6.3。
-        assertEquals("user-a", api.lastLoginBody?.userName)
-        assertEquals("pwd-b", api.lastLoginBody?.passWord)
-        assertEquals("0", api.lastLoginBody?.isMd5Pwd)
-        assertEquals("", api.lastLoginBody?.verifyKey)
+        val loginBody = assertNotNull(api.lastLoginBody)
+        assertEquals("user-a", loginBody["userName"])
+        assertEquals("pwd-b", loginBody["passWord"])
+        assertEquals("0", loginBody["isMd5Pwd"])
+        assertEquals("", loginBody["verifyKey"])
+        // 公共体必须一起发出（§6.3：漏掉它真机会报缺字段 / 1007）。
+        assertEquals("40", loginBody["appid"])
+        assertEquals(XunleiLoginBody.CLIENT_VERSION_LOGIN, loginBody["clientVersion"])
+        assertEquals(XunleiLoginBody.SDK_VERSION_LOGIN, loginBody["sdkVersion"])
+        assertEquals(8, loginBody["sequenceNo"]?.length)
+        assertEquals(XunleiSigning.deviceSign(api.fingerprintDeviceId), loginBody["devicesign"])
         // captcha/init 的 meta。
         val captcha = assertNotNull(api.lastCaptchaBody)
         assertEquals("777", captcha.meta.user_id, "meta.user_id must be the real user id")
@@ -139,14 +144,18 @@ class XunleiLoginManagerTest {
         val sent = manager.sendSms("13800000000")
         assertTrue(sent is XunleiLoginResult.SmsSent)
         assertEquals("sms-token", (sent as XunleiLoginResult.SmsSent).token)
-        assertEquals("13800000000", api.lastSmsBody?.mobile)
-        assertEquals("0", api.lastSmsBody?.register)
+        assertEquals("ck", sent.creditkey)
+        assertEquals("13800000000", api.lastSmsBody?.get("mobile"))
+        assertEquals("0", api.lastSmsBody?.get("register"))
+        assertEquals(XunleiLoginBody.SDK_VERSION_SMS, api.lastSmsBody?.get("sdkVersion"))
 
-        val login = manager.loginWithSms("13800000000", "123456", "sms-token")
+        val login = manager.loginWithSms("13800000000", "123456", "sms-token", "ck")
         assertTrue(login is XunleiLoginResult.Success)
         assertEquals(listOf("sms", "smslogin", "captcha", "exchange"), api.calls)
-        assertEquals("sms-token", api.lastSmsLoginBody?.token)
-        assertEquals("123456", api.lastSmsLoginBody?.smsCode)
+        assertEquals("sms-token", api.lastSmsLoginBody?.get("token"))
+        assertEquals("123456", api.lastSmsLoginBody?.get("smsCode"))
+        // 短信登录的公共体必须带上 sendsms 返回的 creditkey（§6.3 按接口差异表）。
+        assertEquals("ck", api.lastSmsLoginBody?.get("creditkey"))
         assertTrue(store.isLoggedIn)
     }
 
@@ -269,7 +278,7 @@ class XunleiLoginManagerTest {
      */
     private class FakeAuthApi(
         private val loginResponse: XunleiLoginResponse = XunleiLoginResponse(sessionID = "sid-default"),
-        private val smsResponse: XunleiSendSmsResponse = XunleiSendSmsResponse(token = "sms-token"),
+        private val smsResponse: XunleiSendSmsResponse = XunleiSendSmsResponse(token = "sms-token", creditkey = "ck"),
         private val tokenResponse: XunleiTokenResponse =
             XunleiTokenResponse(access_token = "access-1", refresh_token = "refresh-1"),
         private val captchaToken: String? = "captcha-1",
@@ -277,9 +286,9 @@ class XunleiLoginManagerTest {
     ) : XunleiAuthApi {
 
         val calls = mutableListOf<String>()
-        var lastLoginBody: XunleiLoginRequest? = null
-        var lastSmsLoginBody: XunleiSmsLoginRequest? = null
-        var lastSmsBody: XunleiSendSmsRequest? = null
+        var lastLoginBody: Map<String, String>? = null
+        var lastSmsLoginBody: Map<String, String>? = null
+        var lastSmsBody: Map<String, String>? = null
         var lastCaptchaBody: XunleiCaptchaInitRequest? = null
         var fingerprintDeviceId: String = ""
 
@@ -289,19 +298,19 @@ class XunleiLoginManagerTest {
             return XunleiCaptchaInitResponse(captcha_token = captchaToken)
         }
 
-        override suspend fun loginWithPassword(body: XunleiLoginRequest): XunleiLoginResponse {
+        override suspend fun loginWithPassword(body: Map<String, String>): XunleiLoginResponse {
             calls += "login"
             lastLoginBody = body
             return loginResponse
         }
 
-        override suspend fun sendSms(body: XunleiSendSmsRequest): XunleiSendSmsResponse {
+        override suspend fun sendSms(body: Map<String, String>): XunleiSendSmsResponse {
             calls += "sms"
             lastSmsBody = body
             return smsResponse
         }
 
-        override suspend fun smsLogin(body: XunleiSmsLoginRequest): XunleiLoginResponse {
+        override suspend fun smsLogin(body: Map<String, String>): XunleiLoginResponse {
             calls += "smslogin"
             lastSmsLoginBody = body
             return loginResponse

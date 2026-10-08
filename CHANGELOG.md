@@ -2323,3 +2323,78 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 修复（1B-1 二推）：CI run 37775844032 有 1 个**本批新增用例**失败——
     `XunleiSigningTest.captchaSign_foldsTenSaltsInOrder` 把签名长度写成 `1 + 32`，
     而前缀 `"1."` 是 2 个字符（正确为 34）。属测试自身断言算错，产品代码无误；已改正。
+
+================================================================================
+【实现记录 JYD-XUNLEI-P1B2-2026-10-08 · 迅雷阶段 1B-2：baseLoginBody 全量接入 + 风控 WebView】
+来源：Owner 补齐 `baseLoginBody`（《抓包事实.md》§6.3「baseLoginBody 公共体」17 字段，
+      2026-10-08 从源码补全）并要求：按文档取字段、不编造、风控 WebView 落地、出包。
+一、`baseLoginBody` 接入（**这是 1B-1 登录真机最可能挂掉的根因**）
+    · 新增 `domain/parser/xunlei/XunleiLoginBody.kt`：公共体 17 字段构造器 + 三个业务体
+      （账密 / 发短信 / 短信登录）。文档明示三个接口的 body = 公共体 + 业务字段**合成同一个扁平
+      JSON**（不是两层嵌套），故用 `Map<String, String>` 构造（顺序即发送顺序）。
+    · 按接口差异表实现：`v3/login` → `clientVersion=25.0.5.25` / `sdkVersion=513006`；
+      `v3/sendsms`、`v3/smslogin` → `clientVersion=8.31.0.9726`（App 版本）/ `sdkVersion=231500`；
+      `creditkey` 仅短信登录填 `sendsms` 的返回值，其余空串。
+    · `sequenceNo`：每次请求随机 8 位数字字符串（§6.3 尾注），`padStart(8,'0')` 保长。
+    · `peerID` / `devicesign`：取**同一套设备指纹**（deviceId 派生，`devicesign` 现算，§6.3 尾注），
+      由登录管理器从 `XunleiFingerprint` 取，保证与同次 `captcha/init` 一致。
+    · 公共体**不含 `device_id` 字段**（§6.3 尾注：设备绑定靠 `peerID` + `devicesign`）——
+      单测显式断言不含该键。
+    · `XunleiAuthApi` 三个登录类接口改为 `@Body body: Map<String, String>`；
+      被取代的三个请求体 data class（`XunleiLoginRequest` / `XunleiSendSmsRequest` /
+      `XunleiSmsLoginRequest`）删除，避免留下「只发业务字段」的错误路径。
+    · `XunleiLoginManager` 全面接入：账密 / 发短信 / 短信登录都带公共体；
+      `SmsSent` 增 `creditkey` 并在短信登录时回填（§6.3 按接口差异表）；
+      ViewModel 透传 `creditkey`。
+二、风控 WebView（1B-2，依据 §4 ⑤）
+    · 新增 `ui/screens/login/XunleiReviewWebView.kt`：加载 `reviewurl`，并落实文档三要点：
+      ① 注入 `XlCaptcha.init({appid, appName, clientVersion, deviceid, event:"login3",
+      platformVersion:"10", IFRAME_BOX_ID:"captch-wrap", VERTIFYSUCCFUNC})`；
+      ② JS 回调桥 `window.XLJSWebViewBridge.onVerifyResult(json)`（`addJavascriptInterface`）；
+      ③ 自定义 scheme 回调 `xlaccsdk01://xunlei.com/callback`（`shouldOverrideUrlLoading` 识别）。
+      两处「已实测的坑」均规避：`IFRAME_BOX_ID` 非空；`deviceid` **拼进 URL query**
+      （§4 ⑤：页面从 URL 读，不读注入配置）。
+    · 登录页接线：`needsReview` → 切到验证页；**验证完成后自动重试上次登录**（凭据仍在状态里）；
+      用户关闭只收起页面、不清凭据。
+    · 新增 2 条文案（安全验证标题 / 说明）入 `strings.xml`（C5）。
+三、测试
+    · 新增 `XunleiLoginBodyTest`（5 例）：公共体**恰好 17 字段且顺序与文档一致**、逐字段取值、
+      按接口差异（clientVersion / sdkVersion / creditkey）、三个 body 的**扁平合并**
+      （17+5 / 17+2 / 17+4，且不得出现嵌套 `baseLoginBody` 键）、
+      `devicesign` 与同次 deviceId 一致、**不含 `device_id`**、`sequenceNo` 恒 8 位数字。
+    · `XunleiLoginManagerTest` 断言升级为扁平口径：除业务字段外还校验 **公共体已随请求发出**
+      （appid / clientVersion / sdkVersion / sequenceNo 长度 / devicesign 与指纹一致）、
+      短信登录带回 `creditkey`。
+
+================================================================================
+【本批逐字段交付表（供 Owner 核对）】
+```
+字段名            | 取值 / 生成方式                          | 文档出处
+protocolVersion   | "301"                                   | §6.3 公共体
+sequenceNo        | 随机 8 位数字（每次请求重新随机）          | §6.3 公共体 + 尾注
+platformVersion   | "10"                                    | §6.3 公共体
+isCompressed      | "0"                                     | §6.3 公共体
+appid             | "40"                                    | §6.3 公共体（与 §4 凭据表 APPID 一致）
+clientVersion     | login:"25.0.5.25" / sms、smslogin:App 版本 | §6.3「按接口取值差异」表
+peerID            | 32 位 hex 设备指纹（一机一指纹，持久化复用） | §6.3 公共体 + §4 签名②
+appName           | "ANDROID-com.xunlei.downloadprovider"   | §6.3 公共体（与 §4 凭据表包名一致）
+sdkVersion        | login:"513006" / sms、smslogin:"231500" | §6.3「按接口取值差异」表
+devicesign        | div101.{deviceId}{md5(sha1(...))} 现算  | §6.3 公共体 + §4 签名②
+netWorkType       | "WIFI"                                  | §6.3 公共体
+providerName      | "NONE"                                  | §6.3 公共体
+deviceModel       | "M2004J7AC"（文档示例值）                | §6.3 公共体
+deviceName        | "Xiaomi_M2004j7ac"（文档示例值）          | §6.3 公共体
+OSVersion         | "12"（文档示例值）                        | §6.3 公共体
+creditkey         | ""；短信登录填 sendsms 的 creditkey        | §6.3 公共体 + 按接口差异表
+hl                | "zh-CN"                                 | §6.3 公共体
+—— 业务字段（§6.3 各接口追加）——
+userName/passWord/verifyKey/verifyCode/isMd5Pwd | 账密登录 | §6.3 + §11.4 #2
+mobile/register   | 发短信（register "0"）                     | §6.3 + §11.4 #3
+mobile/smsCode/token/register | 短信登录（register "0"）        | §6.3 + §11.4 #4
+```
+> 说明：`deviceModel` / `deviceName` / `OSVersion` 文档标明是**示例值**（可换）；本实现照抄示例值，
+> 未自造设备信息。其余「动态值」按文档算法生成。
+> 未决（不编造）：注入配置里的 `clientVersion` 文档未指明取 App 版本还是登录体版本，
+> 本实现取 **App 版本 8.31.0.9726**，待真机验证（见下）。
+待办：① 装机复验（见下）；② CI 结果回填；③ 阶段 2（转存 / 取链 / 下载）。
+================================================================================

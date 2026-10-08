@@ -40,36 +40,38 @@ interface XunleiAuthApi {
      *
      * `POST /xluser.core.login/v3/login`
      *
-     * @param body 请求体。
+     * @param body **扁平**请求体：`baseLoginBody`（17 字段，§6.3）+ 账号密码业务字段，
+     *   由 [XunleiLoginBody.passwordLogin] 构造。
      * @return 登录响应（成功给 `sessionID`；风控给 `1007` + `reviewurl`）。
      */
     @Headers("User-Agent: android-ok-http-client/xl-acc-sdk/version-5.1.3.513006")
     @POST("xluser.core.login/v3/login")
-    suspend fun loginWithPassword(@Body body: XunleiLoginRequest): XunleiLoginResponse
+    suspend fun loginWithPassword(@Body body: Map<String, String>): XunleiLoginResponse
 
     /**
      * 发送短信验证码（§11.4 #3；UA 依 §6.3）。
      *
      * `POST /xluser.core.login/v3/sendsms`
      *
-     * @param body 请求体。
+     * @param body **扁平**请求体：公共体 + `mobile` / `register`，由 [XunleiLoginBody.sendSms] 构造。
      * @return 含 `token` 的响应。
      */
     @Headers("User-Agent: android-ok-http-client/xl-acc-sdk/version-5.0.12.512000")
     @POST("xluser.core.login/v3/sendsms")
-    suspend fun sendSms(@Body body: XunleiSendSmsRequest): XunleiSendSmsResponse
+    suspend fun sendSms(@Body body: Map<String, String>): XunleiSendSmsResponse
 
     /**
      * 短信登录（§11.4 #4）。
      *
      * `POST /xluser.core.login/v3/smslogin`
      *
-     * @param body 请求体。
+     * @param body **扁平**请求体：公共体（`creditkey` 填 sendsms 返回值）+ 短信业务字段，
+     *   由 [XunleiLoginBody.smsLogin] 构造。
      * @return 登录响应。
      */
     @Headers("User-Agent: android-ok-http-client/xl-acc-sdk/version-5.0.12.512000")
     @POST("xluser.core.login/v3/smslogin")
-    suspend fun smsLogin(@Body body: XunleiSmsLoginRequest): XunleiLoginResponse
+    suspend fun smsLogin(@Body body: Map<String, String>): XunleiLoginResponse
 
     /**
      * 用 `signin_token`（即 `sessionID`）换 OAuth2 令牌（§11.4 #5）。

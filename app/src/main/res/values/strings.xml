@@ -162,6 +162,8 @@
     <string name="xunlei_login_needs_review">需要安全验证：请完成验证后重试</string>
     <string name="xunlei_login_expired">登录已过期，请重新登录</string>
     <string name="xunlei_login_done">登录成功</string>
+    <string name="xunlei_login_review_title">安全验证</string>
+    <string name="xunlei_login_review_hint">账号需要安全验证，请在下方页面完成验证；验证完成后会自动继续登录。</string>
     <string name="webview_login_title">登录 %1$s</string>
     <string name="webview_login_hint">请在网页中完成登录，成功后会自动保存登录态</string>
     <string name="webview_login_close">关闭</string>

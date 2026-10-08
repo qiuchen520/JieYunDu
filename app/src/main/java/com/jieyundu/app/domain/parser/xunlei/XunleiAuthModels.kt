@@ -72,43 +72,6 @@ data class XunleiCaptchaInitResponse(
 )
 
 /**
- * 账号密码登录请求体（§6.3 逐字段）。
- *
- * ⚠️ 文档内部存在一处不一致：《抓包事实.md》§11.4 #2 写作 `baseLoginBody + {…}`，
- * 而 §6.3（字段级实录）给出的正是下列 5 个字段、**未含** `baseLoginBody` 的任何具体字段；
- * 且设备身份已由固定 Header（`X-Client-Id` / `X-Device-Id` / `X-Client-Version`）承载。
- * 按「不编造字段」原则，这里**严格照 §6.3** 发送 5 个字段，并把该不一致登记待确认。
- *
- * @property userName 账号（手机号 / 邮箱 / 用户名）。
- * @property passWord 密码明文（`isMd5Pwd = "0"`）。
- * @property verifyKey 验证码 key；无则空串。
- * @property verifyCode 验证码；无则空串。
- * @property isMd5Pwd 密码是否 MD5 形态；文档为 `"0"`。
- */
-@Serializable
-data class XunleiLoginRequest(
-    val userName: String,
-    val passWord: String,
-    val verifyKey: String = "",
-    val verifyCode: String = "",
-    val isMd5Pwd: String = "0"
-)
-
-/**
- * 发短信请求体（§6.3 / §11.4 #3）。
- *
- * 说明：同 [XunleiLoginRequest] 的口径——§6.3 给的字段即下列 2 个。
- *
- * @property mobile 手机号。
- * @property register 是否注册；文档为 `"0"`。
- */
-@Serializable
-data class XunleiSendSmsRequest(
-    val mobile: String,
-    val register: String = "0"
-)
-
-/**
  * 发短信响应（§11.4 #3：`creditkey / token / errorDesc`）。
  *
  * @property creditkey 短信凭据 key。
@@ -123,22 +86,6 @@ data class XunleiSendSmsResponse(
     val errorDesc: String? = null,
     // TODO(用户抓包): 短信接口失败时的错误码字段名（当前按通用约定读取，缺失即视为成功路径）
     val errorCode: Int? = null
-)
-
-/**
- * 短信登录请求体（§6.3 / §11.4 #4）。
- *
- * @property mobile 手机号。
- * @property smsCode 短信验证码。
- * @property token 发短信返回的 `token`。
- * @property register 是否注册；文档为 `"0"`。
- */
-@Serializable
-data class XunleiSmsLoginRequest(
-    val mobile: String,
-    val smsCode: String,
-    val token: String,
-    val register: String = "0"
 )
 
 /**

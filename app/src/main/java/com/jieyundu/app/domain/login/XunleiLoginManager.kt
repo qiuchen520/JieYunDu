@@ -12,10 +12,8 @@ import com.jieyundu.app.domain.parser.xunlei.XunleiCaptchaInitRequest
 import com.jieyundu.app.domain.parser.xunlei.XunleiCaptchaMeta
 import com.jieyundu.app.domain.parser.xunlei.XunleiConfig
 import com.jieyundu.app.domain.parser.xunlei.XunleiExchangeTokenRequest
-import com.jieyundu.app.domain.parser.xunlei.XunleiLoginRequest
+import com.jieyundu.app.domain.parser.xunlei.XunleiLoginBody
 import com.jieyundu.app.domain.parser.xunlei.XunleiLoginResponse
-import com.jieyundu.app.domain.parser.xunlei.XunleiSendSmsRequest
-import com.jieyundu.app.domain.parser.xunlei.XunleiSmsLoginRequest
 import com.jieyundu.app.domain.parser.xunlei.XunleiSigning
 import com.jieyundu.app.domain.parser.xunlei.XunleiTokenResponse
 import java.io.IOException
@@ -52,8 +50,9 @@ sealed interface XunleiLoginResult {
      * 短信已发出（等待用户填验证码）。
      *
      * @property token 短信流程令牌，短信登录时原样回传。
+     * @property creditkey 发短信返回的 creditkey，短信登录的公共体字段（§6.3）。
      */
-    data class SmsSent(val token: String?) : XunleiLoginResult
+    data class SmsSent(val token: String?, val creditkey: String?) : XunleiLoginResult
 
     /**
      * 失败。
@@ -109,7 +108,12 @@ class XunleiLoginManager @Inject constructor(
     suspend fun loginWithPassword(userName: String, password: String): XunleiLoginResult =
         runLogin {
             authApi.loginWithPassword(
-                XunleiLoginRequest(userName = userName, passWord = password)
+                XunleiLoginBody.passwordLogin(
+                    userName = userName,
+                    password = password,
+                    deviceId = fingerprint.deviceId,
+                    peerId = fingerprint.peerId
+                )
             )
         }
 
@@ -120,11 +124,18 @@ class XunleiLoginManager @Inject constructor(
      * @return 短信结果（成功为 [XunleiLoginResult.SmsSent]）。
      */
     suspend fun sendSms(mobile: String): XunleiLoginResult = try {
-        val response = authApi.sendSms(XunleiSendSmsRequest(mobile = mobile))
+        val response = authApi.sendSms(
+            XunleiLoginBody.sendSms(
+                mobile = mobile,
+                deviceId = fingerprint.deviceId,
+                peerId = fingerprint.peerId
+            )
+        )
         if (response.errorCode != null && response.errorCode != SUCCESS_ERROR_CODE) {
             XunleiLoginResult.Failure(CODE_SMS_FAILED, response.errorDesc ?: response.errorCode.toString())
         } else {
-            XunleiLoginResult.SmsSent(response.token)
+            // creditkey 供 smslogin 的公共体使用（§6.3 按接口差异表）。
+            XunleiLoginResult.SmsSent(token = response.token, creditkey = response.creditkey)
         }
     } catch (io: IOException) {
         Timber.e(io, "XunleiLoginManager sendSms failed: network")
@@ -140,14 +151,26 @@ class XunleiLoginManager @Inject constructor(
      * @param mobile 手机号。
      * @param smsCode 短信验证码。
      * @param token 短信流程令牌。
+     * @param creditkey 发短信返回的 creditkey（公共体字段，§6.3 按接口差异表）。
      * @return 登录结果。
      */
-    suspend fun loginWithSms(mobile: String, smsCode: String, token: String): XunleiLoginResult =
-        runLogin {
-            authApi.smsLogin(
-                XunleiSmsLoginRequest(mobile = mobile, smsCode = smsCode, token = token)
+    suspend fun loginWithSms(
+        mobile: String,
+        smsCode: String,
+        token: String,
+        creditkey: String
+    ): XunleiLoginResult = runLogin {
+        authApi.smsLogin(
+            XunleiLoginBody.smsLogin(
+                mobile = mobile,
+                smsCode = smsCode,
+                token = token,
+                creditkey = creditkey,
+                deviceId = fingerprint.deviceId,
+                peerId = fingerprint.peerId
             )
-        }
+        )
+    }
 
     /**
      * 刷新会话（阻塞版，供 OkHttp `Authenticator` 在 IO 线程调用）。

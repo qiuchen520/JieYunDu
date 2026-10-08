@@ -63,6 +63,22 @@ fun XunleiLoginScreen(
     viewModel: XunleiLoginViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val reviewUrl = state.reviewUrl
+
+    if (reviewUrl != null) {
+        // 风控安全验证（§4 ⑤）：内嵌页面完成验证后自动重试登录。
+        XunleiReviewWebView(
+            reviewUrl = reviewUrl,
+            deviceId = viewModel.deviceId,
+            onVerified = viewModel::onReviewVerified,
+            onClose = viewModel::dismissReview,
+            modifier = modifier
+                .fillMaxSize()
+                .background(JieYunDuColors.Background)
+                .padding(Dimens.SpaceLg)
+        )
+        return
+    }
 
     // 登录成功：通知上层标记登录态并返回。
     LaunchedEffect(state.loggedIn) {

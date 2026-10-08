@@ -8,6 +8,7 @@ package com.jieyundu.app.ui.screens.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jieyundu.app.R
+import com.jieyundu.app.data.remote.XunleiFingerprint
 import com.jieyundu.app.domain.login.LoginStateManager
 import com.jieyundu.app.domain.login.XunleiLoginManager
 import com.jieyundu.app.domain.login.XunleiLoginResult
@@ -38,8 +39,12 @@ import timber.log.Timber
 @HiltViewModel
 class XunleiLoginViewModel @Inject constructor(
     private val loginManager: XunleiLoginManager,
-    private val loginStateManager: LoginStateManager
+    private val loginStateManager: LoginStateManager,
+    private val fingerprint: XunleiFingerprint
 ) : ViewModel() {
+
+    /** 本机 deviceId（风控 WebView 需要拼进验证页 URL，§4 ⑤）。 */
+    val deviceId: String get() = fingerprint.deviceId
 
     /** 登录模式。 */
     enum class Mode { PASSWORD, SMS }
@@ -53,10 +58,12 @@ class XunleiLoginViewModel @Inject constructor(
      * @property mobile 手机号（短信模式）。
      * @property smsCode 短信验证码（短信模式）。
      * @property smsToken 短信流程令牌（发短信成功后保存）。
+     * @property smsCreditkey 发短信返回的 creditkey（短信登录公共体字段，§6.3）。
      * @property busy 是否有请求在途。
      * @property messageRes 提示文案资源；null 表示无提示。
      * @property serverMessage 服务端原文（透传，便于定位）；可为 null。
      * @property nickname 登录成功后的昵称。
+     * @property reviewUrl 风控安全验证页地址；非空时页面切换为内嵌验证页（§4 ⑤）。
      * @property loggedIn 是否已登录成功（成功后页面可自动返回）。
      */
     data class UiState(
@@ -66,10 +73,12 @@ class XunleiLoginViewModel @Inject constructor(
         val mobile: String = "",
         val smsCode: String = "",
         val smsToken: String? = null,
+        val smsCreditkey: String? = null,
         val busy: Boolean = false,
         val messageRes: Int? = null,
         val serverMessage: String? = null,
         val nickname: String? = null,
+        val reviewUrl: String? = null,
         val loggedIn: Boolean = false
     ) {
 
@@ -171,6 +180,7 @@ class XunleiLoginViewModel @Inject constructor(
                 is XunleiLoginResult.SmsSent -> state.value = state.value.copy(
                     busy = false,
                     smsToken = result.token,
+                    smsCreditkey = result.creditkey,
                     messageRes = R.string.xunlei_login_sms_sent
                 )
 
@@ -199,10 +209,34 @@ class XunleiLoginViewModel @Inject constructor(
         )
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                loginManager.loginWithSms(current.mobile, current.smsCode, token)
+                loginManager.loginWithSms(
+                    mobile = current.mobile,
+                    smsCode = current.smsCode,
+                    token = token,
+                    creditkey = current.smsCreditkey.orEmpty()
+                )
             }
             applyResult(result)
         }
+    }
+
+    /**
+     * 风控验证完成：关闭验证页并**重试上次登录**（凭据仍在状态里）。
+     *
+     * 说明：验证完成后服务端不再返回 1007，重试即可拿到 `sessionID`（§4 ⑤ 的回调语义）。
+     */
+    fun onReviewVerified() {
+        state.value = state.value.copy(reviewUrl = null)
+        if (state.value.mode == Mode.PASSWORD) {
+            loginWithPassword()
+        } else {
+            loginWithSms()
+        }
+    }
+
+    /** 用户关闭风控验证页：只收起页面，不改动已填凭据。 */
+    fun dismissReview() {
+        state.value = state.value.copy(reviewUrl = null)
     }
 
     /**
@@ -224,12 +258,13 @@ class XunleiLoginViewModel @Inject constructor(
             }
 
             is XunleiLoginResult.NeedsReview -> {
-                // 风控：WebView 安全验证属下一批（本批先明确提示，不做假流程）。
+                // 风控：切到内嵌安全验证页（§4 ⑤ 的注入配置与回调桥见 XunleiReviewWebView）。
                 Timber.w("XunleiLoginViewModel needs review, url=%s", result.reviewUrl)
                 state.value = state.value.copy(
                     busy = false,
                     messageRes = R.string.xunlei_login_needs_review,
-                    serverMessage = result.reviewUrl
+                    reviewUrl = result.reviewUrl,
+                    serverMessage = null
                 )
             }
 
