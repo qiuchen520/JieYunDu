@@ -2317,3 +2317,6 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 ④ captcha_sign 缺**已知向量**（评审方若能从已活体验证的同类工具拿到一组输入/输出，可补真值锚点）。
 待办：① 装机复验（见下）；② CI 结果回填；③ 1B-2（风控 WebView）与阶段 2（转存/取链/下载）。
 ================================================================================
+修复（1B-1 首推）：CI run 37775280788 报 `XunleiLoginManager.kt:207 Unresolved reference: Failure`
+    —— 清理「与响应类型同名」的私有 helper 时漏改一处裸调用，已改为 `XunleiLoginResult.Failure(...)`。
+    教训：同一文件内出现与嵌套类型同名的 helper 属自找麻烦，本批已彻底移除该 helper。

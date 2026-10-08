@@ -204,7 +204,7 @@ class XunleiLoginManager @Inject constructor(
                 Timber.w("XunleiLoginManager login needs review, url=%s", login.reviewurl)
                 XunleiLoginResult.NeedsReview(login.reviewurl)
             }
-            login.sessionID.isNullOrBlank() -> Failure(
+            login.sessionID.isNullOrBlank() -> XunleiLoginResult.Failure(
                 CODE_LOGIN_FAILED,
                 serverText(login)
             )
