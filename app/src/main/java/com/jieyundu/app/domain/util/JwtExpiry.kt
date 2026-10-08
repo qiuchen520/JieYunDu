@@ -31,9 +31,10 @@ object JwtExpiry {
      * @param jwt 形如 `header.payload.signature` 的令牌。
      * @return 过期时间（epoch 毫秒）；无法解析时返回 null。
      */
-    fun expiresAtMillis(jwt: String): Long? = payload(jwt)?.get("exp")?.longOrNull?.let { seconds ->
-        seconds * MILLIS_PER_SECOND
-    }
+    fun expiresAtMillis(jwt: String): Long? = payload(jwt)
+        ?.get("exp")
+        ?.let { element -> runCatching { element.jsonPrimitive.longOrNull }.getOrNull() }
+        ?.let { seconds -> seconds * MILLIS_PER_SECOND }
 
     /**
      * 读取 JWT 的用户 id（迅雷为 `sub`，captcha/init 的 `meta.user_id` 需要它）。
@@ -41,7 +42,9 @@ object JwtExpiry {
      * @param jwt 令牌。
      * @return 用户 id；无法解析时返回 null。
      */
-    fun subject(jwt: String): String? = payload(jwt)?.get("sub")?.jsonPrimitive?.content
+    fun subject(jwt: String): String? = payload(jwt)
+        ?.get("sub")
+        ?.let { element -> runCatching { element.jsonPrimitive.content }.getOrNull() }
 
     /**
      * 判断令牌是否已过期（含提前量）。

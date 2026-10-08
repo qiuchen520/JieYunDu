@@ -2228,3 +2228,7 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 
 待办：① 装机复验（见下）；② CI 结果回填；③ Owner 对上述 ①② 裁定后进入阶段 1B/2。
 ================================================================================
+修复（阶段 1A 首推）：CI run 37770348928 报 `JwtExpiry.kt:34 Unresolved reference`——
+    `longOrNull` 是 `JsonPrimitive` 的扩展属性，首推直接作用在 `JsonElement` 上。
+    已改为 `jsonPrimitive.longOrNull` / `jsonPrimitive.content` 并各自包 `runCatching`
+    （非原始类型 / 结构异常时返回 null，不抛异常）。
