@@ -23,8 +23,4 @@ data class FileInfo(
     val isDirectory: Boolean,
     val downloadUrl: String?,
     val shareFidToken: String = ""
-) {
-    /** 是否已经拿到可用直链。 */
-    val isDirectLinkReady: Boolean
-        get() = !downloadUrl.isNullOrBlank()
-}
+)

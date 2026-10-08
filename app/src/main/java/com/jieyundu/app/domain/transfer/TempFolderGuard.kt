@@ -92,7 +92,7 @@ object TempFolderGuard {
      * @param tempFolderFid 已知的临时目录 fid；未知传 null / 空。
      * @return true 表示位于临时目录内。
      */
-    fun isInTempFolder(
+    private fun isInTempFolder(
         name: String?,
         pdirFid: String? = null,
         tempFolderFid: String? = null

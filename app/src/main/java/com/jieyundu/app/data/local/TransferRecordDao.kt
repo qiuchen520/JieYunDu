@@ -45,10 +45,6 @@ abstract class TransferRecordDao : TransferRecordPort {
     @Query("DELETE FROM transfer_records WHERE fid = :fid")
     abstract suspend fun deleteByFid(fid: String)
 
-    /** 清空全部登记（手动清理全部完成后调用）。 */
-    @Query("DELETE FROM transfer_records")
-    abstract suspend fun deleteAll()
-
     /**
      * 写入或更新一条转存登记（实现 [TransferRecordPort.upsert]）。
      *

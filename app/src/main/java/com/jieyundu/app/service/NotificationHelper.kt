@@ -139,7 +139,7 @@ class NotificationHelper @Inject constructor(
      * @param notificationId 通知 ID。
      * @param notification 通知对象。
      */
-    fun notify(notificationId: Int, notification: Notification) {
+    private fun notify(notificationId: Int, notification: Notification) {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) {
             return

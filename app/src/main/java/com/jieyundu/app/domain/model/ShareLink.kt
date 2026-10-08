@@ -19,7 +19,5 @@ data class ShareLink(
     val shareId: String,
     val password: String? = null
 ) {
-    /** 是否携带了非空提取码。 */
-    val hasPassword: Boolean
-        get() = !password.isNullOrBlank()
+
 }

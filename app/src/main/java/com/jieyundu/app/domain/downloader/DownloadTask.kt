@@ -10,7 +10,7 @@ package com.jieyundu.app.domain.downloader
  *
  * 与持久化模型的边界：
  * - 本类只承载「运行一次下载」需要的参数，不含状态与协程句柄；
- * - 落库模型见 `domain/model/DownloadEntry.kt`（阶段 2）；
+ * - 落库模型见 `data/local/DownloadEntity.kt`（DownloadEntry 已于 JYD-DEBT5 删除）；
  * - Room 实体映射由 `data/repository/DownloadRepository.kt`（阶段 5）负责。
  *
  * @property taskId 任务唯一 ID。

@@ -55,22 +55,6 @@ object LinkExtractor {
     )
 
     /**
-     * 链接尾部可能被误纳入的中文标点集合（用于裁剪）。
-     * 说明：字面量以 `\uXXXX` 转义，符合编码风格 C5（.kt 源码不得出现中文字面量）。
-     */
-    private val TRAILING_PUNCTUATION = charArrayOf(
-        '\u3002', // 。
-        '\uFF0C', // ，
-        '\u3001', // 、
-        '\uFF1B', // ；
-        ')',
-        ']',
-        '}',
-        '"',
-        '\''
-    )
-
-    /**
      * 提取文本中的第一个分享链接。
      *
      * @param text 用户粘贴的原始文本。
@@ -90,7 +74,7 @@ object LinkExtractor {
         val result = mutableListOf<ShareLink>()
         for ((type, regex) in URL_PATTERNS) {
             for (match in regex.findAll(text)) {
-                val rawUrl = trimTrailingPunctuation(match.value)
+                val rawUrl = match.value
                 result += ShareLink(
                     type = type,
                     rawUrl = rawUrl,
@@ -100,21 +84,6 @@ object LinkExtractor {
             }
         }
         return result
-    }
-
-    /**
-     * 裁剪链接尾部被误纳入的中文标点（如 `。`、`，`、`）` 等）。
-     *
-     * 说明：正常情形下 [URL_PATTERNS] 的字符类已不含这些标点，此处为防御式兜底，
-     * 确保用户从富文本/聊天记录粘贴链接时不会把句读一并带入。
-     *
-     * @param url 已匹配到的链接文本。
-     * @return 去掉尾部标点后的链接。
-     */
-    private fun trimTrailingPunctuation(url: String): String {
-        var end = url.length
-        while (end > 0 && TRAILING_PUNCTUATION.contains(url[end - 1])) end--
-        return url.substring(0, end)
     }
 
     /**

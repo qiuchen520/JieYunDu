@@ -133,8 +133,23 @@ class ChunkManager(
     fun hasPartFiles(targetFile: File): Boolean {
         val parent = targetFile.parentFile ?: return false
         val entries = parent.listFiles() ?: return false
+        return partFilesOf(targetFile, entries).isNotEmpty()
+    }
+
+    /**
+     * 从目录条目中筛出属于 [targetFile] 的分片临时文件。
+     *
+     * 说明：分片文件名形如 `目标名.part3`；用「前缀 + 其后全为数字」逐项比较而非正则，
+     * 避免目标文件名本身含 `.` 时正则转义出错（【修订 JYD-DEBT5-2026-10-07】去重：
+     * [hasPartFiles] 与 [deleteAllPartFiles] 原先各写一份同样的谓词）。
+     *
+     * @param targetFile 最终目标文件。
+     * @param entries 已列出的目录条目。
+     * @return 匹配到的分片临时文件列表。
+     */
+    private fun partFilesOf(targetFile: File, entries: Array<File>): List<File> {
         val prefix = targetFile.name + PART_SUFFIX
-        return entries.any { entry ->
+        return entries.filter { entry ->
             entry.isFile && entry.name.startsWith(prefix) &&
                 entry.name.length > prefix.length &&
                 entry.name.substring(prefix.length).all { symbol -> symbol.isDigit() }
@@ -153,18 +168,12 @@ class ChunkManager(
     fun deleteAllPartFiles(targetFile: File): Int {
         val parent = targetFile.parentFile ?: return 0
         val entries = parent.listFiles() ?: return 0
-        val prefix = targetFile.name + PART_SUFFIX
         var removed = 0
-        entries.forEach { entry ->
-            val matched = entry.isFile && entry.name.startsWith(prefix) &&
-                entry.name.length > prefix.length &&
-                entry.name.substring(prefix.length).all { symbol -> symbol.isDigit() }
-            if (matched) {
-                if (entry.delete()) {
-                    removed++
-                } else {
-                    Timber.e("Failed to delete part file: %s", entry.name)
-                }
+        partFilesOf(targetFile, entries).forEach { entry ->
+            if (entry.delete()) {
+                removed++
+            } else {
+                Timber.e("Failed to delete part file: %s", entry.name)
             }
         }
         return removed

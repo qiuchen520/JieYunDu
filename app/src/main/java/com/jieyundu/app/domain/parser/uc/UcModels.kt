@@ -104,57 +104,6 @@ data class UcSaveResult(
 )
 
 /**
- * 转存任务响应体。
- *
- * 完成判定（《抓包事实.md》§6.1④，三个任一满足即为完成）：
- * `finished_at > 0` || `status == 2` || `task_status == 2`。
- *
- * @property status 状态码；2 表示完成。
- * @property task_status 任务状态码；2 表示完成（另一字段名，兼容用）。
- * @property finished_at 完成时间戳；>0 表示完成。
- * @property save_as 转存结果。
- */
-@Serializable
-data class UcTask(
-    val status: Int = 0,
-    val task_status: Int = 0,
-    val finished_at: Long = 0L,
-    val save_as: UcSaveAs? = null
-)
-
-/**
- * 转存结果。
- *
- * @property save_as_top_fids 转存后本账号的新 fid 列表。
- */
-@Serializable
-data class UcSaveAs(
-    val save_as_top_fids: List<String> = emptyList()
-)
-
-/**
- * 转存请求体（§6.1③）。
- *
- * @property pwd_id 分享 ID。
- * @property stoken 分享令牌。
- * @property pdir_fid 目标目录 fid。
- * @property to_pdir_fid 同 [pdir_fid]。
- * @property fid_list 待转存 fid 列表。
- * @property fid_token_list 与 [fid_list] 一一对应的 `share_fid_token`。
- * @property scene 固定 `link`。
- */
-@Serializable
-data class UcSaveRequest(
-    val pwd_id: String,
-    val stoken: String,
-    val pdir_fid: String,
-    val to_pdir_fid: String,
-    val fid_list: List<String>,
-    val fid_token_list: List<String>,
-    val scene: String
-)
-
-/**
  * 取直链请求体（**分享直连取链**）。
  *
  * 依据：评审方《UC下载链路修正要点_交开发方.txt》/《评审清单.md》§13——UC 分享文件
@@ -195,32 +144,6 @@ data class UcDownloadUrl(
 @Serializable
 data class UcFileList(
     val list: List<UcFile> = emptyList()
-)
-
-/**
- * 创建目录请求体（§6.1⑥，与夸克一致）。
- *
- * @property pdir_fid 父目录 fid（根为 `0`）。
- * @property file_name 新目录名。
- * @property dir_path 固定空串。
- * @property dir_init_lock 固定 false。
- */
-@Serializable
-data class UcCreateFolderRequest(
-    val pdir_fid: String,
-    val file_name: String,
-    val dir_path: String = "",
-    val dir_init_lock: Boolean = false
-)
-
-/**
- * 创建目录响应体。
- *
- * @property fid 新目录 fid。
- */
-@Serializable
-data class UcCreateFolderResult(
-    val fid: String = ""
 )
 
 /**

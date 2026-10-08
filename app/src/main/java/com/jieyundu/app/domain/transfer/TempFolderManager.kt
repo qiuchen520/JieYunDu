@@ -151,14 +151,14 @@ class TempFolderManager @Inject constructor(
      *
      * @return 待清理 fid 列表。
      */
-    fun pendingCleanupFids(): List<String> = pendingCleanup.toList()
+    private fun pendingCleanupFids(): List<String> = pendingCleanup.toList()
 
     /**
      * 移除已清理的 fid。
      *
      * @param fids 已完成清理的 fid 集合。
      */
-    fun remove(fids: Collection<String>) {
+    private fun remove(fids: Collection<String>) {
         fids.forEach { fid -> pendingCleanup.remove(fid) }
     }
 

@@ -1869,3 +1869,48 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 约束：未改任何端点路径 / 参数 / 字段名（协议零改动）；未新增依赖；未改 UI。
 待办：架构拆分后续段（B：解析器内部拆分；C：UI 屏幕拆分）另行登记。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT5-2026-10-07 · 债批次 4：死代码清除（domain/data/service 全线，-357 行）】
+来源：Owner 目标「全项目优化，把架构全部拆分清楚」+ domain/data 层 ponytail-audit 清单；
+      每条删除均**先全库 grep 核实引用**（含 app/src/test），只删「零引用 ∧ 无行为影响」项。
+一、UC 免转存后的整条备用链（-115 行）
+    · UcApi 删 `saveShare` / `getTask` / `createFolder` 三个端点（免转存已验收、0 调用）；
+    · UcModels 删随之失效的 5 个模型：UcTask / UcSaveAs / UcSaveRequest /
+      UcCreateFolderRequest / UcCreateFolderResult（`UcSaveResult` 保留——deleteFiles 仍用它）；
+    · 接口 KDoc 同步改为「不声明 save/task/createFolder；恢复 UC 转存时从版本历史取回」。
+二、零引用成员（-40 行）
+    · UserAgentProvider：`baiduUserAgent`（`baiduNetdiskUserAgent` 的别名，0 读取）、
+      `ucGuestUserAgent`（游客 UA，0 读取）；
+    · FileInfo.`isDirectLinkReady`、ShareLink.`hasPassword`、QuotaInfo.`usedInTrash`（连带 KDoc）；
+    · TransferRecordDao.`deleteAll`、AppSettingsStore.`defaultDirectoryLabelRes`（连带
+      `androidx.annotation.StringRes` 导入）、ParserRegistry.`findParser(url)`。
+三、可见性收窄（对外零调用，仅同类内部使用）
+    · TempFolderGuard.`isInTempFolder`、TempFolderManager.`pendingCleanupFids` / `remove`、
+      NotificationHelper 的两参 `notify` 重载 → 全部改 `private`。
+四、删不可达与重复逻辑
+    · LinkExtractor：删 `TRAILING_PUNCTUATION` + `trimTrailingPunctuation`（-25 行）——
+      四条 URL 正则的字符类均为 `[A-Za-z0-9_\-]`，不可能匹配到 `。）]、},"` 等标点，
+      该分支恒不可达；`extractAll` 直接用 `match.value`。
+    · ChunkManager：抽出私有谓词 `partFilesOf()`，`hasPartFiles` 与 `deleteAllPartFiles`
+      不再各写一份「前缀 + 其后全为数字」扫描（-10 行，行为不变）。
+五、删零引用文件（**规格残留，已双登记**）
+    · `ui/glass/GlassDivider.kt`：0 个 Composable 调用（同名颜色常量 JieYunDuColors.GlassDivider
+      是另一回事，保留）。
+    · `domain/model/DownloadEntry.kt`：被 `data/local/DownloadEntity.kt` 取代，0 代码引用；
+      `DownloadTask` 的 KDoc 引用已改指 DownloadEntity。
+六、本批**未动**（需 Owner 拍板，见待办）
+    · 收藏 / 历史整条链路（2 Repository + 2 DAO + 2 Entity + 2 表）：确认为 0 注入点，
+      但《要求.md》4.3 明确要求「下载历史 / 搜索 / 收藏」——属**未接线功能**而非死代码，
+      且删除需 bump 数据库版本 + 迁移，故不动，等 Owner 一句话。
+    · `DownloadRepository`（纯转发包装，仅 DownloadViewModel 一个调用方）：《要求.md》6
+      将其列为数据层交付物，保留；若要精简请 Owner 拍板。
+    · `QuarkShareDetail.list` / `UcTransferShareDetail.file_list` 兼容兜底分支：无抓包证据
+      但属防御式解析，不在本批删除范围（避免动已验证解析链路）。
+七、校验
+    · 推送前自检脚本（括号平衡 + 孤儿注释行 + KDoc 后无声明）全库通过：114 个 .kt、0 问题；
+    · 被删符号全库反查：0 残留引用。
+待办：① 装机复验（本批为纯删除 / 可见性收窄，预期行为零变化）；
+      ② Owner 拍板收藏 / 历史链路与 DownloadRepository；
+      ③ CI 结果待回填。
+================================================================================

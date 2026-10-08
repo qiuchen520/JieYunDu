@@ -6,7 +6,6 @@
 package com.jieyundu.app.data.settings
 
 import android.content.Context
-import androidx.annotation.StringRes
 import com.jieyundu.app.R
 import com.jieyundu.app.domain.downloader.DownloadSettingsPort
 import com.jieyundu.app.domain.downloader.DownloadTask
@@ -245,10 +244,6 @@ class AppSettingsStore @Inject constructor(
      * @return 子目录名，例如「极云渡」。
      */
     fun publicFolderName(): String = appContext.getString(R.string.download_public_folder_name)
-
-    /** 供设置页展示的自定义目录文案资源（用于「恢复默认」提示等）。 */
-    @StringRes
-    fun defaultDirectoryLabelRes(): Int = R.string.settings_download_dir_default_value
 
     private companion object {
         /** SharedPreferences 文件名。 */

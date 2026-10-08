@@ -21,13 +21,6 @@ class ParserRegistry(
     private val parsers: List<NetdiskParser>
 ) {
 
-    /**
-     * 按链接查找可处理的解析器。
-     *
-     * @param url 分享链接。
-     * @return 匹配到的解析器，全部不匹配时返回 null。
-     */
-    fun findParser(url: String): NetdiskParser? =
         parsers.firstOrNull { parser -> parser.match(url) }
 
     /**

@@ -60,36 +60,9 @@ class UserAgentProvider @Inject constructor() {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-    /**
-     * 百度网盘 User-Agent（下载链路默认用客户端 UA）。
-     *
-     * 说明：历史字段名保持不变（`HomeViewModel` 的下载头构造引用它），
-     * 取值与 [baiduNetdiskUserAgent] 一致——直链下载走客户端 UA（《抓包事实.md》§3）。
-     */
-    val baiduUserAgent: String = baiduNetdiskUserAgent
-
-    /** 百度 Referer。 */
-    val baiduReferer: String = "https://pan.baidu.com/"
-
-    /**
-     * UC 网盘客户端 User-Agent（登录态 API / 取链链路使用）。
-     *
-     * 来源：《抓包事实.md》第 2 节「三套 UA」之②「云盘客户端（登录态取链）」。
-     * 说明：App 的转存 / 取链均需登录态（Cookie），故 API 请求统一使用该客户端 UA。
-     */
-    val ucUserAgent: String =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) uc-cloud-drive/1.6.1 Chrome/100.0.4896.160 " +
             "Electron/18.3.5.16-b62cf9c50d Safari/537.36 Channel/ucpan_other_ch"
 
-    /**
-     * UC 网盘游客（未登录）链路 User-Agent（取链与下载字节使用）。
-     *
-     * 来源：《抓包事实.md》第 2 节「三套 UA」之③。当前登录态链路用 [ucUserAgent]；
-     * 该游客 UA 备用于无登录态的直链下载场景（配套 Sec-Ch-Ua 见文档）。
-     */
-    val ucGuestUserAgent: String =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) uc-cloud-drive/2.5.20 Chrome/100.0.4896.160 " +
             "Electron/18.3.5.4-b478491100 Safari/537.36 Channel/pckk_other_ch"
 

@@ -21,7 +21,9 @@ import retrofit2.http.QueryMap
  * `transfer_share/detail`、取链带 `entry=ft`** 亦与夸克不同，故单独定义、不共用夸克接口。
  *
  * 依据：《参考实现_源码通读研究.md》§9.3——UC 分享文件可直接取链，无需 save/task/
- * 临时目录；`saveShare`/`getTask`/`createFolder` 仅作降级备用保留。
+ * 临时目录。故**不声明** save / task / createFolder 端点（【修订 JYD-DEBT5-2026-10-07】：
+ * 免转存已验收，这三条及其 5 个模型无任何调用方，已删除；将来若恢复 UC 转存，
+ * 从版本历史取回即可，不保留「备用」死代码）。
  *
  * @see com.jieyundu.app.domain.parser.quark.QuarkApi 夸克同构参照
  */
@@ -66,41 +68,6 @@ interface UcApi {
     suspend fun transferShareDetail(
         @QueryMap params: Map<String, String>
     ): UcResponse<UcTransferShareDetail>
-
-    /**
-     * 把分享中的文件转存到本账号（save）。
-     *
-     * 请求：`POST https://pc-api.uc.cn/1/clouddrive/share/sharepage/save?pr=UCBrowser&fr=pc`
-     * 响应：`data.task_id`。
-     *
-     * ⚠️ 字段语义（依《抓包事实.md》§9.3③「原样实录」，**与 §6.1③ 的旧描述冲突，以 §9.3 为准**）：
-     * - `pdir_fid` = **分享内的源目录** fid（根为 `0`）；
-     * - `to_pdir_fid` = **转存目标**（本账号）目录 fid。
-     * 二者**不是同一个值**（§6.1③ 旧文误写为「目标目录，根为 0」且两者相同）。
-     *
-     * 依据：《抓包事实.md》§2 与 §6.1③（请求体字段集），字段语义见 §9.3③。
-     *
-     * @param body 请求体。
-     * @return 统一响应包装体，data 含 task_id。
-     */
-    @POST("1/clouddrive/share/sharepage/save?pr=UCBrowser&fr=pc")
-    suspend fun saveShare(
-        @Body body: UcSaveRequest
-    ): UcResponse<UcSaveResult>
-
-    /**
-     * 轮询转存任务状态（task）。
-     *
-     * 请求：`GET https://pc-api.uc.cn/1/clouddrive/task?pr=UCBrowser&fr=pc&task_id=...`
-     * 响应：`data.finished_at` / `data.status` / `data.save_as.save_as_top_fids[]`。
-     *
-     * @param params 查询参数键值对。
-     * @return 统一响应包装体。
-     */
-    @GET("1/clouddrive/task")
-    suspend fun getTask(
-        @QueryMap params: Map<String, String>
-    ): UcResponse<UcTask>
 
     /**
      * 取下载直链（**分享直连取链，无需先转存**）。
@@ -175,20 +142,4 @@ interface UcApi {
         @Body body: UcDeleteRequest
     ): UcResponse<UcSaveResult>
 
-    /**
-     * 在**本账号**个人网盘创建目录（转存临时目录用）。
-     *
-     * 请求：`POST https://pc-api.uc.cn/1/clouddrive/file?pr=UCBrowser&fr=pc`
-     * 请求体：`{"pdir_fid":"0","file_name":"...","dir_path":"","dir_init_lock":false}`。
-     * 响应：`data.fid`。
-     *
-     * 依据：《抓包事实.md》§6.1⑥（夸克 / UC 请求体一致）。
-     *
-     * @param body 请求体。
-     * @return 统一响应包装体。
-     */
-    @POST("1/clouddrive/file?pr=UCBrowser&fr=pc")
-    suspend fun createFolder(
-        @Body body: UcCreateFolderRequest
-    ): UcResponse<UcCreateFolderResult>
 }
