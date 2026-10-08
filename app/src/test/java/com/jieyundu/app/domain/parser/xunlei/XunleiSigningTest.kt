@@ -83,7 +83,7 @@ class XunleiSigningTest {
     fun captchaSign_foldsTenSaltsInOrder() {
         val sign = XunleiSigning.captchaSign(deviceId = DEVICE_ID, timestampMillis = TIMESTAMP)
         kotlin.test.assertTrue(sign.startsWith("1."))
-        assertEquals(1 + 32, sign.length, "1.<32 hex>")
+        assertEquals("1.".length + 32, sign.length, "1.<32 hex>")
 
         // 独立实现（照文档再写一遍）：raw → 依次 md5(h + salt) 共 10 次。
         var h = XunleiConfig.APP_CLIENT_ID + XunleiConfig.APP_VERSION +

@@ -2320,3 +2320,6 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 修复（1B-1 首推）：CI run 37775280788 报 `XunleiLoginManager.kt:207 Unresolved reference: Failure`
     —— 清理「与响应类型同名」的私有 helper 时漏改一处裸调用，已改为 `XunleiLoginResult.Failure(...)`。
     教训：同一文件内出现与嵌套类型同名的 helper 属自找麻烦，本批已彻底移除该 helper。
+修复（1B-1 二推）：CI run 37775844032 有 1 个**本批新增用例**失败——
+    `XunleiSigningTest.captchaSign_foldsTenSaltsInOrder` 把签名长度写成 `1 + 32`，
+    而前缀 `"1."` 是 2 个字符（正确为 34）。属测试自身断言算错，产品代码无误；已改正。
