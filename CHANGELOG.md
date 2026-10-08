@@ -1961,3 +1961,33 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
       ③ 引擎之外的大文件拆分（SettingsScreen 445 行单函数、DownloadItem 手绘图标外移）
       作为下一段（D7）执行。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT7-2026-10-07 · 债批次 6：两个最大 UI 文件的职责拆分】
+来源：Owner 目标「把所有架构全部拆分，做成一个清晰、明确的整体应用」+ UI 层审计
+      「职责混杂该拆」的两条判定（SettingsScreen 445 行单函数、DownloadItem 混装图标）。
+一、设置页：606 行单文件 → 247 行编排 + 5 个组件文件（新增 ui/screens/settings/components/）
+    · `SettingsScreen.kt`（247 行）只做**编排**：ViewModel、生命周期（白名单刷新）、
+      目录选择与权限启动器、Toast 反馈，然后按顺序调用 10 张卡。
+    · `components/SettingsCard.kt`：卡片容器（原 private SettingsCard）+ **新增
+      `SettingsOptionRow`** —— 把「分片数 / 同时任务数 / 限速 / 重试次数」四张卡里
+      逐字重复的「说明 + 一排胶囊」结构收敛为一处实现（原 4 处各约 25 行，泛型 <T>
+      同时容纳 Int 与 Long 档位）。
+    · `components/DownloadSettingCards.kt`：支持范围卡 + 四张档位卡（各自订阅自己的
+      StateFlow，不再由页面统一收集后逐层传递）。`BYTES_PER_MB` 随限速卡迁移。
+    · `components/StorageCards.kt`：下载目录卡（权限流程由页面注入回调）+ 临时文件清理卡。
+    · `components/BackgroundCard.kt`：后台与通知卡（C2）+ `openBatteryOptimizationSettings`
+      （原为页面私有函数，随卡迁移并放宽为 internal）。
+    · `components/LogAndAboutCards.kt`：崩溃/运行日志卡 + 关于卡。
+    · 行为零变化：文案、控件、顺序、间距、回调语义逐字保留；各卡现在自己 collectAsState。
+二、下载项：630 行 → 436 行 + `ui/icons/DownloadGlyphs.kt`（216 行）
+    · 三个自绘图标（ShareGlyph / InstallGlyph / TrashGlyph）及 25 个几何常量自
+      `DownloadItem.kt` 迁出到 `ui/icons/`（纯绘制、无业务状态），可见性 private → internal。
+    · `DownloadItem.kt` 只剩「一条下载项长什么样」：行布局、进度、详情、暂停/继续、
+      删除/分享/安装按钮与状态映射；连带清理 3 个因此未用的导入（Canvas/Offset/StrokeCap）。
+三、校验
+    · 推送前自检（括号平衡 / 孤儿注释 / KDoc 后无声明）：118 个 .kt、0 问题；
+    · 逐个文件核对未用导入（本轮清掉 4 处）与跨文件符号引用（组件均 internal、同模块）。
+待办：① 装机复验设置页（10 张卡与拆分前应完全一致：档位可点、目录可改、日志可导出、
+      白名单状态从系统页返回后刷新）；② 下载项三个行尾图标（删除/分享/安装）外观与点击区域不变。
+================================================================================

@@ -1,12 +1,11 @@
 // 文件：SettingsScreen.kt
-// 职责：设置页——已支持网盘、默认并发分片数、临时文件清理、崩溃日志导出、关于信息
-// 依赖：SettingsViewModel、GlassCard、GlassButton、FileProvider、WindowSizeHelper、Dimens、JieYunDuColors
+// 职责：设置页**编排**——状态收集、权限与目录选择、操作反馈；各卡片见 settings/components/
+// 依赖：SettingsViewModel、settings/components/*（10 张卡）、WindowSizeHelper、FileProvider、Dimens
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.ui.screens.settings
 
 import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -20,14 +19,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -45,15 +39,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
-import com.jieyundu.app.ui.components.GlassChip
-import com.jieyundu.app.ui.components.SettingToggleRow
-import com.jieyundu.app.ui.glass.GlassButton
-import com.jieyundu.app.ui.glass.GlassCard
-import com.jieyundu.app.ui.screens.home.uiLabelRes
+import com.jieyundu.app.ui.screens.settings.components.AboutCard
+import com.jieyundu.app.ui.screens.settings.components.BackgroundCard
+import com.jieyundu.app.ui.screens.settings.components.ChunkCountCard
+import com.jieyundu.app.ui.screens.settings.components.ConcurrentTaskCard
+import com.jieyundu.app.ui.screens.settings.components.DirectoryCard
+import com.jieyundu.app.ui.screens.settings.components.LogExportCard
+import com.jieyundu.app.ui.screens.settings.components.NetdiskSupportCard
+import com.jieyundu.app.ui.screens.settings.components.RetryCountCard
+import com.jieyundu.app.ui.screens.settings.components.SpeedLimitCard
+import com.jieyundu.app.ui.screens.settings.components.TempCleanupCard
 import com.jieyundu.app.ui.theme.Dimens
-import com.jieyundu.app.ui.theme.JieYunDuColors
 import java.io.File
-import timber.log.Timber
 
 /**
  * 设置页。
@@ -200,378 +197,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             .padding(spacing),
         verticalArrangement = Arrangement.spacedBy(spacing)
     ) {
-        SettingsCard(
-            title = stringResource(R.string.settings_supported_netdisks),
+        NetdiskSupportCard(viewModel = viewModel, contentPadding = contentPadding)
+        ChunkCountCard(viewModel = viewModel, contentPadding = contentPadding)
+        ConcurrentTaskCard(viewModel = viewModel, contentPadding = contentPadding)
+        SpeedLimitCard(viewModel = viewModel, contentPadding = contentPadding)
+        RetryCountCard(viewModel = viewModel, contentPadding = contentPadding)
+        DirectoryCard(
+            viewModel = viewModel,
+            onRequestDirectory = requestCustomDirectory,
             contentPadding = contentPadding
-        ) {
-            if (viewModel.supportedTypes.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.netdisk_quark),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = JieYunDuColors.TextSecondary
-                )
-            } else {
-                viewModel.supportedTypes.forEach { type ->
-                    Text(
-                        text = stringResource(type.uiLabelRes()),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = JieYunDuColors.TextPrimary
-                    )
-                }
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_default_chunk),
+        )
+        BackgroundCard(
+            viewModel = viewModel,
+            context = context,
             contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.settings_chunk_hint,
-                    viewModel.minChunkCount,
-                    viewModel.maxChunkCount
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
-            ) {
-                viewModel.chunkCountOptions.forEach { option ->
-                    GlassChip(
-                        label = option.toString(),
-                        selected = option == chunkCount,
-                        onClick = { viewModel.setChunkCount(option) }
-                    )
-                }
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_download_concurrent_title),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(R.string.settings_download_concurrent_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
-            ) {
-                viewModel.maxConcurrentTaskOptions.forEach { option ->
-                    GlassChip(
-                        label = option.toString(),
-                        selected = option == maxConcurrentTasks,
-                        onClick = { viewModel.setMaxConcurrentTasks(option) }
-                    )
-                }
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_download_speed_title),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(R.string.settings_download_speed_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
-            ) {
-                viewModel.speedLimitOptionsBytesPerSecond.forEach { option ->
-                    GlassChip(
-                        label = if (option <= 0L) {
-                            stringResource(R.string.settings_speed_unlimited)
-                        } else {
-                            stringResource(
-                                R.string.settings_speed_option_mbps,
-                                (option / BYTES_PER_MB).toInt()
-                            )
-                        },
-                        selected = option == speedLimitBytesPerSecond,
-                        onClick = { viewModel.setSpeedLimitBytesPerSecond(option) }
-                    )
-                }
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_download_retry_title),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(R.string.settings_download_retry_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
-            ) {
-                viewModel.maxTaskRetryOptions.forEach { option ->
-                    GlassChip(
-                        label = if (option <= 0) {
-                            stringResource(R.string.settings_retry_off)
-                        } else {
-                            stringResource(R.string.settings_retry_option_times, option)
-                        },
-                        selected = option == maxTaskRetries,
-                        onClick = { viewModel.setMaxTaskRetries(option) }
-                    )
-                }
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_download_dir),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = if (directoryState.isCustom) {
-                    directoryState.customPath
-                        ?: stringResource(R.string.settings_download_dir_default_value)
-                } else {
-                    stringResource(
-                        R.string.settings_download_dir_public_format,
-                        directoryState.publicFolderName
-                    )
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextPrimary
-            )
-            Text(
-                text = if (directoryState.isCustom) {
-                    stringResource(R.string.settings_download_dir_custom_hint)
-                } else {
-                    stringResource(R.string.settings_download_dir_public_hint)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            GlassButton(
-                text = stringResource(R.string.settings_download_dir_change),
-                onClick = requestCustomDirectory,
-                height = Dimens.ButtonHeightCompact,
-                cornerRadius = Dimens.ButtonCornerCompact,
-                fillColor = JieYunDuColors.ButtonFill,
-                borderColor = JieYunDuColors.ButtonBorder,
-                contentColor = JieYunDuColors.OnPrimary
-            )
-            if (directoryState.isCustom) {
-                GlassButton(
-                    text = stringResource(R.string.settings_download_dir_reset),
-                    onClick = viewModel::resetDownloadDirectory,
-                    height = Dimens.ButtonHeightCompact,
-                    cornerRadius = Dimens.ButtonCornerCompact,
-                    fillColor = JieYunDuColors.GlassFillStrong,
-                    borderColor = JieYunDuColors.GlassBorder,
-                    contentColor = JieYunDuColors.TextPrimary
-                )
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_background_title),
-            contentPadding = contentPadding
-        ) {
-            SettingToggleRow(
-                title = stringResource(R.string.settings_keep_downloading_title),
-                description = stringResource(R.string.settings_keep_downloading_hint),
-                checked = keepDownloadingOnLock,
-                onCheckedChange = viewModel::setKeepDownloadingOnLock,
-                contentPadding = Dimens.SpaceLg
-            )
-            SettingToggleRow(
-                title = stringResource(R.string.settings_download_notification_title),
-                description = stringResource(R.string.settings_download_notification_hint),
-                checked = downloadNotificationEnabled,
-                onCheckedChange = viewModel::setDownloadNotificationEnabled,
-                contentPadding = Dimens.SpaceLg
-            )
-            if (!batteryOptimizationExempt) {
-                Text(
-                    text = stringResource(R.string.settings_battery_optimization_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = JieYunDuColors.TextSecondary
-                )
-                GlassButton(
-                    text = stringResource(R.string.settings_battery_optimization_action),
-                    onClick = { openBatteryOptimizationSettings(context) },
-                    height = Dimens.ButtonHeightCompact,
-                    cornerRadius = Dimens.ButtonCornerCompact,
-                    fillColor = JieYunDuColors.GlassFillStrong,
-                    borderColor = JieYunDuColors.GlassBorder,
-                    contentColor = JieYunDuColors.TextPrimary
-                )
-            } else {
-                Text(
-                    text = stringResource(R.string.settings_battery_optimization_done),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = JieYunDuColors.TextSecondary
-                )
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_temp_cleanup),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(R.string.settings_temp_cleanup_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            GlassButton(
-                text = stringResource(R.string.settings_temp_cleanup_action),
-                onClick = viewModel::cleanupTempFiles,
-                height = Dimens.ButtonHeightCompact,
-                cornerRadius = Dimens.ButtonCornerCompact,
-                fillColor = JieYunDuColors.ButtonFill,
-                borderColor = JieYunDuColors.ButtonBorder,
-                contentColor = JieYunDuColors.OnPrimary
-            )
-            val statusText = when {
-                cleanupState.running -> stringResource(R.string.settings_temp_cleanup_running)
-                cleanupState.completed -> stringResource(
-                    R.string.settings_temp_cleanup_done,
-                    cleanupState.deletedCount
-                )
-                cleanupState.failed -> stringResource(R.string.settings_temp_cleanup_failed)
-                else -> null
-            }
-            if (statusText != null) {
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = JieYunDuColors.TextPrimary
-                )
-            }
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_crash_title),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(R.string.settings_crash_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            GlassButton(
-                text = if (crashState.busy) {
-                    stringResource(R.string.settings_crash_exporting)
-                } else {
-                    stringResource(R.string.settings_crash_export)
-                },
-                onClick = viewModel::exportCrashLog,
-                height = Dimens.ButtonHeightCompact,
-                cornerRadius = Dimens.ButtonCornerCompact,
-                fillColor = JieYunDuColors.ButtonFill,
-                borderColor = JieYunDuColors.ButtonBorder,
-                contentColor = JieYunDuColors.OnPrimary
-            )
-            GlassButton(
-                text = stringResource(R.string.settings_crash_clear),
-                onClick = viewModel::clearCrashLogs,
-                height = Dimens.ButtonHeightCompact,
-                cornerRadius = Dimens.ButtonCornerCompact,
-                fillColor = JieYunDuColors.GlassFillStrong,
-                borderColor = JieYunDuColors.GlassBorder,
-                contentColor = JieYunDuColors.TextPrimary
-            )
-            Text(
-                text = stringResource(R.string.settings_runtime_export_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-            GlassButton(
-                text = if (runtimeState.busy) {
-                    stringResource(R.string.settings_runtime_exporting)
-                } else {
-                    stringResource(R.string.settings_runtime_export)
-                },
-                onClick = viewModel::exportRuntimeLog,
-                height = Dimens.ButtonHeightCompact,
-                cornerRadius = Dimens.ButtonCornerCompact,
-                fillColor = JieYunDuColors.GlassFillStrong,
-                borderColor = JieYunDuColors.GlassBorder,
-                contentColor = JieYunDuColors.TextPrimary
-            )
-        }
-        SettingsCard(
-            title = stringResource(R.string.settings_about),
-            contentPadding = contentPadding
-        ) {
-            Text(
-                text = stringResource(R.string.settings_version_format, viewModel.versionName),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextPrimary
-            )
-            Text(
-                text = stringResource(R.string.settings_license),
-                style = MaterialTheme.typography.bodyMedium,
-                color = JieYunDuColors.TextSecondary
-            )
-        }
-    }
-}
-
-/**
- * 设置页信息卡：标题 + 若干正文行。
- *
- * @param title 卡片标题。
- * @param contentPadding 卡内边距。
- * @param content 正文内容。
- */
-@Composable
-private fun SettingsCard(
-    title: String,
-    contentPadding: Dp,
-    content: @Composable () -> Unit
-) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = Dimens.CardCorner,
-        contentPadding = contentPadding
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Dimens.SpaceSm)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = JieYunDuColors.TextPrimary
-            )
-            content()
-        }
-    }
-}
-
-/**
- * 打开「忽略电池优化」系统设置页（C2 第 1 条）。
- *
- * 说明：优先直达本 App 的电池优化授权弹窗（[Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS]，
- * 需 manifest 声明 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限）；厂商 ROM 上该 Intent 可能不存在，
- * 此时回退到电池优化设置列表页（[Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS]）。
- * 两者都不可用时只记日志，不抛异常、不打断用户操作（D15）。
- *
- * @param context 上下文。
- */
-private fun openBatteryOptimizationSettings(context: Context) {
-    val directIntent = Intent(
-        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-    ).apply { data = Uri.parse("package:${context.packageName}") }
-    try {
-        context.startActivity(directIntent)
-        return
-    } catch (exception: ActivityNotFoundException) {
-        Timber.w(exception, "SettingsScreen: no direct battery optimization activity, fallback")
-    } catch (exception: SecurityException) {
-        Timber.w(exception, "SettingsScreen: battery optimization direct intent denied, fallback")
-    }
-    try {
-        context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-    } catch (exception: ActivityNotFoundException) {
-        Timber.w(exception, "SettingsScreen: no battery optimization settings activity")
+        )
+        TempCleanupCard(viewModel = viewModel, contentPadding = contentPadding)
+        LogExportCard(viewModel = viewModel, contentPadding = contentPadding)
+        AboutCard(viewModel = viewModel, contentPadding = contentPadding)
     }
 }
 
@@ -602,6 +245,3 @@ private fun shareLogFile(context: Context, file: File, @StringRes titleRes: Int)
 
 /** 日志分享 MIME 类型（纯文本）。 */
 private const val LOG_MIME_TYPE = "text/plain"
-
-/** 每 MB 字节数（C1：限速档位展示换算用）。 */
-private const val BYTES_PER_MB = 1_048_576L

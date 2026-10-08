@@ -8,7 +8,6 @@ package com.jieyundu.app.ui.screens.download.components
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,8 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -44,6 +41,9 @@ import com.jieyundu.app.domain.downloader.DownloadProgressState
 import com.jieyundu.app.domain.downloader.DownloadState
 import com.jieyundu.app.domain.util.DownloadTimeFormatter
 import com.jieyundu.app.domain.util.FileSizeFormatter
+import com.jieyundu.app.ui.icons.TrashGlyph
+import com.jieyundu.app.ui.icons.ShareGlyph
+import com.jieyundu.app.ui.icons.InstallGlyph
 import com.jieyundu.app.ui.glass.GlassCard
 import com.jieyundu.app.ui.screens.download.DownloadListItem
 import com.jieyundu.app.ui.theme.Dimens
@@ -375,128 +375,6 @@ private fun InstallButton(onClick: () -> Unit) {
     }
 }
 
-/**
- * 自绘「分享」图标（三个节点 + 两条连线）。
- *
- * @param modifier 外部修饰符。
- */
-@Composable
-private fun ShareGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.TextSecondary
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val stroke = w * SHARE_STROKE_RATIO
-        val left = Offset(w * SHARE_LEFT_X, h * SHARE_MID_Y)
-        val topRight = Offset(w * SHARE_RIGHT_X, h * SHARE_TOP_Y)
-        val bottomRight = Offset(w * SHARE_RIGHT_X, h * SHARE_BOTTOM_Y)
-        drawLine(color, left, topRight, strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(color, left, bottomRight, strokeWidth = stroke, cap = StrokeCap.Round)
-        val nodeRadius = w * SHARE_NODE_RADIUS_RATIO
-        drawCircle(color, radius = nodeRadius, center = left)
-        drawCircle(color, radius = nodeRadius, center = topRight)
-        drawCircle(color, radius = nodeRadius, center = bottomRight)
-    }
-}
-
-/**
- * 自绘「安装 / 下载到托盘」图标（下箭头 + 底部托盘）。
- *
- * @param modifier 外部修饰符。
- */
-@Composable
-private fun InstallGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.TextSecondary
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val stroke = w * TRASH_STROKE_RATIO
-        val centerX = w / 2f
-        drawLine(
-            color = color,
-            start = Offset(centerX, h * INSTALL_TOP_Y),
-            end = Offset(centerX, h * INSTALL_MID_Y),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(centerX - w * INSTALL_WING_RATIO, h * (INSTALL_MID_Y - INSTALL_WING_RATIO)),
-            end = Offset(centerX, h * INSTALL_MID_Y),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(centerX + w * INSTALL_WING_RATIO, h * (INSTALL_MID_Y - INSTALL_WING_RATIO)),
-            end = Offset(centerX, h * INSTALL_MID_Y),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(w * INSTALL_BASE_START, h * INSTALL_BASE_Y),
-            end = Offset(w * INSTALL_BASE_END, h * INSTALL_BASE_Y),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-/**
- * 自绘「垃圾桶」图标。
- *
- * @param modifier 外部修饰符。
- */
-@Composable
-private fun TrashGlyph(modifier: Modifier = Modifier) {
-    val color = JieYunDuColors.TextSecondary
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val stroke = w * TRASH_STROKE_RATIO
-        // 桶盖
-        drawLine(
-            color = color,
-            start = Offset(w * TRASH_LID_START, h * TRASH_LID_Y),
-            end = Offset(w * TRASH_LID_END, h * TRASH_LID_Y),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        // 提手
-        drawLine(
-            color = color,
-            start = Offset(w * TRASH_HANDLE_START, h * TRASH_HANDLE_Y),
-            end = Offset(w * TRASH_HANDLE_END, h * TRASH_HANDLE_Y),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        // 桶身左壁
-        drawLine(
-            color = color,
-            start = Offset(w * TRASH_BODY_LEFT_TOP, h * TRASH_LID_Y),
-            end = Offset(w * TRASH_BODY_LEFT_BOTTOM, h * TRASH_BODY_BOTTOM),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        // 桶身右壁
-        drawLine(
-            color = color,
-            start = Offset(w * TRASH_BODY_RIGHT_TOP, h * TRASH_LID_Y),
-            end = Offset(w * TRASH_BODY_RIGHT_BOTTOM, h * TRASH_BODY_BOTTOM),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        // 桶底
-        drawLine(
-            color = color,
-            start = Offset(w * TRASH_BODY_LEFT_BOTTOM, h * TRASH_BODY_BOTTOM),
-            end = Offset(w * TRASH_BODY_RIGHT_BOTTOM, h * TRASH_BODY_BOTTOM),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-    }
-}
 
 /**
  * 自绘进度条（9.6.4：高 6dp、圆角 3dp，底色浅灰、填充主色蓝）。
@@ -553,78 +431,3 @@ private fun stateLabelRes(state: DownloadState): Int = when (state) {
     DownloadState.FAILED -> R.string.download_state_failed
     DownloadState.CANCELED -> R.string.download_state_canceled
 }
-
-/** 垃圾桶线宽相对宽度比例。 */
-private const val TRASH_STROKE_RATIO = 0.09f
-
-/** 桶盖起点横向占比。 */
-private const val TRASH_LID_START = 0.16f
-
-/** 桶盖终点横向占比。 */
-private const val TRASH_LID_END = 0.84f
-
-/** 桶盖纵向占比。 */
-private const val TRASH_LID_Y = 0.28f
-
-/** 提手起点横向占比。 */
-private const val TRASH_HANDLE_START = 0.36f
-
-/** 提手终点横向占比。 */
-private const val TRASH_HANDLE_END = 0.64f
-
-/** 提手纵向占比。 */
-private const val TRASH_HANDLE_Y = 0.13f
-
-/** 桶身左壁顶部横向占比。 */
-private const val TRASH_BODY_LEFT_TOP = 0.26f
-
-/** 桶身左壁底部横向占比。 */
-private const val TRASH_BODY_LEFT_BOTTOM = 0.32f
-
-/** 桶身右壁顶部横向占比。 */
-private const val TRASH_BODY_RIGHT_TOP = 0.74f
-
-/** 桶身右壁底部横向占比。 */
-private const val TRASH_BODY_RIGHT_BOTTOM = 0.68f
-
-/** 桶底纵向占比。 */
-private const val TRASH_BODY_BOTTOM = 0.88f
-
-/** 分享图标线宽相对宽度比例。 */
-private const val SHARE_STROKE_RATIO = 0.07f
-
-/** 分享图标左节点横向占比。 */
-private const val SHARE_LEFT_X = 0.28f
-
-/** 分享图标右节点横向占比。 */
-private const val SHARE_RIGHT_X = 0.74f
-
-/** 分享图标中间纵向占比。 */
-private const val SHARE_MID_Y = 0.5f
-
-/** 分享图标右上节点纵向占比。 */
-private const val SHARE_TOP_Y = 0.22f
-
-/** 分享图标右下节点纵向占比。 */
-private const val SHARE_BOTTOM_Y = 0.78f
-
-/** 分享图标节点半径相对宽度比例。 */
-private const val SHARE_NODE_RADIUS_RATIO = 0.08f
-
-/** 安装图标箭头竖线起点纵向占比。 */
-private const val INSTALL_TOP_Y = 0.16f
-
-/** 安装图标箭头交汇点纵向占比。 */
-private const val INSTALL_MID_Y = 0.62f
-
-/** 安装图标箭头两翼长度占比。 */
-private const val INSTALL_WING_RATIO = 0.18f
-
-/** 安装图标托盘底线纵向占比。 */
-private const val INSTALL_BASE_Y = 0.86f
-
-/** 安装图标托盘底线起点横向占比。 */
-private const val INSTALL_BASE_START = 0.24f
-
-/** 安装图标托盘底线终点横向占比。 */
-private const val INSTALL_BASE_END = 0.76f
