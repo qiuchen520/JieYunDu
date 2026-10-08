@@ -2050,3 +2050,31 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 待办：① Owner 复核 §6 / §10 表述是否认可（本节属规格文本，改动已在文末登记）；
       ② §10.6「拖拽高光 / 文字透明度」等描述仍为百分比口径，若需统一到常量口径另行一批。
 ================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT10-2026-10-07 · 债批次 9：引擎再拆一档（进度/测速独立）+ 去重成果加测试】
+来源：Owner 指令「那个 1000 行之多的引擎文件，优化完整」的收尾；以及 D8 去重后缺少保护网。
+一、`DownloadEngine.kt` 再拆（660 → 575 行）
+    · 新增同包 `DownloadProgressTracker.kt`（112 行）：内存实时进度表（`live` 只读流）、
+      `publish` / `remove`、以及**节流刷新与瞬时/平均速度计算**（原 `publishProgress`）。
+      原先「节流 + 测速 + 实时表 + 引擎调度」四件事挤在一个类里；现在引擎只管调度与
+      生命周期，进度口径独立成类（`internal`，同包，调用方无感）。
+    · 引擎保留：`liveProgress` 对外只读流（直接指向 tracker 的流，不做转发 getter）、
+      `progressTracker.publish(...)` 四处最终态发布、`onBytesRead` 回调接线。
+    · 连带清理两个因此未用的导入（`MutableStateFlow` / `update`）。
+    · 引擎拆分累计效果（对照原始单文件 1019 行）：
+      DownloadEngine 575 / DownloadContracts 176 / ChunkDownloader 159 /
+      DownloadProgressTracker 112 / DownloadTaskRuntime 65 / DownloadSpeedLimiter 61。
+二、新增 `PersonalListQueryTest`（3 例，纯逻辑）
+    · 锁定 D8 收敛后的字段集与取值：字段顺序（pr/fr/pdir_fid/_page/_size/_fetch_total/
+      _fetch_sub_dirs/_sort）、`_size=100`、`_sort=file_type:asc,updated_at:desc`；
+    · 断言「UC 与夸克**只有 pr 不同**」——把「两家同构」这一协议事实变成可执行断言；
+    · 断言子目录 fid 原样透传（目录浏览靠它，写错会静默退回根目录）。
+    目的：这套参数原先四处各写一份、只靠「记得同步」维持一致；现在任何改动都会立刻红灯。
+三、校验
+    · 推送前自检（括号平衡 / 孤儿注释 / KDoc 后无声明）：121 个 .kt、0 问题；
+    · 引擎内全库反查：`publishLive` / `removeLive` / `publishProgress` / `liveProgressFlow` /
+      `PROGRESS_INTERVAL_MILLIS` 已无残留；未用导入已清。
+待办：① 装机复验下载页实时速度 / 剩余时间 / 暂停继续（本批为纯搬迁，数值口径逐字保留）；
+      ② CI 结果待回填（含 testDebugUnitTest 的 3 个新用例）。
+================================================================================

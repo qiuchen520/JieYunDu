@@ -21,11 +21,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -81,25 +79,17 @@ class DownloadEngine @Inject constructor(
     /** 运行中的任务表。 */
     private val runtimes: MutableMap<String, DownloadTaskRuntime> = ConcurrentHashMap()
 
-    /**
-     * 全部任务的实时进度快照（内存态，**不落库**）。
-     *
-     * 存在理由（Owner 反馈「下载页速度恒为 `--`」）：下载页原先只订阅 Room 持久化进度，
-     * 而 Room 仅在「开始 / 暂停 / 完成」三刻写入、且**不保存速度字段**，
-     * 导致界面看不到实时数值。本表承载引擎运行期的实时进度（按
-     * [PROGRESS_INTERVAL_MILLIS] 节流刷新），供 UI 层与 Room 数据合并展示；
-     * 为性能考虑，**不**随每次刷新写库。
-     */
-    private val liveProgressFlow: MutableStateFlow<Map<String, DownloadProgressState>> =
-        MutableStateFlow(emptyMap())
+    /** 进度与测速（【修订 JYD-DEBT10-2026-10-07】自本类拆出，同包）。 */
+    private val progressTracker = DownloadProgressTracker()
 
     /**
      * 实时进度快照的只读流（任务 ID → 进度）。
      *
      * 说明：UI 订阅本流即可获得下载中的实时速度 / 进度；任务取消后其条目会从此表移除。
      * 该流是 [observeProgress]（按任务订阅）之外的「全量视图」，二者都基于内存态，互不影响。
+     * 数据来源、节流与测速口径见 [DownloadProgressTracker]。
      */
-    val liveProgress: StateFlow<Map<String, DownloadProgressState>> = liveProgressFlow.asStateFlow()
+    val liveProgress: StateFlow<Map<String, DownloadProgressState>> = progressTracker.live
 
     /** 任务调度锁（C1：并发闸门；保护 [runningTaskCount] 与 [pendingQueue]）。 */
     private val scheduleMutex = Mutex()
@@ -148,7 +138,7 @@ class DownloadEngine @Inject constructor(
         // 进度落库：行已在上一句建好，这里只更新进度列（不会碰任务名等列）。
         downloadDao.upsert(runtimes.getValue(task.taskId).progress.value)
         // 【JYD-DLSPEED-2026-10-04】启动即写入内存实时快照，下载页据此展示实时数值。
-        publishLive(runtimes.getValue(task.taskId).progress.value)
+        progressTracker.publish(runtimes.getValue(task.taskId).progress.value)
         // C1：不直接启动，交给调度器按「最大同时下载任务数」排队 / 放行。
         schedule(runtimes.getValue(task.taskId))
     }
@@ -296,7 +286,7 @@ class DownloadEngine @Inject constructor(
         )
         downloadDao.upsert(runtime.progress.value)
         // 【JYD-DLSPEED-2026-10-04】暂停即发布最终态，界面立刻显示「已暂停 + 速度归零」。
-        publishLive(runtime.progress.value)
+        progressTracker.publish(runtime.progress.value)
         Timber.i("DownloadEngine paused task %s", taskId)
     }
 
@@ -437,7 +427,7 @@ class DownloadEngine @Inject constructor(
             averageSpeedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
         )
         // 【JYD-DLSPEED-2026-10-04】任务已销毁：实时表中移除条目，避免残留脏数据。
-        removeLive(taskId)
+        progressTracker.remove(taskId)
         Timber.i("DownloadEngine canceled task %s", taskId)
     }
 
@@ -463,30 +453,6 @@ class DownloadEngine @Inject constructor(
         runtimes[taskId]?.progress?.asStateFlow()
             ?: flowOf(DownloadProgressState.initial(taskId, DownloadTask.DEFAULT_CHUNK_COUNT))
 
-    /**
-     * 把一份进度快照写入内存实时表（【JYD-DLSPEED-2026-10-04】）。
-     *
-     * 说明：
-     * - 本方法是「下载页速度恒 `--`」修复的写入口，**只改内存、不写库**（Owner 要求③：
-     *   不为显示速度频繁写 Room）；落库仍只发生在 start / pause / complete 三刻；
-     * - 多分片协程会并发调用，故用「读当前值 + 生成新 Map + CAS 回写」而非 `+=`，
-     *   避免并发下丢更新；
-     * - 调用方须自行保证节流（[publishProgress] 已按 [PROGRESS_INTERVAL_MILLIS] 节流）。
-     *
-     * @param progress 最新进度快照（含任务 ID）。
-     */
-    private fun publishLive(progress: DownloadProgressState) {
-        liveProgressFlow.update { current -> current + (progress.taskId to progress) }
-    }
-
-    /**
-     * 从内存实时表中移除某任务的条目（任务取消后调用）。
-     *
-     * @param taskId 任务 ID。
-     */
-    private fun removeLive(taskId: String) {
-        liveProgressFlow.update { current -> current - taskId }
-    }
 
     /**
      * 执行任务主体：并发下载全部分片 → 合并 → 落库。
@@ -508,7 +474,7 @@ class DownloadEngine @Inject constructor(
                                 runtime = runtime,
                                 chunk = chunk,
                                 partFile = chunkManager.partFile(targetFile, chunk.index)
-                            ) { sessionTotal -> publishProgress(runtime, sessionTotal) }
+                            ) { sessionTotal -> progressTracker.onBytesRead(runtime, sessionTotal) }
                         }
                     }.awaitAll()
                 }
@@ -531,7 +497,7 @@ class DownloadEngine @Inject constructor(
                 )
                 downloadDao.upsert(runtime.progress.value)
                 // 【JYD-DLSPEED-2026-10-04】完成即发布最终态（速度归零、进度满格）。
-                publishLive(runtime.progress.value)
+                progressTracker.publish(runtime.progress.value)
                 Timber.i("DownloadEngine completed task %s", runtime.task.taskId)
                 return
             } catch (cancellation: CancellationException) {
@@ -552,7 +518,7 @@ class DownloadEngine @Inject constructor(
                         speedBytesPerSecond = DownloadProgressState.UNKNOWN_SIZE
                     )
                     // 【JYD-DLSPEED-2026-10-04】失败即发布最终态，界面不再残留旧速度。
-                    publishLive(runtime.progress.value)
+                    progressTracker.publish(runtime.progress.value)
                     return
                 }
                 Timber.e(
@@ -570,58 +536,6 @@ class DownloadEngine @Inject constructor(
     }
 
 
-    /**
-     * 以节流方式刷新进度快照并计算瞬时速度。
-     *
-     * @param runtime 运行态任务。
-     * @param sessionBytes 本次运行累计写入的字节数。
-     */
-    private fun publishProgress(runtime: DownloadTaskRuntime, sessionBytes: Long) {
-        // 【JYD-DLSPEED2-2026-10-04】仅活动态才刷新：pause() 取消协程到真正停下的短暂窗口内，
-        // 在途分片可能仍调用本方法；若此时发布 DOWNLOADING 快照，会把刚写入的「已暂停」
-        // 覆盖回去，表现为「点了暂停又跳回下载中」。
-        if (runtime.state.value !in ACTIVE_STATES) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (now - runtime.lastEmitAt < PROGRESS_INTERVAL_MILLIS) {
-            return
-        }
-        runtime.lastEmitAt = now
-
-        val downloaded = runtime.initialBytes + sessionBytes
-        val elapsed = now - runtime.lastSpeedSampleAt
-        val speed = if (elapsed > 0L) {
-            (downloaded - runtime.lastSpeedSampleBytes) * 1000L / elapsed
-        } else {
-            DownloadProgressState.UNKNOWN_SIZE
-        }
-        runtime.lastSpeedSampleAt = now
-        runtime.lastSpeedSampleBytes = downloaded
-
-        // 平均速度（Owner 反馈）：本运行累计写入字节 ÷ 本运行已进行的时长，反映整体吞吐。
-        val sessionElapsed = now - runtime.sessionStartAt
-        val averageSpeed = if (sessionElapsed > 0L) {
-            sessionBytes * 1000L / sessionElapsed
-        } else {
-            DownloadProgressState.UNKNOWN_SIZE
-        }
-
-        runtime.progress.value = runtime.progress.value.copy(
-            state = runtime.state.value,
-            downloadedBytes = downloaded,
-            totalBytes = if (runtime.task.hasKnownSize) {
-                runtime.task.fileSize
-            } else {
-                DownloadProgressState.UNKNOWN_SIZE
-            },
-            speedBytesPerSecond = speed,
-            averageSpeedBytesPerSecond = averageSpeed
-        )
-        // 【JYD-DLSPEED-2026-10-04】实时速度的来源：节流后的每次刷新同步到内存实时表，
-        // 供下载页订阅展示；此处**不落库**（Owner 要求③：不为显示速度频繁写 Room）。
-        publishLive(runtime.progress.value)
-    }
 
 
     /**
@@ -633,9 +547,6 @@ class DownloadEngine @Inject constructor(
     companion object {
         /** 分片下载线程名前缀（便于抓日志 / 排查）。 */
         private const val DOWNLOAD_THREAD_NAME = "jyd-download"
-
-        /** 进度发射节流间隔。 */
-        private const val PROGRESS_INTERVAL_MILLIS = 200L
 
         /** 任务级失败重试的等待时长（C1）。 */
         private const val TASK_RETRY_DELAY_MILLIS = 2000L
@@ -657,4 +568,6 @@ class DownloadEngine @Inject constructor(
 // 【修订 JYD-DEBT3-2026-10-07】本文件只保留引擎门面与调度：内部类 SpeedLimiter →
 // DownloadSpeedLimiter.kt、TaskRuntime → DownloadTaskRuntime.kt、单分片下载 →
 // ChunkDownloader.kt（均同包，调用方无感）。
+// 【修订 JYD-DEBT10-2026-10-07】进度表与测速（publishProgress / publishLive / liveProgress）
+// 已迁至同包 DownloadProgressTracker.kt。
 
