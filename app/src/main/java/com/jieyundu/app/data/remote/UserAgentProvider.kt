@@ -60,11 +60,19 @@ class UserAgentProvider @Inject constructor() {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
+    /** 百度 Referer。 */
+    val baiduReferer: String = "https://pan.baidu.com/"
+
+    /**
+     * UC 网盘客户端 User-Agent（登录态 API / 取链链路使用）。
+     *
+     * 来源：《抓包事实.md》第 2 节「三套 UA」之②「云盘客户端（登录态取链）」。
+     * 说明：App 的转存 / 取链均需登录态（Cookie），故 API 请求统一使用该客户端 UA。
+     */
+    val ucUserAgent: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) uc-cloud-drive/1.6.1 Chrome/100.0.4896.160 " +
             "Electron/18.3.5.16-b62cf9c50d Safari/537.36 Channel/ucpan_other_ch"
-
-            "(KHTML, like Gecko) uc-cloud-drive/2.5.20 Chrome/100.0.4896.160 " +
-            "Electron/18.3.5.4-b478491100 Safari/537.36 Channel/pckk_other_ch"
 
     /**
      * UC 网页 / 登录态 User-Agent（内嵌 WebView 登录页使用）。

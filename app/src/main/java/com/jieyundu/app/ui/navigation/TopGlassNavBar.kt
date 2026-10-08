@@ -62,34 +62,29 @@ enum class GlassBarOrientation {
     Horizontal
 }
 
-/**
- * 导航弹簧预设（10.3）。
- *
- * 说明：阶段 7 仅使用 [JellyPreset]；该数据类为阶段 11 的「预设切换」预留扩展点。
- * 下列默认值即当前「果冻」预设（10.3 修订，见 CHANGELOG）。
- *
- * @property releaseDamping 松手吸附阻尼比。
- * @property releaseStiffness 松手吸附刚度。
- * @property clickDamping 点击切换阻尼比。
- * @property clickStiffness 点击切换刚度。
- * @property sizeDamping 尺寸 / 抓取阻尼比。
- * @property sizeStiffness 尺寸 / 抓取刚度。
- * @property pressDamping 按下缩放阻尼比。
- * @property pressStiffness 按下缩放刚度。
- */
-data class NavSpringPreset(
-    val releaseDamping: Float = 0.48f,
-    val releaseStiffness: Float = 420f,
-    val clickDamping: Float = 0.52f,
-    val clickStiffness: Float = 480f,
-    val sizeDamping: Float = 0.60f,
-    val sizeStiffness: Float = 550f,
-    val pressDamping: Float = 0.38f,
-    val pressStiffness: Float = 850f
-)
+/** 松手吸附阻尼比（10.3 修订值：0.48）。 */
+private const val RELEASE_DAMPING = 0.48f
 
-/** 默认「果冻」预设（10.3 修订：0.48/420、0.52/480、0.60/550、0.38/850）。 */
-val JellyPreset: NavSpringPreset = NavSpringPreset()
+/** 松手吸附刚度（10.3 修订值：420）。 */
+private const val RELEASE_STIFFNESS = 420f
+
+/** 点击切换阻尼比（10.3 修订值：0.52）。 */
+private const val CLICK_DAMPING = 0.52f
+
+/** 点击切换刚度（10.3 修订值：480）。 */
+private const val CLICK_STIFFNESS = 480f
+
+/** 尺寸 / 抓取阻尼比（10.3 修订值：0.60）。 */
+private const val SIZE_DAMPING = 0.60f
+
+/** 尺寸 / 抓取刚度（10.3 修订值：550）。 */
+private const val SIZE_STIFFNESS = 550f
+
+/** 按下缩放阻尼比（10.3 修订值：0.38）。 */
+private const val PRESS_DAMPING = 0.38f
+
+/** 按下缩放刚度（10.3 修订值：850）。 */
+private const val PRESS_STIFFNESS = 850f
 
 /** 按下缩放目标值（10.3：0.94）。 */
 private const val PRESSED_SCALE = 0.94f
@@ -107,14 +102,14 @@ private const val CORNER_RADIUS_PERCENT = 33
  * Q 弹玻璃导航条（第十部分核心，支持双方向）。
  *
  * 说明：指示器由 [Animatable] 驱动，仅使用 spring（R6/D4）；拖拽时零动画跟手，
- * 松手吸附最近页签，点击切换。弹簧参数全部来自 [preset]，不在此硬编码
- * （阶段 11 预留预设切换扩展点）。
+ * 松手吸附最近页签，点击切换。弹簧参数为本文件私有常量（【修订 JYD-DEBT6-2026-10-07】：
+ * 原 NavSpringPreset 数据类全库仅一个实例且贯穿多层传递，属预留扩展点，已删除；
+ * 调手感仍只改本节常量一处）。
  *
  * @param labels 页签文案（来自 strings.xml，禁止硬编码）。
  * @param selectedIndex 当前选中下标。
  * @param onSelect 选中回调（点击或松手吸附后触发）。
  * @param orientation 导航条方向（竖直/横向）。
- * @param preset 弹簧预设（阶段 7 固定为 [JellyPreset]）。
  * @param modifier 外部修饰符（提供主轴向尺寸：横向填宽、竖向填高）。
  */
 @Composable
@@ -123,13 +118,12 @@ fun TopGlassNavBar(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     orientation: GlassBarOrientation,
-    preset: NavSpringPreset = JellyPreset,
     modifier: Modifier = Modifier
 ) {
-    val releaseSpec: SpringSpec<Float> = spring<Float>(preset.releaseDamping, preset.releaseStiffness)
-    val clickSpec: SpringSpec<Float> = spring<Float>(preset.clickDamping, preset.clickStiffness)
-    val sizeSpec: SpringSpec<Float> = spring<Float>(preset.sizeDamping, preset.sizeStiffness)
-    val pressSpec: SpringSpec<Float> = spring<Float>(preset.pressDamping, preset.pressStiffness)
+    val releaseSpec: SpringSpec<Float> = spring<Float>(RELEASE_DAMPING, RELEASE_STIFFNESS)
+    val clickSpec: SpringSpec<Float> = spring<Float>(CLICK_DAMPING, CLICK_STIFFNESS)
+    val sizeSpec: SpringSpec<Float> = spring<Float>(SIZE_DAMPING, SIZE_STIFFNESS)
+    val pressSpec: SpringSpec<Float> = spring<Float>(PRESS_DAMPING, PRESS_STIFFNESS)
     val density = LocalDensity.current
     val isHorizontal = orientation == GlassBarOrientation.Horizontal
     val thickness = if (isHorizontal) Dimens.NavBarThicknessHorizontal else Dimens.NavBarThicknessVertical
@@ -295,7 +289,7 @@ fun TopGlassNavBar(
  * @param text 页签文案。
  * @param selected 是否选中。
  * @param pressed 是否被按下。
- * @param pressSpec 按下缩放弹簧（来自 [NavSpringPreset]）。
+ * @param pressSpec 按下缩放弹簧（来自本文件私有常量）。
  */
 @Composable
 private fun NavLabel(text: String, selected: Boolean, pressed: Boolean, pressSpec: SpringSpec<Float>) {

@@ -72,10 +72,6 @@ data class HomeUiState(
     val isPreparingDownload: Boolean = false,
     @StringRes val downloadErrorRes: Int? = null
 ) {
-    /** 输入非空且当前未在解析时，允许触发解析。 */
-    val canParse: Boolean
-        get() = inputLink.isNotBlank() && !isParsing
-
     /** 当前浏览的目录层；未在浏览时为 null。 */
     val currentLevel: BrowseLevel?
         get() = stack.lastOrNull()

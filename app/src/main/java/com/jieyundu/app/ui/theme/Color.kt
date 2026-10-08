@@ -112,9 +112,5 @@ object JieYunDuColors {
     /** 空态灰色图标（浅灰 #C7C7CC）。 */
     val EmptyStateIcon: Color = Color(0xFFC7C7CC)
 
-    /** 玻璃折射渐变（浅色主题下停用：透明）。 */
-    val GlassRefractionPurple: Color = Color(0x00000000)
 
-    /** 玻璃折射渐变（浅色主题下停用：透明）。 */
-    val GlassRefractionBlue: Color = Color(0x00000000)
 }

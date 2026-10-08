@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import com.jieyundu.app.ui.components.GlassChip
 import com.jieyundu.app.ui.glass.GlassPanel
 import com.jieyundu.app.ui.screens.download.DownloadFilter
@@ -46,7 +47,7 @@ fun DownloadFilterBar(
         ) {
             DownloadFilter.entries.forEach { entry ->
                 GlassChip(
-                    labelRes = entry.labelRes,
+                    label = stringResource(entry.labelRes),
                     selected = entry == selected,
                     onClick = { onSelect(entry) }
                 )

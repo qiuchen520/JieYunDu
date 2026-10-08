@@ -1,6 +1,6 @@
 // 文件：JieYunDuNavHost.kt
 // 职责：导航宿主——按窗口尺寸选取导航形式，承载四大页面
-// 依赖：WindowSizeHelper、NavigationRail、NavigationBar、四个 Screen、Compose runtime/foundation
+// 依赖：WindowSizeHelper、TopGlassNavBar、四个 Screen、Dimens、Compose runtime/foundation
 // 协议：AGPL-3.0
 //
 // 变更记录（【修订 JYD-UI-2026-10-03】）：原「顶部标题栏」与导航条功能重复、浪费竖向空间，
@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ import com.jieyundu.app.ui.screens.login.NetdiskLoginViewModel
 import com.jieyundu.app.ui.screens.login.NetdiskPickerScreen
 import com.jieyundu.app.ui.screens.login.WebViewLoginScreen
 import com.jieyundu.app.ui.screens.settings.SettingsScreen
+import com.jieyundu.app.ui.theme.Dimens
 
 /**
  * 应用四大页签。
@@ -60,15 +62,15 @@ enum class JieYunDuTab(@StringRes val labelRes: Int) {
  *
  * 说明：手写状态导航（不引入 `androidx.navigation`——未列入第五部分技术栈，D8）。
  * 平板 → 左侧竖直玻璃条；手机 → 顶部横向玻璃条（第一层），内容区渲染在其下方。
+ * 说明（【修订 JYD-DEBT6-2026-10-07】）：原 NavigationRail / NavigationBar 两个纯转发
+ * wrapper 已删除，此处直接调用 [TopGlassNavBar] 并给出方向与内边距，少一层间接。
  * 内容切换使用淡入淡出（[Crossfade]），与指示器弹簧分离（D6）。
  *
  * @param modifier 外部修饰符。
- * @param preset 弹簧预设（阶段 7 固定为 [JellyPreset]，透传至导航 wrapper）。
  */
 @Composable
 fun JieYunDuNavHost(
-    modifier: Modifier = Modifier,
-    preset: NavSpringPreset = JellyPreset
+    modifier: Modifier = Modifier
 ) {
     var selectedOrdinal by rememberSaveable { mutableStateOf(0) }
     val tabs = JieYunDuTab.entries
@@ -79,12 +81,12 @@ fun JieYunDuNavHost(
 
     if (rememberIsExpandedLayout()) {
         Row(modifier = modifier.fillMaxSize()) {
-            NavigationRail(
+            TopGlassNavBar(
                 labels = labels,
                 selectedIndex = selectedOrdinal,
                 onSelect = onSelect,
-                modifier = Modifier.fillMaxHeight(),
-                preset = preset
+                orientation = GlassBarOrientation.Vertical,
+                modifier = Modifier.fillMaxHeight().padding(vertical = Dimens.SpaceLg)
             )
             NavContent(
                 tab = selectedTab,
@@ -94,12 +96,12 @@ fun JieYunDuNavHost(
         }
     } else {
         Column(modifier = modifier.fillMaxSize()) {
-            NavigationBar(
+            TopGlassNavBar(
                 labels = labels,
                 selectedIndex = selectedOrdinal,
                 onSelect = onSelect,
-                modifier = Modifier.fillMaxWidth(),
-                preset = preset
+                orientation = GlassBarOrientation.Horizontal,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.NavBarLengthInsetHorizontal)
             )
             NavContent(
                 tab = selectedTab,

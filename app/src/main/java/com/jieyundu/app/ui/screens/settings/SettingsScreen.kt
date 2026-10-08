@@ -29,16 +29,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.jieyundu.app.R
 import com.jieyundu.app.ui.adaptive.rememberIsExpandedLayout
 import com.jieyundu.app.ui.components.GlassChip
@@ -62,6 +66,18 @@ import timber.log.Timber
 @Composable
 fun SettingsScreen(modifier: Modifier = Modifier) {
     val viewModel: SettingsViewModel = hiltViewModel()
+    // C2 第 1 条：从系统「电池优化」页返回后，重新读取真实白名单状态
+    // （【修订 JYD-DEBT6-2026-10-07】接通原本写好了却没人调用的 refreshBatteryOptimizationStatus()）。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshBatteryOptimizationStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val isExpanded = rememberIsExpandedLayout()
     val spacing = if (isExpanded) Dimens.SpaceXl else Dimens.SpaceMd
     val contentPadding: Dp =

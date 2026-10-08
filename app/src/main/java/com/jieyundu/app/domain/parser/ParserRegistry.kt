@@ -1,5 +1,5 @@
 // 文件：ParserRegistry.kt
-// 职责：解析器注册表，按链接或网盘类型路由到对应解析器
+// 职责：解析器注册表，按网盘类型路由到对应解析器
 // 依赖：NetdiskParser、NetdiskType
 // 协议：AGPL-3.0
 
@@ -20,8 +20,6 @@ import com.jieyundu.app.domain.model.NetdiskType
 class ParserRegistry(
     private val parsers: List<NetdiskParser>
 ) {
-
-        parsers.firstOrNull { parser -> parser.match(url) }
 
     /**
      * 按网盘类型查找解析器。

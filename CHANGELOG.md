@@ -1910,7 +1910,54 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 七、校验
     · 推送前自检脚本（括号平衡 + 孤儿注释行 + KDoc 后无声明）全库通过：114 个 .kt、0 问题；
     · 被删符号全库反查：0 残留引用。
+推送 / CI：commit 7dca683c；CI run 37760826112 **失败**——`UserAgentProvider.kt` 与
+    `ParserRegistry.kt` 被删除脚本截断（脚本对「无括号的单行声明」定位错误，把声明之后的
+    内容一并删掉）。已从上一提交 abd9a0fd 取回原文并用**精确字符串替换**重做这两处删除，
+    与 D6 同批推送修复；同时加固推送前自检口径（后续所有删除一律用精确字符串 + 反查）。
 待办：① 装机复验（本批为纯删除 / 可见性收窄，预期行为零变化）；
-      ② Owner 拍板收藏 / 历史链路与 DownloadRepository；
-      ③ CI 结果待回填。
+      ② Owner 拍板收藏 / 历史链路与 DownloadRepository。
+================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT6-2026-10-07 · 债批次 5：UI 层扁平化与死代码清除（-约 300 行）】
+来源：Owner 目标「把架构全部拆分清楚」+ UI 层 ponytail-audit 清单（逐条 grep 核实）。
+一、导航层扁平化（删 2 个纯转发 wrapper）
+    · 删除 `ui/navigation/NavigationRail.kt` / `NavigationBar.kt`：两者各自只做
+      「改 orientation + 加内边距」后转调 `TopGlassNavBar`，各仅 1 个调用方。
+      `JieYunDuNavHost` 现在直接调用 `TopGlassNavBar` 并显式给出方向与内边距。
+二、删「只有一个实例」的弹簧预设抽象
+    · 删除 `NavSpringPreset` 数据类与 `JellyPreset` 单例（KDoc 自述为「阶段 11 预留扩展点」），
+      以及贯穿 `NavHost → TopGlassNavBar` 的 `preset` 形参；
+      弹簧值改为 `TopGlassNavBar.kt` 内 8 个私有常量（调手感仍只需改一处，符合 10.3）。
+三、删无效绘制与死常量
+    · `GlassPanel` 删除 `drawRefraction()` 及其调用：它用的两个颜色（`GlassRefractionPurple/Blue`）
+      早已被置为 `Color(0x00000000)`，整段渐变完全透明、零绘制效果；两个颜色常量一并删除。
+    · `Dimens` 删 6 个零引用常量：IconButtonSize / GlassBlurRadius / GlassBlurRadiusCompact /
+      DownloadButtonSize / ContentTopPadding / FilterBarHeight。
+    · `strings.xml` 删 7 条零引用文案：parse_result_empty、cd_open_settings、cd_download_file、
+      download_speed_pair_format、settings_default_chunk_value、webview_login_success、cd_close_login。
+      （注：cd_* 三条本意是 contentDescription，当前手绘图标无 a11y 标注 —— 已记入「缺失项」，
+      不保留死资源。）
+四、组件 API 精简
+    · `GlassChip` 删除 `labelRes` 重载（唯一调用方改为 `label = stringResource(...)`）、
+      删除从不被传值的 `horizontalPadding` 形参（内边距固定 `Dimens.SpaceLg`）。
+    · `HomeUiState` 删除零引用派生属性 `canParse`。
+五、接通一处「写好了没人调用」的功能（真实缺口，非删除）
+    · `SettingsViewModel.refreshBatteryOptimizationStatus()` 原先 0 调用，KDoc 自述「系统设置页
+      返回后调用」——C2 第 1 条的白名单状态因此**永远不会刷新**。现于 `SettingsScreen`
+      用 `LocalLifecycleOwner` + `LifecycleEventObserver(ON_RESUME)` 真正接通：
+      从系统电池优化页返回即重新读取真实状态。
+六、不采纳的审计建议（与规格冲突）
+    · 「删 GlassCard 的可点击 + 按压缩放分支」：9.6.3 明确要求「卡片整体可点击，
+      点击时缩放 0.98」，属规格行为，保留。
+    · 「把 45 个单次使用的手绘图标几何常量内联」：可读性损失大于收益，保留命名常量。
+七、校验
+    · 推送前自检（括号平衡 / 孤儿注释 / KDoc 后无声明）：112 个 .kt、0 问题；
+    · 被删符号全库反查：`NavSpringPreset` / `JellyPreset` / `GlassRefraction*` /
+      `horizontalPadding` / `Dimens.<六常量>` / `canParse` / `NavigationRail` / `NavigationBar(`
+      在 .kt 中仅剩本批的说明性 KDoc 提及。
+待办：① 装机复验（导航 Q 弹手感、设置页白名单刷新、筛选条与胶囊外观应无变化）；
+      ② 手绘图标的 contentDescription（a11y）列入缺失项清单；
+      ③ 引擎之外的大文件拆分（SettingsScreen 445 行单函数、DownloadItem 手绘图标外移）
+      作为下一段（D7）执行。
 ================================================================================

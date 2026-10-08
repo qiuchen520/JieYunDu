@@ -80,15 +80,6 @@ object Dimens {
     /** 边缘高光厚度。 */
     val HighlightStroke: Dp = 1.dp
 
-    /** 圆形图标按钮直径。 */
-    val IconButtonSize: Dp = 48.dp
-
-    /** 玻璃模糊半径（平板）。 */
-    val GlassBlurRadius: Dp = 24.dp
-
-    /** 玻璃模糊半径（手机）。 */
-    val GlassBlurRadiusCompact: Dp = 16.dp
-
     /** 内侧阴影模糊半径。 */
     val InnerShadowBlur: Dp = 4.dp
 
@@ -132,9 +123,6 @@ object Dimens {
 
     // --- 主界面（阶段 8，第九部分）---
 
-    /** 解析结果卡片右侧圆形下载按钮直径（9.6.3：56dp）。 */
-    val DownloadButtonSize: Dp = 56.dp
-
     /**
      * 下载列表项高度（平板）。
      *
@@ -162,9 +150,6 @@ object Dimens {
 
     // --- 阶段 8 整改（UI 重构）---
 
-    /** 主内容区顶部内边距（平板整改：内容靠上、不贴顶）。 */
-    val ContentTopPadding: Dp = 32.dp
-
     /** 空态图标边长（下载列表空态）。 */
     val EmptyIconSize: Dp = 64.dp
 
@@ -172,9 +157,6 @@ object Dimens {
     val BackdropBlurRadius: Dp = 48.dp
 
     // --- 阶段 8 布局修订（首页 / 下载页 / 网盘页）---
-
-    /** 下载筛选条高度。 */
-    val FilterBarHeight: Dp = 44.dp
 
     /** 筛选胶囊高度。 */
     val FilterChipHeight: Dp = 36.dp

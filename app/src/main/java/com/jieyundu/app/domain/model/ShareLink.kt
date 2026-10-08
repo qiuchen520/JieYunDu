@@ -18,6 +18,4 @@ data class ShareLink(
     val rawUrl: String,
     val shareId: String,
     val password: String? = null
-) {
-
-}
+)

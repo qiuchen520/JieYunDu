@@ -15,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.jieyundu.app.ui.glass.GlassPanel
 import com.jieyundu.app.ui.theme.Dimens
@@ -35,15 +34,13 @@ import com.jieyundu.app.ui.theme.JieYunDuColors
  * @param selected 是否选中。
  * @param onClick 点击回调。
  * @param modifier 外部修饰符。
- * @param horizontalPadding 横向内边距；默认 [Dimens.SpaceLg]（下载页筛选条档位）。
  */
 @Composable
 fun GlassChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    horizontalPadding: Dp = Dimens.SpaceLg
+    modifier: Modifier = Modifier
 ) {
     GlassPanel(
         modifier = modifier
@@ -57,7 +54,7 @@ fun GlassChip(
         Box(
             modifier = Modifier
                 .height(Dimens.FilterChipHeight)
-                .padding(horizontal = horizontalPadding),
+                .padding(horizontal = Dimens.SpaceLg),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -68,29 +65,4 @@ fun GlassChip(
             )
         }
     }
-}
-
-/**
- * 玻璃质感档位胶囊（文案来自字符串资源）。
- *
- * 说明：供下载页筛选条使用；设置页档位多为「数字 / 已格式化文本」，用上面的重载即可。
- *
- * @param labelRes 文案资源 id。
- * @param selected 是否选中。
- * @param onClick 点击回调。
- * @param modifier 外部修饰符。
- */
-@Composable
-fun GlassChip(
-    labelRes: Int,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    GlassChip(
-        label = stringResource(labelRes),
-        selected = selected,
-        onClick = onClick,
-        modifier = modifier
-    )
 }
