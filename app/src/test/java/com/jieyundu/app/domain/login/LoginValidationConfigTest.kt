@@ -87,8 +87,13 @@ class LoginValidationConfigTest {
         // 故由「空串」改为文档所载网页 UA；仍必须**不拿别家 UA 顶替**。
         val xunleiWeb = agents.webUserAgentOf(NetdiskType.XUNLEI)
         // JUnit4 的签名是 (message, condition)，注意参数顺序。
-        assertTrue("xunlei web UA must be the documented web UA", xunleiWeb.contains("Chrome"))
-        assertTrue(xunleiWeb.startsWith("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+        // 注意：《抓包事实.md》§4「UA」之 Web 记的就是
+        // "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"（**疑似截断**，
+        // 无 Chrome/xxx 段）；此处按事实断言，不自行补全 UA（R3）。
+        assertTrue(
+            "xunlei web UA must be the documented web UA",
+            xunleiWeb.startsWith("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        )
         assertFalse("must not borrow quark UA", xunleiWeb.contains("QuarkPC"))
         assertFalse("must not borrow baidu UA", xunleiWeb.contains("Chrome/124"))
         assertFalse("must not borrow uc UA", xunleiWeb.contains("uc-cloud-drive"))

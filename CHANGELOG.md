@@ -2241,3 +2241,9 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
     同一个坑第二次踩到：JUnit4 的 `assertTrue/assertFalse` 签名是 `(message, condition)`，
     二推把两参写成了 `(condition, message)`。已全部改正并加注释；教训升级为检查项：
     **凡在 JUnit4 测试里给断言带 message，参数顺序必须是 message 在前**。
+修复（阶段 1A 四推）：CI run 37771502427 仍是同一个用例失败，但这次是**断言与事实不符**：
+    §4「UA」之 Web 记的原样是 `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36`
+    ——**没有 `Chrome/xxx` 段（疑似截断）**，而我在断言里假设了 Chrome 标记。
+    已按文档原文断言（并以「不借用别家 UA」保留回归意图），不自行补全 UA（R3）。
+    ⚠️ 事实质量待确认（列给评审方）：迅雷 Web UA 是否确为截断，还是抓包时只留了前缀；
+    若为截断，WebView 登录页可能拿到一个非常规 UA（当前不影响分享解析，仅影响登录页形态）。
