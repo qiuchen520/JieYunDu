@@ -15,6 +15,7 @@ import com.jieyundu.app.domain.login.CookieExtractor
 import com.jieyundu.app.domain.login.LoginStateManager
 import com.jieyundu.app.domain.login.LoginValidator
 import com.jieyundu.app.domain.model.NetdiskType
+import com.jieyundu.app.domain.login.XunleiLoginManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -44,10 +45,18 @@ import timber.log.Timber
 @HiltViewModel
 class NetdiskLoginViewModel @Inject constructor(
     private val cookieStore: CookieStore,
+    private val xunleiLoginManager: XunleiLoginManager,
     private val loginStateManager: LoginStateManager,
     private val loginValidator: LoginValidator,
     private val userAgentProvider: UserAgentProvider
 ) : ViewModel() {
+
+    init {
+        // 重启后回显：迅雷登录态在加密存储里，进程重启依然有效（Owner 验收项 3）。
+        if (xunleiLoginManager.isLoggedIn.value) {
+            loginStateManager.markLoggedIn(NetdiskType.XUNLEI)
+        }
+    }
 
     private val loginTargetState = MutableStateFlow<NetdiskType?>(null)
 
@@ -100,6 +109,18 @@ class NetdiskLoginViewModel @Inject constructor(
         resetBookkeeping()
         loginTargetState.value = type
         Timber.d("NetdiskLogin startLogin %s", type)
+    }
+
+    /**
+     * 原生登录（迅雷）成功后的收尾：标记登录态并关闭登录页。
+     *
+     * 说明：迅雷不用 Cookie 通道，登录态已由 [XunleiLoginManager] 加密持久化；
+     * 此处只负责把「已登录」反映到网盘页。
+     */
+    fun onNativeLoginSucceeded() {
+        loginStateManager.markLoggedIn(NetdiskType.XUNLEI)
+        loginTargetState.value = null
+        Timber.d("NetdiskLogin native login succeeded: XUNLEI")
     }
 
     /** 关闭登录页（返回网盘选择页）。 */
@@ -155,6 +176,10 @@ class NetdiskLoginViewModel @Inject constructor(
      * @param type 网盘类型。
      */
     fun logout(type: NetdiskType) {
+        if (type == NetdiskType.XUNLEI) {
+            // 迅雷登录态不在 Cookie 里，需显式清空令牌（含 refresh_token）。
+            xunleiLoginManager.logout()
+        }
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
         cookieStore.clear()

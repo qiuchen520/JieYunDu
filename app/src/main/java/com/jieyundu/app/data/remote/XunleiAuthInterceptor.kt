@@ -5,7 +5,9 @@
 
 package com.jieyundu.app.data.remote
 
+import com.jieyundu.app.domain.login.XunleiLoginManager
 import com.jieyundu.app.domain.parser.xunlei.XunleiConfig
+import javax.inject.Provider
 import okhttp3.Interceptor
 import okhttp3.Response
 import timber.log.Timber
@@ -23,12 +25,17 @@ import timber.log.Timber
  *
  * 说明：设备指纹来自 [XunleiFingerprint]（一机一指纹，**不共用官方指纹**）。
  *
+ * 到期主动刷新（Owner 约束⑥）：业务主机的令牌若已过期（JWT `exp` 含 60 秒提前量），
+ * 在发出请求前先刷新一次，避免每次都撞 401 再重试。
+ *
  * @param fingerprint 本机设备指纹。
  * @param tokenStore 登录态（access_token / captcha_token）。
+ * @param loginManagerProvider 登录管理器（懒解析：避免 OkHttpClient ↔ Retrofit 的循环依赖）。
  */
 internal class XunleiAuthInterceptor(
     private val fingerprint: XunleiFingerprint,
-    private val tokenStore: XunleiTokenStore
+    private val tokenStore: XunleiTokenStore,
+    private val loginManagerProvider: Provider<XunleiLoginManager>
 ) : Interceptor {
 
     /**
@@ -52,6 +59,11 @@ internal class XunleiAuthInterceptor(
         if (host == HOST_PAN) {
             builder.header(HEADER_ORIGIN, XunleiConfig.ORIGIN)
             builder.header(HEADER_REFERER, XunleiConfig.REFERER)
+            // 到期主动刷新（仅已登录时；游客匿名路径完全不触发刷新，见 §11.4 #10）。
+            if (tokenStore.isLoggedIn && tokenStore.isAccessTokenExpired()) {
+                val refreshed = loginManagerProvider.get().refreshSessionBlocking()
+                Timber.i("XunleiAuthInterceptor pre-refresh expired token, ok=%s", refreshed)
+            }
             // 游客匿名：无令牌时不带 Authorization（§11.4 #10）。
             tokenStore.accessToken?.let { token ->
                 builder.header(HEADER_AUTHORIZATION, "$BEARER_PREFIX$token")

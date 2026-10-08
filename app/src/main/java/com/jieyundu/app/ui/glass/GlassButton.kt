@@ -39,6 +39,9 @@ private const val PRESS_SPRING_DAMPING = 0.4f
 /** 按下动画刚度。 */
 private const val PRESS_SPRING_STIFFNESS = 800f
 
+/** 禁用态整体透明度（【JYD-XUNLEI-P1B-2026-10-08】：登录页需要「不可点」态）。 */
+private const val DISABLED_ALPHA = 0.45f
+
 /**
  * 液态玻璃按钮。
  *
@@ -47,6 +50,7 @@ private const val PRESS_SPRING_STIFFNESS = 800f
  * @param text 按钮文字（来自 strings.xml，禁止硬编码中文）。
  * @param onClick 点击回调。
  * @param modifier 外部修饰符。
+ * @param enabled 是否可点击；false 时置灰（透明度 0.45）且不响应点击。
  * @param height 按钮高度。
  * @param cornerRadius 圆角半径。
  * @param fillColor 底色；默认白色实心底（浅色 Area 风）。
@@ -58,6 +62,7 @@ fun GlassButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     height: Dp = Dimens.ButtonHeight,
     cornerRadius: Dp = Dimens.ButtonCorner,
     fillColor: Color = JieYunDuColors.GlassFillStrong,
@@ -81,6 +86,7 @@ fun GlassButton(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                alpha = if (enabled) 1f else DISABLED_ALPHA
             }
             .clip(shape)
             .background(color = fillColor, shape = shape)
@@ -88,6 +94,7 @@ fun GlassButton(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                enabled = enabled,
                 onClick = onClick
             )
             .padding(horizontal = Dimens.SpaceXl),

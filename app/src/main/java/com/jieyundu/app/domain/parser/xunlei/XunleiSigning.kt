@@ -8,9 +8,12 @@ package com.jieyundu.app.domain.parser.xunlei
 import java.security.MessageDigest
 
 /**
- * 迅雷签名工具（【JYD-XUNLEI-P1A-2026-10-08】，严格照抄《抓包事实.md》§4 / §11.2）。
+ * 迅雷签名工具（【JYD-XUNLEI-P1B-2026-10-08】，严格照抄《抓包事实.md》§4 / §11.2）。
  *
- * 本类**只实现文档给出完整公式的部分**；缺算法的部分一律留 `TODO(用户抓包)`，不猜测。
+ * 两个签名都已有完整算法依据：
+ * - [deviceSign]：两段哈希，且**有官方向量可比对**；
+ * - [captchaSign]：10 层加盐 md5（§4「签名①」算法已还原），**无已知向量**，
+ *   故单测改为锁定「拼接规则 + 折叠规则 + 确定性 + 顺序敏感性」。
  */
 object XunleiSigning {
 
@@ -40,17 +43,78 @@ object XunleiSigning {
             md5Hex(sha1Hex(deviceId + packageName + appId + appKey))
 
     /**
-     * 计算 `captcha_sign`。
+     * 计算 `captcha_sign`（§4「签名①」，算法已由事实文档还原）。
      *
-     * ⚠️ `TODO(用户抓包)`：文档只给出「`1.<10层md5>`」与 10 个盐（见
-     * [XunleiConfig.CAPTCHA_SALTS]），**未给出折叠算法**（初始输入、逐层顺序、是否混入
-     * deviceId / timestamp）。故此处**不实现**任何猜测版本，调用方应视为「不可用」。
+     * 算法（逐字照抄）：
+     * ```
+     * raw = APP_CLIENT_ID + APP_CLIENT_VERSION + APP_PACKAGE_NAME + deviceId + timestamp_ms
+     * h   = raw
+     * for salt in SALTS:            # 10 个盐，顺序敏感
+     *     h = md5_hex(h + salt)
+     * captcha_sign = "1." + h
+     * ```
+     * 要点：拼接**无任何分隔符**；`timestamp_ms` 为毫秒字符串，且必须与请求体
+     * `meta.timestamp` **同一值**；CLIENT_ID 用 **App 端**凭据（非 Web 端）。
      *
-     * @return 恒为 null，表示算法未确认。
+     * @param deviceId 本机 deviceId。
+     * @param timestampMillis 与 `meta.timestamp` 同值的毫秒时间戳。
+     * @param clientId App 端 CLIENT_ID；默认取 [XunleiConfig.APP_CLIENT_ID]。
+     * @param clientVersion App 版本；默认取 [XunleiConfig.APP_VERSION]。
+     * @param packageName 包名；默认取 [XunleiConfig.PACKAGE_NAME]。
+     * @return 形如 `1.<32 位 hex>` 的签名。
      */
-    fun captchaSign(): String? =
-        // TODO(用户抓包): captcha_sign 的折叠算法（初始输入与 10 层盐的串联顺序）
-        null
+    fun captchaSign(
+        deviceId: String,
+        timestampMillis: Long,
+        clientId: String = XunleiConfig.APP_CLIENT_ID,
+        clientVersion: String = XunleiConfig.APP_VERSION,
+        packageName: String = XunleiConfig.PACKAGE_NAME
+    ): String = CAPTCHA_SIGN_PREFIX + captchaHash(
+        raw = captchaRaw(
+            deviceId = deviceId,
+            timestampMillis = timestampMillis,
+            clientId = clientId,
+            clientVersion = clientVersion,
+            packageName = packageName
+        )
+    )
+
+    /**
+     * 拼出 captcha_sign 的初始串 `raw`（算法第一步，无分隔符）。
+     *
+     * 单独暴露以便单测**逐字段锁定拼接顺序**——顺序或分隔符写错都会导致服务端拒绝，
+     * 但签名值本身无已知向量可比对，故把「拼接规则」本身作为可断言的对象。
+     *
+     * @param deviceId 本机 deviceId。
+     * @param timestampMillis 毫秒时间戳。
+     * @param clientId App 端 CLIENT_ID。
+     * @param clientVersion App 版本。
+     * @param packageName 包名。
+     * @return 无分隔符的初始串。
+     */
+    fun captchaRaw(
+        deviceId: String,
+        timestampMillis: Long,
+        clientId: String = XunleiConfig.APP_CLIENT_ID,
+        clientVersion: String = XunleiConfig.APP_VERSION,
+        packageName: String = XunleiConfig.PACKAGE_NAME
+    ): String = clientId + clientVersion + packageName + deviceId + timestampMillis.toString()
+
+    /**
+     * 按顺序叠加 10 个盐做 md5 折叠。
+     *
+     * @param raw 初始串（见 [captchaRaw]）。
+     * @param salts 盐列表；默认取 [XunleiConfig.CAPTCHA_SALTS]（顺序敏感）。
+     * @return 折叠结果（32 位小写 hex，不含 `1.` 前缀）。
+     */
+    fun captchaHash(raw: String, salts: List<String> = XunleiConfig.CAPTCHA_SALTS): String {
+        var hash = raw
+        salts.forEach { salt -> hash = md5Hex(hash + salt) }
+        return hash
+    }
+
+    /** captcha_sign 固定前缀。 */
+    const val CAPTCHA_SIGN_PREFIX = "1."
 
     /**
      * SHA-1 → 小写 16 进制。

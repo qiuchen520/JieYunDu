@@ -144,6 +144,24 @@
     <string name="netdisk_browser_download_folder">文件夹暂不支持下载，请先进入文件夹选择文件</string>
 
     <!-- 网页登录（阶段 11）-->
+    <!-- 迅雷原生登录（JYD-XUNLEI-P1B-2026-10-08）：App 端凭据链路，不走网页登录 -->
+    <string name="xunlei_login_hint">使用迅雷账号登录（原生接口）；登录态加密保存在本机，不会上传。</string>
+    <string name="xunlei_login_mode_password">账号密码登录</string>
+    <string name="xunlei_login_mode_sms">短信登录</string>
+    <string name="xunlei_login_account">迅雷账号</string>
+    <string name="xunlei_login_account_hint">手机号 / 邮箱 / 用户名</string>
+    <string name="xunlei_login_password">密码</string>
+    <string name="xunlei_login_mobile">手机号</string>
+    <string name="xunlei_login_sms_code">短信验证码</string>
+    <string name="xunlei_login_send_sms">发送验证码</string>
+    <string name="xunlei_login_sms_sent">验证码已发送，请查看短信</string>
+    <string name="xunlei_login_working">正在登录…</string>
+    <string name="xunlei_login_sending">正在发送…</string>
+    <string name="xunlei_login_failed">登录失败，请检查账号与密码</string>
+    <string name="xunlei_login_sms_failed">验证码发送失败，请稍后重试</string>
+    <string name="xunlei_login_needs_review">需要安全验证：请完成验证后重试</string>
+    <string name="xunlei_login_expired">登录已过期，请重新登录</string>
+    <string name="xunlei_login_done">登录成功</string>
     <string name="webview_login_title">登录 %1$s</string>
     <string name="webview_login_hint">请在网页中完成登录，成功后会自动保存登录态</string>
     <string name="webview_login_close">关闭</string>

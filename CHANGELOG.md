@@ -2247,3 +2247,73 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
     已按文档原文断言（并以「不借用别家 UA」保留回归意图），不自行补全 UA（R3）。
     ⚠️ 事实质量待确认（列给评审方）：迅雷 Web UA 是否确为截断，还是抓包时只留了前缀；
     若为截断，WebView 登录页可能拿到一个非常规 UA（当前不影响分享解析，仅影响登录页形态）。
+
+================================================================================
+【实现记录 JYD-XUNLEI-P1B-2026-10-08 · 迅雷阶段 1B-1：原生登录 + 令牌管理】
+来源：Owner 更新版《抓包事实》（§4 迅雷 / §11.4 / §12）+ 四项答复：
+      「迅雷登录不走 WebView；走 App 端凭据原生 API；captcha_sign 算法已给；size 就是 size；
+       Web UA 确为截断但迅雷不用它（用 App UA）」。
+一、captcha_sign（§4 签名①，**算法已还原**）
+    · `XunleiSigning.captchaSign(deviceId, timestampMillis)`：`1.` + 10 层加盐 md5；
+      实现拆成 [captchaRaw]（无分隔符拼接：App CLIENT_ID + 版本 + 包名 + deviceId + 毫秒时间戳）
+      与 [captchaHash]（按序 10 次 `md5(h + salt)`），便于**逐字段断言拼接规则**。
+    · 单测（6 例）：拼接顺序与无分隔符、默认用 **App 端** CLIENT_ID（且不含 Web CLIENT_ID）、
+      `1.<32hex>` 形态、与测试内**独立实现**交叉验证、时间戳敏感、盐顺序敏感、确定性。
+    · 文档未给 captcha_sign 的已知向量（只有 devicesign 有），故锚点落在「拼接 + 折叠规则」上；
+      若评审方能补一组已知输入/输出，可再加一条真值锚点（见待办）。
+二、认证接口层（§11.4 #1-#6 / §6.3）
+    · `XunleiAuthApi`：`v1/shield/captcha/init`、`xluser.core.login/v3/login`、`.../sendsms`、
+      `.../smslogin`、`v1/auth/signin/token`、`v1/auth/token`(form 刷新)；登录类接口的 **UA 按 §6.3
+      用方法级 @Headers 固定**（登录 5.1.3.513006 / 发短信 5.0.12.512000）。
+    · `XunleiAuthModels`：验证码盾（含 `meta{captcha_sign,timestamp,user_id,...}`）、登录/短信、
+      换 token、刷新；令牌字段**同时读 `access_token` 与 `accessToken`**（§4 ②）。
+      登录/短信请求体**严格照 §6.3 的字段集**，见下方「待确认 · baseLoginBody」。
+三、登录管理（`domain/login/XunleiLoginManager`）
+    · 链路：`login | smslogin → captcha/init → signin/token`。
+      **顺序说明**：§4 ① 把 `captcha/init` 列在 step0，但同节明确 `meta.user_id` 必须真实
+      （空 → 降级 token，POST 类接口会被拒），并注明「官方时序：smslogin → captcha/init →
+      signin/token」；本实现取后者以满足 user_id 约束。
+    · 风控：`errorCode=1007` / `reviewurl` / `review_panel` 任一出现 → 返回 `NeedsReview(reviewUrl)`，
+      **不写任何令牌**，且不再发起 captcha / 换 token。
+    · 刷新：`POST /v1/auth/token`（refresh_token 模式）成功后**重新 init captcha**（§11.4 要点②）；
+      失败**保留**旧令牌（可能只是网络抖动），由 UI 提示重登。
+    · 登出清空令牌与昵称。
+四、令牌存储与自动续期（Owner 约束④⑤⑥）
+    · `XunleiTokenStore` 增 `nickname`（§4 ③ 要求持久化）与 `userId`（直接取 JWT `sub`，不另存，
+      避免两处不一致）；access/refresh/captcha/nickname 全部加密持久化。
+    · `XunleiAuthInterceptor` 增**到期主动刷新**：业务主机上若已登录且 JWT 将过期（含 60 秒提前量），
+      发请求前先刷新一次；游客（无令牌）完全不触发。
+    · 新增 `XunleiTokenAuthenticator`（OkHttp Authenticator）：业务主机 **401** → refresh + 重试一次
+      （`priorResponse != null` 即不再重试，防死循环）；游客请求不处理。
+    · 循环依赖用 `Provider<XunleiLoginManager>` 懒解析（OkHttpClient ↔ Retrofit 互依）。
+五、原生登录 UI（Owner 验收项 1、2、3）
+    · 新增 `XunleiLoginScreen` + `XunleiLoginViewModel`：账号密码 / 短信两种模式（模式切换用玻璃胶囊）、
+      自绘 `BasicTextField` 输入框（D3/R5，与首页链接框同款）、主/次按钮、状态与**服务端原文**透传。
+    · 路由：`JieYunDuNavHost` 里 `target == XUNLEI` → 原生登录页（**不再进 WebView 登录页**）；
+      夸克 / UC / 百度仍走原 WebView 页（未改动）。
+    · 登录成功 → 标记登录态并返回网盘页；**重启回显**：`NetdiskLoginViewModel.init` 读
+      `XunleiLoginManager.isLoggedIn`（令牌在加密存储里）；**登出**会清迅雷令牌（Cookie 通道管不到它）。
+    · `GlassButton` **新增 `enabled`（默认 true）**：禁用时透明度 0.45 且不响应点击——
+      纯增量，既有调用零影响；新增 17 条 login 文案（全部入 `strings.xml`，C5）。
+六、测试
+    · `XunleiLoginManagerTest`（10 例）：调用顺序、登录请求体照 §6.3、
+      **`meta.user_id` 取登录响应的 userID**、**`meta.captcha_sign` 与 `meta.timestamp` 同值复算**、
+      风控分流且不写令牌、缺 sessionID、captcha 无 token、短信全流程、驼峰令牌兼容、
+      刷新成功（含重新 init captcha）/ 刷新失败保留旧令牌 / 未登录刷新不发请求 / 登出清空。
+    · `XunleiSigningTest` 扩到 6 例（见上）。
+
+================================================================================
+【待确认 · 本轮新发现（不编造，交 Owner / 评审方）】
+① **`baseLoginBody` 未定义**：§11.4 #2/#3/#4 写作 `baseLoginBody + {...}`，但**全文未给出
+   `baseLoginBody` 的字段**；而 §6.3（字段级实录）写登录体就是那 5 个字段
+   （`userName/passWord/verifyKey/verifyCode/isMd5Pwd`），设备身份由固定 Header 承载。
+   本实现**照 §6.3** 发送（不猜 base 字段）。若真机登录报缺字段，请补 `baseLoginBody` 定义。
+② **风控 WebView 顺延到 1B-2**：§4 ⑤ 给了 WebView 注入配置（`XlCaptcha.init` 参数、
+   `XLJSWebViewBridge.onVerifyResult`、`IFRAME_BOX_ID` 必填、`deviceid` 必须拼进 URL）与回调 scheme。
+   本批只把风控**如实提示**（`NeedsReview` + 地址透传），未做注入页面——那需要一个真机可调的
+   独立批次（`reviewurl` 是运行期下发的页面，不做假流程）。
+③ **`review_panel` 结构未记载**：§12.4 提到账号 VM 有 `parseReviewUrl`（静态）从 `review_panel`
+   解析验证地址，但面板 JSON 结构未给；本批只用**顶层 `reviewurl`**。
+④ captcha_sign 缺**已知向量**（评审方若能从已活体验证的同类工具拿到一组输入/输出，可补真值锚点）。
+待办：① 装机复验（见下）；② CI 结果回填；③ 1B-2（风控 WebView）与阶段 2（转存/取链/下载）。
+================================================================================

@@ -49,6 +49,10 @@ class XunleiTokenStore internal constructor(
     @Volatile
     private var cachedCaptchaToken: String? = prefs?.getString(KEY_CAPTCHA_TOKEN, null)
 
+    /** 内存缓存：nickname（§4 ③：客户端本地库持久化 nickname）。 */
+    @Volatile
+    private var cachedNickname: String? = prefs?.getString(KEY_NICKNAME, null)
+
     /**
      * 应用上下文构造（生产路径）。
      *
@@ -66,6 +70,18 @@ class XunleiTokenStore internal constructor(
 
     /** 当前 captcha_token；未取得时为 null。 */
     val captchaToken: String? get() = cachedCaptchaToken?.takeIf { value -> value.isNotBlank() }
+
+    /** 昵称（登录成功后记录；用于「网盘」页展示与重登提示）。 */
+    val nickname: String? get() = cachedNickname?.takeIf { value -> value.isNotBlank() }
+
+    /**
+     * 用户 id：直接从 access_token 的 JWT `sub` 解出（§4 ③/§12.4 `cacheUserId`）。
+     *
+     * 说明：不额外落盘——`sub` 本就是令牌自带信息，另行存储反而可能不一致。
+     *
+     * @return 用户 id；未登录或无法解析时 null。
+     */
+    val userId: String? get() = accessToken?.let { token -> JwtExpiry.subject(token) }
 
     /** 是否已有可用的 access_token（不论是否临近过期）。 */
     val isLoggedIn: Boolean get() = accessToken != null
@@ -112,11 +128,22 @@ class XunleiTokenStore internal constructor(
         write(KEY_CAPTCHA_TOKEN, token)
     }
 
+    /**
+     * 保存昵称（登录成功后调用）。
+     *
+     * @param nickname 昵称；null 表示清除。
+     */
+    fun saveNickname(nickname: String?) {
+        cachedNickname = nickname
+        write(KEY_NICKNAME, nickname)
+    }
+
     /** 清除全部登录态（退出登录 / 刷新失败提示重登时调用）。 */
     fun clear() {
         cachedAccessToken = null
         cachedRefreshToken = null
         cachedCaptchaToken = null
+        cachedNickname = null
         runCatching { prefs?.edit()?.clear()?.apply() }
             .onFailure { error -> Timber.w(error, "XunleiTokenStore clear failed") }
     }
@@ -142,6 +169,7 @@ class XunleiTokenStore internal constructor(
         const val KEY_ACCESS_TOKEN = "access_token"
         const val KEY_REFRESH_TOKEN = "refresh_token"
         const val KEY_CAPTCHA_TOKEN = "captcha_token"
+        const val KEY_NICKNAME = "nickname"
 
         /**
          * 创建加密偏好存储；不可用时返回 null（纯内存降级）。

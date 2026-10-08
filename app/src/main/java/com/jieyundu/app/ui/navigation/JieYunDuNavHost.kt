@@ -34,9 +34,11 @@ import com.jieyundu.app.ui.screens.login.NetdiskBrowserScreen
 import com.jieyundu.app.ui.screens.login.NetdiskBrowserViewModel
 import com.jieyundu.app.ui.screens.login.NetdiskLoginViewModel
 import com.jieyundu.app.ui.screens.login.NetdiskPickerScreen
+import com.jieyundu.app.ui.screens.login.XunleiLoginScreen
 import com.jieyundu.app.ui.screens.login.WebViewLoginScreen
 import com.jieyundu.app.ui.screens.settings.SettingsScreen
 import com.jieyundu.app.ui.theme.Dimens
+import com.jieyundu.app.domain.model.NetdiskType
 
 /**
  * 应用四大页签。
@@ -152,6 +154,15 @@ private fun NetdiskSection(loginViewModel: NetdiskLoginViewModel) {
     val browserActionState by browserViewModel.actionState.collectAsState()
     val target = loginTarget
     when {
+        target == NetdiskType.XUNLEI -> {
+            // 迅雷走**原生**登录页（OAuth2 双令牌由 App 端凭据接口下发，网页不下发 token）。
+            XunleiLoginScreen(
+                modifier = Modifier.fillMaxSize(),
+                onClose = loginViewModel::closeLogin,
+                onLoggedIn = loginViewModel::onNativeLoginSucceeded
+            )
+        }
+
         target != null -> {
             WebViewLoginScreen(
                 viewModel = loginViewModel,

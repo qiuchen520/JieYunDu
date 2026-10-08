@@ -5,9 +5,9 @@
 
 package com.jieyundu.app.domain.parser.xunlei
 
+import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 /**
  * [XunleiSigning] 的回归测试（【JYD-XUNLEI-P1A-2026-10-08】）。
@@ -54,13 +54,60 @@ class XunleiSigningTest {
     }
 
     /**
-     * `captcha_sign` 在拿到折叠算法前**必须返回 null**（不许猜测实现）。
+     * captcha_sign 的**拼接规则**逐字段锁定（§4 签名①：无分隔符、App 端 CLIENT_ID）。
      *
-     * 一旦用户补上算法，本测试应改为断言真实值；在那之前它是一道「不许偷偷编造」的闸门。
+     * 文档未给出 captcha_sign 的已知向量，故把「算法第一步」作为可断言对象——
+     * 顺序写错或加了分隔符都会让服务端拒绝，而这两点正是最容易写错的。
      */
     @Test
-    fun captchaSign_isNotImplementedWithoutAlgorithm() {
-        assertNull(XunleiSigning.captchaSign())
+    fun captchaRaw_concatenatesFieldsWithoutSeparatorsInDocumentedOrder() {
+        val raw = XunleiSigning.captchaRaw(
+            deviceId = DEVICE_ID,
+            timestampMillis = TIMESTAMP
+        )
+        assertEquals(
+            XunleiConfig.APP_CLIENT_ID + XunleiConfig.APP_VERSION +
+                XunleiConfig.PACKAGE_NAME + DEVICE_ID + TIMESTAMP.toString(),
+            raw
+        )
+        // 默认必须用 App 端 CLIENT_ID（文档明确：不是 Web 端）。
+        kotlin.test.assertTrue(raw.startsWith(XunleiConfig.APP_CLIENT_ID))
+        kotlin.test.assertFalse(raw.contains(XunleiConfig.WEB_CLIENT_ID))
+    }
+
+    /**
+     * captcha_sign = `1.` + 10 层加盐 md5；此处与**测试内独立实现**交叉验证，
+     * 并断言 10 层盐、顺序敏感、时间戳敏感、确定性。
+     */
+    @Test
+    fun captchaSign_foldsTenSaltsInOrder() {
+        val sign = XunleiSigning.captchaSign(deviceId = DEVICE_ID, timestampMillis = TIMESTAMP)
+        kotlin.test.assertTrue(sign.startsWith("1."))
+        assertEquals(1 + 32, sign.length, "1.<32 hex>")
+
+        // 独立实现（照文档再写一遍）：raw → 依次 md5(h + salt) 共 10 次。
+        var h = XunleiConfig.APP_CLIENT_ID + XunleiConfig.APP_VERSION +
+            XunleiConfig.PACKAGE_NAME + DEVICE_ID + TIMESTAMP.toString()
+        XunleiConfig.CAPTCHA_SALTS.forEach { salt -> h = md5Hex(h + salt) }
+        assertEquals("1.$h", sign)
+
+        // 确定性。
+        assertEquals(sign, XunleiSigning.captchaSign(DEVICE_ID, TIMESTAMP))
+        // 时间戳敏感（与 meta.timestamp 必须同值，故时间戳进签名）。
+        kotlin.test.assertNotEquals(sign, XunleiSigning.captchaSign(DEVICE_ID, TIMESTAMP + 1))
+        // 盐顺序敏感。
+        kotlin.test.assertNotEquals(
+            XunleiSigning.captchaHash("raw"),
+            XunleiSigning.captchaHash("raw", XunleiConfig.CAPTCHA_SALTS.reversed())
+        )
+    }
+
+    /** 测试内独立实现的 md5（用于交叉验证折叠算法，不依赖被测代码）。 */
+    private fun md5Hex(input: String): String {
+        val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { byte ->
+            (byte.toInt() and 0xFF).toString(16).padStart(2, '0')
+        }
     }
 
     /** 10 个盐按文档顺序原样留存（照抄，不得增删改序）。 */
@@ -69,5 +116,13 @@ class XunleiSigningTest {
         assertEquals(10, XunleiConfig.CAPTCHA_SALTS.size)
         assertEquals("9uJNVj/wLmdwKrJaVj/omlQ", XunleiConfig.CAPTCHA_SALTS.first())
         assertEquals("+oK0AN", XunleiConfig.CAPTCHA_SALTS.last())
+    }
+
+    private companion object {
+        /** 测试用 deviceId（32 位 hex，与格式一致）。 */
+        const val DEVICE_ID = "0123456789abcdef0123456789abcdef"
+
+        /** 测试用毫秒时间戳。 */
+        const val TIMESTAMP = 1_760_000_000_000L
     }
 }

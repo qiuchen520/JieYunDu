@@ -12,20 +12,24 @@ import com.jieyundu.app.data.remote.COOKIE_DOMAIN_UC
 import com.jieyundu.app.data.remote.CookieInterceptor
 import com.jieyundu.app.data.remote.CookieStore
 import com.jieyundu.app.data.remote.XunleiAuthInterceptor
+import com.jieyundu.app.data.remote.XunleiTokenAuthenticator
 import com.jieyundu.app.data.remote.XunleiFingerprint
 import com.jieyundu.app.data.remote.XunleiTokenStore
 import com.jieyundu.app.data.remote.ResponseCookieInterceptor
 import com.jieyundu.app.data.remote.UserAgentProvider
 import com.jieyundu.app.domain.parser.baidu.BaiduApi
 import com.jieyundu.app.domain.parser.quark.QuarkApi
+import com.jieyundu.app.domain.login.XunleiLoginManager
 import com.jieyundu.app.domain.parser.uc.UcApi
 import com.jieyundu.app.domain.parser.xunlei.XunleiApi
+import com.jieyundu.app.domain.parser.xunlei.XunleiAuthApi
 import com.jieyundu.app.domain.parser.xunlei.XunleiConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
+import javax.inject.Provider
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
@@ -109,6 +113,7 @@ object NetworkModule {
      * @param cookieStore 内存态 Cookie 仓库，供 [CookieInterceptor] 按域名注入。
      * @param xunleiFingerprint 迅雷一机一指纹（注入 `X-Device-Id` 等设备头）。
      * @param xunleiTokenStore 迅雷登录态（注入 `Authorization: Bearer` 与 `X-Captcha-Token`）。
+     * @param xunleiLoginManagerProvider 迅雷登录管理器（401 续期 / 到期主动刷新；懒解析以打破循环依赖）。
      * @return 配置好超时、默认 UA、Cookie 注入与调试日志的客户端。
      */
     @Provides
@@ -117,7 +122,8 @@ object NetworkModule {
         userAgentProvider: UserAgentProvider,
         cookieStore: CookieStore,
         xunleiFingerprint: XunleiFingerprint,
-        xunleiTokenStore: XunleiTokenStore
+        xunleiTokenStore: XunleiTokenStore,
+        xunleiLoginManagerProvider: Provider<XunleiLoginManager>
     ): OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(TIMEOUT_CONNECT_SECONDS, TimeUnit.SECONDS)
@@ -167,7 +173,11 @@ object NetworkModule {
                 chain.proceed(request)
             }
             // 迅雷：设备头 / 验证码头 / Bearer（业务主机才带 Authorization；游客匿名时不带）。
-            .addInterceptor(XunleiAuthInterceptor(xunleiFingerprint, xunleiTokenStore))
+            .addInterceptor(
+                XunleiAuthInterceptor(xunleiFingerprint, xunleiTokenStore, xunleiLoginManagerProvider)
+            )
+            // 迅雷 401：用 refresh_token 续期并重试一次（§11.4 要点②）。
+            .authenticator(XunleiTokenAuthenticator(xunleiTokenStore, xunleiLoginManagerProvider))
             .addInterceptor(CookieInterceptor(cookieStore))
             .addInterceptor(ResponseCookieInterceptor(cookieStore))
             .apply {
@@ -279,6 +289,26 @@ object NetworkModule {
             .addConverterFactory(json.asConverterFactory(CONTENT_TYPE_JSON.toMediaType()))
             .build()
             .create(XunleiApi::class.java)
+
+    /**
+     * 提供迅雷认证接口实现（《抓包事实.md》§4：认证基址 `xluser-ssl.xunlei.com`）。
+     *
+     * 用途（§11.4 #1-#6）：验证码盾初始化 / 账号密码登录 / 发短信 / 短信登录 /
+     * 换 access_token / 刷新 access_token。
+     *
+     * @param okHttpClient 全局客户端（含设备头注入拦截器；认证主机不带 Bearer）。
+     * @param json JSON 解析器。
+     * @return XunleiAuthApi 动态代理实例。
+     */
+    @Provides
+    @Singleton
+    fun provideXunleiAuthApi(okHttpClient: OkHttpClient, json: Json): XunleiAuthApi =
+        Retrofit.Builder()
+            .baseUrl(XunleiConfig.AUTH_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(CONTENT_TYPE_JSON.toMediaType()))
+            .build()
+            .create(XunleiAuthApi::class.java)
 
     /**
      * 判定目标 host 是否属于 UC 域名族。
