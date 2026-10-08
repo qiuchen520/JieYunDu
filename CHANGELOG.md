@@ -2237,3 +2237,7 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
     「迅雷 WebView UA = 空串（尚未抓包）」。本批已按《抓包事实.md》§4 填入迅雷网页 UA，
     属**有据的行为变更**，故该用例同步改为断言：迅雷用文档所载网页 UA，
     且**不得**借用夸克 / 百度 / UC 三家 UA（原回归意图保留）。
+修复（阶段 1A 三推）：CI run 37771219592 在 `compileDebugUnitTestKotlin` 失败——
+    同一个坑第二次踩到：JUnit4 的 `assertTrue/assertFalse` 签名是 `(message, condition)`，
+    二推把两参写成了 `(condition, message)`。已全部改正并加注释；教训升级为检查项：
+    **凡在 JUnit4 测试里给断言带 message，参数顺序必须是 message 在前**。
