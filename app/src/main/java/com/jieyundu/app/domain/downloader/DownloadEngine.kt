@@ -1,31 +1,25 @@
 // 文件：DownloadEngine.kt
-// 职责：分片并发下载引擎，提供启动/暂停/继续/取消与状态流
-// 依赖：OkHttpClient、ChunkManager、Chunk、DownloadTask、DownloadState、Timber
+// 职责：下载引擎门面——任务生命周期（启动/暂停/继续/重下/取消）、并发调度闸门、进度发布
+// 依赖：ChunkManager、ChunkDownloader、DownloadTaskRuntime、SpeedLimiter、DownloadContracts、Timber
 // 协议：AGPL-3.0
 
 package com.jieyundu.app.domain.downloader
 
 import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +31,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import timber.log.Timber
 
 /**
@@ -86,7 +79,7 @@ class DownloadEngine @Inject constructor(
     private val chunkManager: ChunkManager = ChunkManager()
 
     /** 运行中的任务表。 */
-    private val runtimes: MutableMap<String, TaskRuntime> = ConcurrentHashMap()
+    private val runtimes: MutableMap<String, DownloadTaskRuntime> = ConcurrentHashMap()
 
     /**
      * 全部任务的实时进度快照（内存态，**不落库**）。
@@ -119,6 +112,9 @@ class DownloadEngine @Inject constructor(
 
     /** 全局下载限速器（C1：所有任务与其分片共享一个令牌桶）。 */
     private val speedLimiter = SpeedLimiter()
+
+    /** 单分片下载器（【修订 JYD-DEBT3-2026-10-07】自本类拆出，同包）。 */
+    private val chunkDownloader = ChunkDownloader(okHttpClient, speedLimiter, settings)
 
     /**
      * 启动一个下载任务。
@@ -176,7 +172,7 @@ class DownloadEngine @Inject constructor(
             chunk.withDownloaded(chunkManager.readPartProgress(targetFile, chunk.index))
         }
 
-        val runtime = runtimes.getOrPut(task.taskId) { TaskRuntime(task, chunks.size) }
+        val runtime = runtimes.getOrPut(task.taskId) { DownloadTaskRuntime(task, chunks.size) }
         runtime.chunks = chunks
         runtime.sessionBytes.set(0L)
         runtime.initialBytes = chunks.sumOf { chunk -> chunk.downloadedBytes }
@@ -209,7 +205,7 @@ class DownloadEngine @Inject constructor(
      *
      * @param runtime 运行态任务。
      */
-    private suspend fun schedule(runtime: TaskRuntime) {
+    private suspend fun schedule(runtime: DownloadTaskRuntime) {
         val maxConcurrent = settings.currentMaxConcurrentTasks()
             .coerceIn(DownloadTask.MIN_MAX_CONCURRENT_TASKS, DownloadTask.MAX_MAX_CONCURRENT_TASKS)
         val admitted = scheduleMutex.withLock {
@@ -237,7 +233,7 @@ class DownloadEngine @Inject constructor(
      *
      * @param runtime 运行态任务。
      */
-    private fun launchTask(runtime: TaskRuntime) {
+    private fun launchTask(runtime: DownloadTaskRuntime) {
         runtime.job = scope.launch {
             try {
                 runTask(runtime)
@@ -497,7 +493,7 @@ class DownloadEngine @Inject constructor(
      *
      * @param runtime 运行态任务。
      */
-    private suspend fun runTask(runtime: TaskRuntime) {
+    private suspend fun runTask(runtime: DownloadTaskRuntime) {
         val targetFile = File(runtime.task.savePath)
         val chunks = runtime.chunks
         val maxRetries = settings.currentMaxTaskRetries().coerceAtLeast(0)
@@ -508,7 +504,11 @@ class DownloadEngine @Inject constructor(
                     chunks.map { chunk ->
                         // 在专用调度器上并发执行：每个分片一条阻塞请求，分片数即并发数（B2 功能②）。
                         async(downloadDispatcher) {
-                            downloadChunk(runtime, chunk, chunkManager.partFile(targetFile, chunk.index))
+                            chunkDownloader.download(
+                                runtime = runtime,
+                                chunk = chunk,
+                                partFile = chunkManager.partFile(targetFile, chunk.index)
+                            ) { sessionTotal -> publishProgress(runtime, sessionTotal) }
                         }
                     }.awaitAll()
                 }
@@ -569,108 +569,6 @@ class DownloadEngine @Inject constructor(
         }
     }
 
-    /**
-     * 下载单个分片，内部带有限次重试。
-     *
-     * @param runtime 运行态任务。
-     * @param chunk 分片描述。
-     * @param partFile 该分片的临时文件。
-     * @throws IOException 重试耗尽后仍失败时抛出。
-     */
-    private suspend fun downloadChunk(
-        runtime: TaskRuntime,
-        chunk: Chunk,
-        partFile: File
-    ) {
-        var attempt = 0
-        while (true) {
-            // 每轮重试都按临时文件当前长度重算断点，避免重复追加或覆盖已有数据
-            val alreadyDownloaded = if (partFile.isFile) partFile.length() else 0L
-            val resumeFrom = chunk.start + alreadyDownloaded
-            if (!chunk.isUnknownSize() && resumeFrom > chunk.end) {
-                Timber.i("Chunk %d already completed, skip", chunk.index)
-                return
-            }
-
-            val requestBuilder = Request.Builder()
-                .url(runtime.task.url)
-                .header(HEADER_RANGE, buildRangeHeader(chunk, resumeFrom))
-                .get()
-            runtime.task.headers.forEach { (name, value) ->
-                requestBuilder.header(name, value)
-            }
-
-            try {
-                executeChunkRequest(runtime, requestBuilder.build(), partFile)
-                return
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (io: IOException) {
-                attempt++
-                if (attempt > MAX_RETRY_PER_CHUNK) {
-                    Timber.e(io, "Chunk %d failed after %d attempts", chunk.index, attempt)
-                    throw io
-                }
-                Timber.e(io, "Chunk %d retry %d/%d", chunk.index, attempt, MAX_RETRY_PER_CHUNK)
-                delay(RETRY_DELAY_MILLIS)
-            }
-        }
-    }
-
-    /**
-     * 构造 Range 请求头值。
-     *
-     * @param chunk 分片描述。
-     * @param resumeFrom 本次请求的起始偏移（分片起点 + 已落盘字节数）。
-     * @return 形如 `bytes=0-1023` 或开放式 `bytes=2048-` 的头值。
-     */
-    private fun buildRangeHeader(chunk: Chunk, resumeFrom: Long): String =
-        if (chunk.isUnknownSize()) {
-            "bytes=$resumeFrom-"
-        } else {
-            "bytes=$resumeFrom-${chunk.end}"
-        }
-
-    /**
-     * 执行一次分片请求并把响应体追加写入分片临时文件。
-     *
-     * @param runtime 运行态任务。
-     * @param request 已带 Range 头的请求。
-     * @param partFile 分片临时文件。
-     * @throws IOException 连接失败、HTTP 非 2xx 或响应体为空。
-     */
-    private suspend fun executeChunkRequest(
-        runtime: TaskRuntime,
-        request: Request,
-        partFile: File
-    ) {
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("Unexpected HTTP code ${response.code}")
-            }
-            val body = response.body ?: throw IOException("Empty response body")
-            partFile.parentFile?.mkdirs()
-            body.byteStream().use { input ->
-                // 追加写入：分片临时文件已存在的部分即为断点，绝不能截断
-                FileOutputStream(partFile, true).use { output ->
-                    val buffer = ByteArray(BUFFER_SIZE_BYTES)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val read = input.read(buffer)
-                        if (read < 0) {
-                            break
-                        }
-                        output.write(buffer, 0, read)
-                        // C1：按全局限速申请配额；不限速时立即返回。
-                        speedLimiter.acquire(read, settings.currentSpeedLimitBytesPerSecond())
-                        val sessionTotal = runtime.sessionBytes.addAndGet(read.toLong())
-                        publishProgress(runtime, sessionTotal)
-                    }
-                    output.flush()
-                }
-            }
-        }
-    }
 
     /**
      * 以节流方式刷新进度快照并计算瞬时速度。
@@ -678,7 +576,7 @@ class DownloadEngine @Inject constructor(
      * @param runtime 运行态任务。
      * @param sessionBytes 本次运行累计写入的字节数。
      */
-    private fun publishProgress(runtime: TaskRuntime, sessionBytes: Long) {
+    private fun publishProgress(runtime: DownloadTaskRuntime, sessionBytes: Long) {
         // 【JYD-DLSPEED2-2026-10-04】仅活动态才刷新：pause() 取消协程到真正停下的短暂窗口内，
         // 在途分片可能仍调用本方法；若此时发布 DOWNLOADING 快照，会把刚写入的「已暂停」
         // 覆盖回去，表现为「点了暂停又跳回下载中」。
@@ -725,53 +623,6 @@ class DownloadEngine @Inject constructor(
         publishLive(runtime.progress.value)
     }
 
-    /**
-     * 单个任务的运行态数据。
-     *
-     * @param task 任务描述。
-     * @param chunkCount 分片数，用于构造初始进度快照。
-     */
-    private class TaskRuntime(
-        val task: DownloadTask,
-        chunkCount: Int
-    ) {
-        /** 离散状态。 */
-        val state: MutableStateFlow<DownloadState> = MutableStateFlow(DownloadState.PENDING)
-
-        /** 进度快照。 */
-        val progress: MutableStateFlow<DownloadProgressState> =
-            MutableStateFlow(DownloadProgressState.initial(task.taskId, chunkCount))
-
-        /** 当前任务协程句柄。 */
-        var job: Job? = null
-
-        /** 当前分片列表。 */
-        @Volatile
-        var chunks: List<Chunk> = emptyList()
-
-        /** 本次运行累计写入字节数（原子，多个分片协程并发写入）。 */
-        val sessionBytes: AtomicLong = AtomicLong(0L)
-
-        /** 本次运行开始前已落盘的字节数（续传起点）。 */
-        @Volatile
-        var initialBytes: Long = 0L
-
-        /** 上一次进度发射时间戳，用于节流。 */
-        @Volatile
-        var lastEmitAt: Long = 0L
-
-        /** 上一次测速采样时间戳。 */
-        @Volatile
-        var lastSpeedSampleAt: Long = 0L
-
-        /** 上一次测速采样时的字节数。 */
-        @Volatile
-        var lastSpeedSampleBytes: Long = 0L
-
-        /** 本次运行开始时间戳（用于计算平均速度）。 */
-        @Volatile
-        var sessionStartAt: Long = 0L
-    }
 
     /**
      * 伴生对象（**public**，供下载页复用状态判定口径）。
@@ -782,18 +633,6 @@ class DownloadEngine @Inject constructor(
     companion object {
         /** 分片下载线程名前缀（便于抓日志 / 排查）。 */
         private const val DOWNLOAD_THREAD_NAME = "jyd-download"
-
-        /** Range 请求头名。 */
-        private const val HEADER_RANGE = "Range"
-
-        /** 单次读取缓冲区大小：64 KiB。 */
-        private const val BUFFER_SIZE_BYTES = 64 * 1024
-
-        /** 单分片最大重试次数。 */
-        private const val MAX_RETRY_PER_CHUNK = 3
-
-        /** 重试等待时长。 */
-        private const val RETRY_DELAY_MILLIS = 1500L
 
         /** 进度发射节流间隔。 */
         private const val PROGRESS_INTERVAL_MILLIS = 200L
@@ -815,51 +654,7 @@ class DownloadEngine @Inject constructor(
 
 // 【修订 JYD-DEBT2-2026-10-07】端口（进度 / 存档 / 设置）与契约值类型
 // （DownloadTaskRecord / EngineActionResult）已拆至同包 DownloadContracts.kt。
+// 【修订 JYD-DEBT3-2026-10-07】本文件只保留引擎门面与调度：内部类 SpeedLimiter →
+// DownloadSpeedLimiter.kt、TaskRuntime → DownloadTaskRuntime.kt、单分片下载 →
+// ChunkDownloader.kt（均同包，调用方无感）。
 
-/**
- * 全局下载限速器（C1：令牌桶 / 时间预约模型）。
- *
- * 所有任务的所有分片共享同一实例，从而保证「限速」作用于整个 App 的总出口，
- * 而非逐分片限速。策略：每申请 [acquire] 的字节数，按当前限速换算为应占用的时长，
- * 预约到 [nextFreeNanos] 之后；若预约时间在未来则挂起等待，实现平滑限速。
- *
- * 线程安全：由 [mutex] 串行化预约计算，临界区极短；等待在锁外进行，不阻塞其他分片。
- */
-private class SpeedLimiter {
-
-    /** 预约计算锁。 */
-    private val mutex = Mutex()
-
-    /** 下一个可用时间点（单调时钟，纳秒）。 */
-    private var nextFreeNanos: Long = 0L
-
-    /**
-     * 申请发送 [bytes] 字节的配额；超过限速时挂起到允许发送为止。
-     *
-     * @param bytes 本轮实际写入的字节数。
-     * @param limitBytesPerSecond 当前限速，单位字节/秒；非正数表示不限速。
-     */
-    suspend fun acquire(bytes: Int, limitBytesPerSecond: Long) {
-        if (limitBytesPerSecond <= 0L || bytes <= 0) {
-            return
-        }
-        val waitNanos = mutex.withLock {
-            val now = System.nanoTime()
-            val grantedAt = if (nextFreeNanos < now) now else nextFreeNanos
-            val costNanos = bytes.toLong() * NANOS_PER_SECOND / limitBytesPerSecond
-            nextFreeNanos = grantedAt + costNanos
-            grantedAt - now
-        }
-        if (waitNanos > 0L) {
-            delay(waitNanos / NANOS_PER_MILLI)
-        }
-    }
-
-    private companion object {
-        /** 每秒纳秒数。 */
-        const val NANOS_PER_SECOND = 1_000_000_000L
-
-        /** 每毫秒纳秒数。 */
-        const val NANOS_PER_MILLI = 1_000_000L
-    }
-}

@@ -1808,9 +1808,44 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
     · 未改下载核心逻辑与续传语义；未动夸克 / UC / 百度协议实现；未改 UI 与视觉；
       未新增依赖；本批无新增中文文案（C5 不适用）；日志仍走 Timber（C8）。
 六、推送 / CI
-    · 待推送：本会话未挂载 GitHub 连接器，工作区亦无本地 .git（沿用 GitHub Data API 推送约定），
-      待推送通道确认后补 push 与 CI run 号；CI 全绿前不得视为已出包。
+    · 已推送：commit e066e2dd（走 GitHub Data API，沿用既定推送约定）。
+    · CI：run 37595744647 **success**（build debug + 上传产物 + `testDebugUnitTest` 全部通过）。
 待办：① Owner 装机复验（本批为纯重构 + 删死代码，预期行为零变化）；
       ② 债批次 3 是否开工（列表参数去重）；
       ③ 推送通道（GitHub 凭据）确认。
+================================================================================
+
+================================================================================
+【实现记录 JYD-DEBT3-2026-10-07 · 债批次 2 续：把 1000 行级 DownloadEngine 拆到内聚单元】
+来源：Owner 指令「里面有一个 1000 行之多的引擎文件，优化完整；先优化整个项目」。
+上一批（JYD-DEBT2）已把「对外契约」拆到 DownloadContracts.kt，引擎仍余 865 行且混装
+四类职责。本批按「一个文件一个职责」继续拆，**零行为改动、零调用方改动**（同包搬迁）。
+拆分结果（行数为拆分后实测）：
+    · domain/downloader/DownloadEngine.kt        661 行 —— 只剩引擎门面与调度：
+      任务生命周期（start / pause / resume / restart / cancel）、并发调度闸门
+      （schedule / launchTask / releaseSlotAndDispatchNext）、任务级重试与收尾、
+      进度节流与实时表发布（publishProgress / publishLive / removeLive）、
+      运行态准备（prepareRuntime）、重启续传（resumeFromCheckpoint）。
+    · domain/downloader/ChunkDownloader.kt       126 行 —— 单分片下载：
+      Range 断点构造、每轮重试按临时文件长度重算断点（BUG-4-01/02 语义不变）、
+      追加落盘、全局限速配额申请；以 `onBytesRead` 回调把「本次运行累计字节」交回引擎
+      （本类不持有进度状态、不落库）。
+    · domain/downloader/DownloadTaskRuntime.kt    58 行 —— 运行态纯数据容器
+      （状态流 / 进度流 / 分片 / 测速采样点）；原 private class TaskRuntime，
+      改名 DownloadTaskRuntime 并放宽为同包 internal。
+    · domain/downloader/DownloadSpeedLimiter.kt   57 行 —— 全局限速器
+      （令牌桶 / 时间预约）；原 private class SpeedLimiter，放宽为同包 internal。
+    · domain/downloader/DownloadContracts.kt     176 行 —— 端口与契约类型（前一批拆出，未动）。
+    对照：拆分前 1019 行单文件 → 现在最大 661 行，四类职责各归其位。
+不做的事（避免无收益重构）：
+    · 未把「引擎门面」再细分为 Scheduler / Lifecycle 两个类：调度只有 3 个小方法、
+      且与 start/pause 共享 scheduleMutex 与 runtimes 状态，拆开只会引入互相引用的
+      两个类而没有收益；
+    · 未新增任何接口 / 工厂 / 包装层：三个新类都是 `internal class`，由引擎直接 new。
+    · 未改下载核心逻辑：分片、断点、续传、重试、限速、进度语义逐字保留。
+规格登记：《要求.md》文末新增【修订 JYD-DEBT3-2026-10-07】。
+约束遵守：未改协议实现（夸克 / UC / 百度）、未改 UI、未新增依赖、无新增文案（C5 不适用）、
+          日志走 Timber（C8）、取消异常原样抛出（C3）。
+待办：① 装机复验下载（大文件续传 / 暂停继续 / 多任务并发 / 限速档位）；
+      ② 未编译验证前不得视为已交付（本批靠 CI 验证）。
 ================================================================================
