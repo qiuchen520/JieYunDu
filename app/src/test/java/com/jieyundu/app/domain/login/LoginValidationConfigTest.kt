@@ -83,7 +83,13 @@ class LoginValidationConfigTest {
         assertTrue(agents.webUserAgentOf(NetdiskType.BAIDU).contains("Chrome/124"))
         assertTrue(agents.webUserAgentOf(NetdiskType.QUARK).contains("QuarkPC"))
         assertTrue(agents.webUserAgentOf(NetdiskType.UC).contains("Chrome/120"))
-        // 迅雷尚未抓包 → 空串（WebView 保持默认 UA），不得拿别家 UA 顶替。
-        assertEquals("", agents.webUserAgentOf(NetdiskType.XUNLEI))
+        // 迅雷：JYD-XUNLEI-P1A-2026-10-08 起已有事实依据（《抓包事实.md》§4「UA」之 Web），
+        // 故由「空串」改为文档所载网页 UA；仍必须**不拿别家 UA 顶替**。
+        val xunleiWeb = agents.webUserAgentOf(NetdiskType.XUNLEI)
+        assertTrue(xunleiWeb.contains("Chrome"), "xunlei web UA must be the documented web UA")
+        assertTrue(xunleiWeb.startsWith("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"))
+        assertFalse(xunleiWeb.contains("QuarkPC"), "must not borrow quark UA")
+        assertFalse(xunleiWeb.contains("Chrome/124"), "must not borrow baidu UA")
+        assertFalse(xunleiWeb.contains("uc-cloud-drive"), "must not borrow uc UA")
     }
 }

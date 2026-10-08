@@ -2232,3 +2232,8 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
     `longOrNull` 是 `JsonPrimitive` 的扩展属性，首推直接作用在 `JsonElement` 上。
     已改为 `jsonPrimitive.longOrNull` / `jsonPrimitive.content` 并各自包 `runCatching`
     （非原始类型 / 结构异常时返回 null，不抛异常）。
+修复（阶段 1A 二推）：CI run 37770800714 有 1 个既有回归用例失败——
+    `LoginValidationConfigTest > webview user agent is per netdisk type` 原先锁的是
+    「迅雷 WebView UA = 空串（尚未抓包）」。本批已按《抓包事实.md》§4 填入迅雷网页 UA，
+    属**有据的行为变更**，故该用例同步改为断言：迅雷用文档所载网页 UA，
+    且**不得**借用夸克 / 百度 / UC 三家 UA（原回归意图保留）。
