@@ -2016,3 +2016,7 @@ UC 侧未改动：Owner 明确 UC 是「status != 200 + 透传 message」风格�
 待办：装机复验个人网盘浏览（夸克 / UC 列目录）与「临时文件清理」；
       确认协议错误码文案未变（QUARK_PROTOCOL_ERROR / UC_PROTOCOL_ERROR 原值不变）。
 ================================================================================
+修复（D8 首推）：CI run 37763433149 报 QuarkParser / UcParser `Unresolved reference: PersonalListQuery`
+    ——共享构造器在 `domain.parser` 包，而两个解析器在 `domain.parser.quark` / `domain.parser.uc`
+    子包，漏了 import（当时误判为同包）。已为两个解析器补上 import；
+    教训登记：跨包引入新符号时，必须按各自 `package` 行逐一确认（不再凭记忆判断同包）。

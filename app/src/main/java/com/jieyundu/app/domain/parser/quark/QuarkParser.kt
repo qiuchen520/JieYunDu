@@ -12,6 +12,7 @@ import com.jieyundu.app.domain.model.ParseResult
 import com.jieyundu.app.domain.model.QuotaInfo
 import com.jieyundu.app.domain.parser.NetdiskParser
 import com.jieyundu.app.domain.parser.PersonalBrowser
+import com.jieyundu.app.domain.parser.PersonalListQuery
 import com.jieyundu.app.domain.parser.ShareBrowser
 import com.jieyundu.app.domain.parser.quark.QuarkDeleteRequest
 import com.jieyundu.app.domain.parser.quark.QuarkDownloadRequest
